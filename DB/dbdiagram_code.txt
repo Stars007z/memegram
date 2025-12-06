@@ -1,0 +1,234 @@
+Table users {
+  id uuid
+  username varchar [not null]
+  avatar_media_id uuid
+  bio varchar
+  created_at timestamp
+
+  account_auto_delete_after_days integer
+  last_active timestamp
+}
+
+Table devices {
+  id uuid
+  user_id uuid
+  device_id varchar [not null, unique]
+  created_at timestamp
+  last_seen timestamp
+  is_active bool [default: true]
+
+  identity_key_pub blob [not null] // MLS credential identity key (Ed25519 public)
+  init_key_pub blob [not null]     // MLS HPKE init public key (X25519)
+  credential_data blob [not null]  // credential (signature, extensions)
+}
+
+Table groups {
+  id uuid
+  title varchar [not null]
+  description varchar [not null]
+  creator_user_id uuid
+  is_private_dialogue bool
+  created_at timestamp
+}
+
+Table group_members {
+  id uuid
+  group_id uuid
+  user_id uuid
+  role varchar // 'owner','admin','moderator','member'
+  leaf_index integer
+  epoch_joined integer
+  is_active bool
+}
+
+Table group_state {
+  id uuid
+  group_id uuid
+  epoch integer
+  ratchet_tree blob
+  confirmed_transcript_hash blob
+  interim_transcript_hash   blob
+  extensions blob // любые расширения MLS
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table commits {
+  id uuid
+  group_id uuid
+  epoch integer
+  sender_device uuid
+  commit_message blob
+  welcome_message blob
+  created_at timestamp
+}
+
+Table messages {
+  id uuid
+  group_id uuid
+  epoch integer
+  sender_device uuid
+
+  content_ciphertext blob // MLS application message ciphertext
+  content_type integer    // 0=text, 1=img, etc (можно шифровать)
+  is_edited bool
+  reply_message_id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table attachments {
+  id uuid
+  message_id uuid
+  media_id uuid
+  created_at timestamp
+}
+
+Table invites {
+  id uuid
+  code varchar [unique, not null]
+  created_at timestamp
+  expires_at timestamp
+  is_used bool [default: false]
+  used_by uuid
+  used_at timestamp
+}
+
+Table media {
+  id uuid
+  encrypted_blob blob
+  mime_type varchar
+  size integer
+  created_at timestamp
+}
+
+Table sticker_packs {
+  id uuid
+  title varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table stickers {
+  id uuid
+  pack_id uuid
+  media_id uuid
+  emoji varchar  // например "😀"
+  created_at timestamp
+}
+
+Table message_reactions {
+  id uuid
+  message_id uuid
+  user_id uuid
+  emoji varchar [not null] // например "😂"
+  created_at timestamp
+}
+
+Table message_reads {
+  id uuid
+  message_id uuid
+  user_id uuid
+  read_at timestamp
+}
+
+Table contacts {
+  id uuid
+  user_id uuid
+  contact_user_id uuid
+  created_at timestamp
+  is_favorite bool
+}
+
+Table group_settings {
+  id uuid
+  user_id uuid
+  group_id uuid
+
+  message_auto_delete_hours integer
+  is_archived bool [default: false]
+  is_muted bool [default: false]
+  mute_until timestamp 
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table blocked_users {
+  id uuid
+  user_id uuid
+  blocked_user_id uuid
+  created_at timestamp
+}
+
+Table user_settings {
+  id uuid
+  user_id uuid
+
+  theme varchar             // light/dark/system
+  language varchar
+  font_size int
+  animations_enabled bool
+
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table sessions {
+  id uuid
+  device_id uuid
+  access_token varchar [not null]
+  refresh_token varchar [not null]
+  created_at timestamp
+  expires_at timestamp
+  last_used timestamp
+  ip_address varchar
+  user_agent varchar
+  is_revoked bool [default: false]
+}
+
+Ref: sessions.device_id > devices.id
+
+Ref: user_settings.user_id - users.id
+
+
+Ref: blocked_users.user_id - users.id
+Ref: blocked_users.blocked_user_id > users.id
+
+Ref: group_settings.user_id > users.id
+Ref: group_settings.group_id - groups.id
+
+Ref: contacts.user_id - users.id
+Ref: contacts.contact_user_id > users.id
+
+Ref: message_reads.message_id - messages.id
+Ref: message_reads.user_id - users.id
+
+Ref: stickers.pack_id > sticker_packs.id
+Ref: stickers.media_id - media.id
+
+Ref: message_reactions.message_id - messages.id
+Ref: message_reactions.user_id - users.id
+
+
+Ref: users.avatar_media_id - media.id
+Ref: devices.user_id > users.id
+
+Ref: groups.creator_user_id - users.id
+
+Ref: group_members.group_id > groups.id
+Ref: group_members.user_id > users.id
+
+Ref: group_state.group_id - groups.id
+
+Ref: commits.group_id - groups.id
+Ref: commits.sender_device - devices.id
+
+Ref: messages.group_id > groups.id
+Ref: messages.sender_device - devices.id
+Ref: messages.reply_message_id - messages.id
+
+Ref: attachments.message_id > messages.id
+
+Ref: invites.used_by - users.id
+
+Ref: attachments.media_id - media.id
