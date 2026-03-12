@@ -40,7 +40,6 @@ async def register(
         invite_code=body.invite_code,
         device_id=body.device_id,
         device_name=body.device_name,
-        device_type=body.device_type,
         identity_key_pub=body.identity_key_pub_bytes,
         init_key_pub=body.init_key_pub_bytes,
         credential_data=body.credential_data_bytes,
