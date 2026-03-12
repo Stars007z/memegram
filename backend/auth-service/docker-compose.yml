@@ -1,0 +1,81 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: auth-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auth-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: auth-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - auth-network
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        until pg_isready -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB}; do sleep 1; done &&
+        echo 'Applying migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      # Передаём все необходимые переменные в контейнер
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - GRPC_PORT=${GRPC_PORT:-50051}
+      - REDIS_URL=redis://redis:6379/0          # ← Внутри сети Docker: redis, не localhost!
+      - CHALLENGE_TTL_SECONDS=${CHALLENGE_TTL_SECONDS:-300}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - auth-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  auth-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
