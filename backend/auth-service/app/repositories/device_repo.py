@@ -14,4 +14,4 @@ class DeviceRepository(BaseRepository[Device]):
         return result.scalars().all()
 
     async def get_by_device_id(self, device_id: str) -> Device:
-        return await self.get_by_field("device_id", device_id)
+        return await self.get_by_id(uuid.UUID(device_id))
