@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: memegram-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_TITLE=Memegram Orchestrator
+      - APP_VERSION=1.0.0
+      - DEBUG=false
+      - AUTH_GRPC_HOST=auth-service
+      - AUTH_GRPC_PORT=50051
+      - AUTH_GRPC_TIMEOUT=30.0
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  memegram-backend:
+    external: true

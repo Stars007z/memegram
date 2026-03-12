@@ -29,7 +29,6 @@ class AuthService:
         invite_code: str,
         device_id: str,
         device_name: str,
-        device_type: str,
         identity_key_pub: bytes,
         init_key_pub: bytes,
         credential_data: bytes
