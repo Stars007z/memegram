@@ -1,0 +1,118 @@
+version: '3.9'
+
+services:
+
+  auth-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-auth-postgres
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER:-memegram} -d ${AUTH_DB_NAME:-auth_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  auth-redis:
+    image: redis:7-alpine
+    container_name: memegram-auth-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+    container_name: memegram-auth-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h auth-postgres -U ${AUTH_DB_USER:-memegram} -d ${AUTH_DB_NAME:-auth_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${AUTH_DB_USER:-memegram}:${AUTH_DB_PASSWORD:-changeme}@auth-postgres:5432/${AUTH_DB_NAME:-auth_db}
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_change_in_prod}
+      - JWT_ALGORITHM=HS256
+      - GRPC_PORT=50051
+      - REDIS_URL=redis://auth-redis:6379/0
+    ports:
+      - "50051:50051"
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      auth-redis:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  orchestrator:
+    build:
+      context: ./backend/orchestrator
+      dockerfile: Dockerfile
+    container_name: memegram-orchestrator
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop"]
+    environment:
+      - APP_NAME=Memegram Orchestrator
+      - APP_VERSION=1.0.0
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - AUTH_GRPC_HOST=auth-service
+      - AUTH_GRPC_PORT=50051
+      - AUTH_GRPC_TIMEOUT=30
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    volumes:
+      - ./backend/orchestrator/app:/app/app
+      - ./backend/orchestrator/alembic:/app/alembic
+      - ./backend/orchestrator/alembic.ini:/app/alembic.ini
+      - ./backend/orchestrator/.env:/app/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  memegram-backend:
+    driver: bridge
+
+volumes:
+  auth_postgres_data:

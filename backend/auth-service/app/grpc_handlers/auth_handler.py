@@ -24,7 +24,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                     invite_code=request.invite_code,
                     device_id=request.device_id,
                     device_name=request.device_name,
-                    device_type=request.device_type,
                     identity_key_pub=request.identity_key_pub,
                     init_key_pub=request.init_key_pub,
                     credential_data=request.credential_data,
