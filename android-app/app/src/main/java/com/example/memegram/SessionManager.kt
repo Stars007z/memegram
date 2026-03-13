@@ -31,4 +31,9 @@ object SessionManager {
 
     fun clear(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { clear() }
+
+    fun getDeviceId(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("device_id", null)
+
 }

@@ -3,7 +3,6 @@ package com.example.memegram
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.provider.Settings
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
@@ -52,7 +51,11 @@ class AuthActivity : BaseActivity() {
 
             lifecycleScope.launch {
                 try {
-                    val deviceId  = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                    val deviceId = SessionManager.getDeviceId(this@AuthActivity) ?: run {
+                        Toast.makeText(this@AuthActivity, "Устройство не зарегистрировано", Toast.LENGTH_LONG).show()
+                        loginButton.isEnabled = true
+                        return@launch
+                    }
 
                     val initResp  = RetrofitClient.api.loginInit(LoginInitRequest(deviceId))
                     val challenge = initResp.challenge
