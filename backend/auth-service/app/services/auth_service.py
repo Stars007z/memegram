@@ -260,7 +260,7 @@ class AuthService:
 
     def _generate_tokens(self, user_id: str, device_id: str, is_primary: bool) -> tuple[str, str, datetime]:
         """Генерация JWT access и refresh токенов"""
-        expires_at = datetime.utcnow() + timedelta(minutes=60)
+        expires_at = datetime.utcnow() + timedelta(minutes=1)
 
         access_payload = {
             "sub": user_id,

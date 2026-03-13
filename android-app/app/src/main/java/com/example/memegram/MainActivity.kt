@@ -34,9 +34,13 @@ class MainActivity : BaseActivity() {
         if (!KeyManager.hasKeyPair(this) || !SessionManager.isLoggedIn(this)) return false
         if (!SessionManager.isTokenExpired(this)) { goToChats(); return true }
 
+        val deviceId = SessionManager.getDeviceId(this) ?: run {
+            SessionManager.clear(this)
+            return false
+        }
+
         return try {
-            val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-            val initResp = RetrofitClient.api.loginInit(LoginInitRequest(deviceId))
+            val initResp  = RetrofitClient.api.loginInit(LoginInitRequest(deviceId))
             val challenge = initResp.challenge
             val sigBase64 = Base64.encodeToString(
                 KeyManager.signChallenge(this, challenge), Base64.NO_WRAP
