@@ -3,7 +3,6 @@ import jwt
 import os
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.exceptions import InvalidSignature
 
@@ -12,8 +11,6 @@ from app.repositories.session_repo import SessionRepository
 from app.repositories.invite_repo import InviteRepository
 from app.config import settings
 from app.database.redis import store_challenge, get_challenge, delete_challenge
-
-
 
 
 class AuthService:
@@ -33,10 +30,6 @@ class AuthService:
         init_key_pub: bytes,
         credential_data: bytes
     ) -> dict:
-        """
-        Регистрация нового пользователя.
-        Возвращает dict с данными для gRPC-ответа.
-        """
         # 1. Проверка инвайта
         invite = await self.invite_repo.get_by_code(invite_code)
         if not invite or invite.is_used or invite.expires_at < datetime.utcnow():
@@ -47,12 +40,12 @@ class AuthService:
         device_uuid = uuid.uuid4()
 
         # 3. Создание устройства
-        new_device = await self.device_repo.create({
+        await self.device_repo.create({
             "id": device_uuid,
             "user_id": user_id,
             "device_id": device_id,
             "device_name": device_name,
-            "device_type": "primary",  # Первое устройство — всегда primary
+            "device_type": "primary",
             "is_active": True,
             "identity_key_pub": identity_key_pub,
             "init_key_pub": init_key_pub,
@@ -79,7 +72,7 @@ class AuthService:
 
         # 7. TODO: Вызов User Service для создания профиля
 
-        await self.session.commit()
+        # commit делает контекст-менеджер get_session
 
         return {
             "user_id": str(user_id),
@@ -91,25 +84,20 @@ class AuthService:
         }
 
     async def login_init(self, device_id: str) -> dict:
-        """
-        Генерация challenge для аутентификации
-        """
-        # 1. Проверяем, существует ли устройство
+        # 1. Проверяем устройство по UUID в БД
         device = await self.device_repo.get_by_device_id(device_id)
         if not device:
             raise ValueError("Device not found")
 
-        # 2. Проверяем активность устройства
         if not device.is_active:
             raise ValueError("Device is inactive or revoked")
 
-        # 3. Генерируем криптографически случайный challenge (32 байта)
+        # 2. Генерируем challenge (32 байта)
         challenge = os.urandom(32)
 
-        # 4. Сохраняем в Redis с TTL
+        # 3. Сохраняем в Redis по строковому device_id (внешний ID устройства)
         await store_challenge(device_id, challenge, settings.CHALLENGE_TTL_SECONDS)
 
-        # 5. Возвращаем challenge (base64 для передачи по сети)
         import base64
         challenge_b64 = base64.b64encode(challenge).decode('utf-8')
         expires_at = int((datetime.utcnow() + timedelta(seconds=settings.CHALLENGE_TTL_SECONDS)).timestamp())
@@ -127,36 +115,32 @@ class AuthService:
         signature: bytes,
         device_name: str = None
     ) -> dict:
-        """
-        Верификация подписи и выдача токенов
-        """
         import base64
 
-        # 1. Декодируем challenge из base64
+        # 1. Декодируем challenge
         try:
             challenge_bytes = base64.b64decode(challenge)
         except Exception:
             raise ValueError("Invalid challenge format")
 
-        # 2. Получаем сохранённый challenge из Redis
+        # 2. Получаем challenge из Redis
         stored_challenge = await get_challenge(device_id)
         if not stored_challenge:
             raise ValueError("Challenge expired or not found. Please restart login.")
 
-        # 3. Проверяем, что challenge совпадает (защита от подмены)
+        # 3. Сверяем challenge
         if stored_challenge != challenge_bytes:
             raise ValueError("Challenge mismatch")
 
-        # 4. Находим устройство в БД
+        # 4. Находим устройство
         device = await self.device_repo.get_by_device_id(device_id)
         if not device:
             raise ValueError("Device not found")
 
-        # 5. Проверяем активность
         if not device.is_active:
             raise ValueError("Device is inactive or revoked")
 
-        # 6. Верифицируем подпись
+        # 5. Верифицируем подпись Ed25519
         try:
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(device.identity_key_pub)
             public_key.verify(signature, challenge_bytes)
@@ -165,24 +149,23 @@ class AuthService:
         except Exception as e:
             raise ValueError(f"Signature verification error: {str(e)}")
 
-        # 7. Удаляем challenge из Redis (одноразовое использование)
+        # 6. Удаляем challenge (одноразовое использование)
         await delete_challenge(device_id)
 
-        # 8. Обновляем имя устройства, если передано
+        # 7. Обновляем имя и last_seen
+        updates = {"last_seen": datetime.utcnow()}
         if device_name:
-            await self.device_repo.update(device, {"device_name": device_name})
+            updates["device_name"] = device_name
+        await self.device_repo.update(device, updates)
 
-        # 9. Обновляем last_seen
-        await self.device_repo.update(device, {"last_seen": datetime.utcnow()})
-
-        # 10. Генерируем токены
+        # 8. Генерируем токены
         access_token, refresh_token, expires_at = self._generate_tokens(
             user_id=str(device.user_id),
             device_id=str(device.id),
             is_primary=(device.device_type == "primary")
         )
 
-        # 11. Создаём новую сессию
+        # 9. Создаём сессию
         await self.session_repo.create({
             "device_id": device.id,
             "access_token": access_token,
@@ -190,8 +173,6 @@ class AuthService:
             "expires_at": expires_at,
         })
 
-        # 12. Commit
-        await self.session.commit()
 
         return {
             "user_id": str(device.user_id),
@@ -203,26 +184,33 @@ class AuthService:
         }
 
     async def logout(self, access_token: str) -> dict:
-        """Завершение сессии (отзыв токена)"""
-        try:
-            # Декодируем токен без верификации, чтобы получить device_id
-            payload = jwt.decode(access_token, options={"verify_signature": False})
-            device_uuid = uuid.UUID(payload.get("device_id"))
-        except Exception:
-            raise ValueError("Invalid access token")
-
-        # Находим сессию
+        # 1. Находим сессию по токену
         session = await self.session_repo.get_by_field("access_token", access_token)
         if not session:
             raise ValueError("Session not found")
 
-        # Помечаем как отозванную
+        # 2. Проверяем что токен принадлежит этой сессии через JWT
+        try:
+            payload = jwt.decode(
+                access_token,
+                settings.JWT_SECRET,
+                algorithms=[settings.JWT_ALGORITHM]
+            )
+            token_device_id = payload.get("device_id")
+            if str(session.device_id) != token_device_id:
+                raise ValueError("Token device mismatch")
+        except jwt.ExpiredSignatureError:
+            # Истёкший токен всё равно ревоцируем
+            pass
+        except jwt.InvalidTokenError:
+            raise ValueError("Invalid access token")
+
+        # 3. Ревоцируем сессию
         await self.session_repo.update(session, {
             "is_revoked": True,
             "last_used": datetime.utcnow()
         })
 
-        await self.session.commit()
 
         return {
             "success": True,
@@ -234,21 +222,16 @@ class AuthService:
             expires_in_days: int,
             created_by_device_id: str | None = None
     ) -> dict:
-        """Создать новый инвайт-код."""
-
-        # TODO: Добавить проверку прав доступа (админа)
-
-        # Валидация входных данных
         if not 1 <= expires_in_days <= 365:
             raise ValueError("expires_in_days must be between 1 and 365")
 
-        # Создаём инвайт через репозиторий
         admin_device_uuid = uuid.UUID(created_by_device_id) if created_by_device_id else None
 
         invite = await self.invite_repo.create_invite(
             expires_in_days=expires_in_days,
             created_by_admin_device_id=admin_device_uuid
         )
+
 
         return {
             "code": invite.code,
@@ -259,7 +242,6 @@ class AuthService:
         }
 
     def _generate_tokens(self, user_id: str, device_id: str, is_primary: bool) -> tuple[str, str, datetime]:
-        """Генерация JWT access и refresh токенов"""
         expires_at = datetime.utcnow() + timedelta(minutes=60)
 
         access_payload = {
