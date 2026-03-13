@@ -1,5 +1,6 @@
 package com.example.memegram
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -63,39 +64,13 @@ class ChatsActivity : BaseActivity() {
 
         drawerLayout.addDrawerListener(object : androidx.drawerlayout.widget.DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerOpened(drawerView: android.view.View) {
-                try {
-                    val db = DBhelper.getInstance(this@ChatsActivity)
-                    val cursor = db.readableDatabase.rawQuery("SELECT * FROM users ORDER BY created_at DESC LIMIT 1", null)
-                    if (cursor.moveToFirst()) {
-                        val name = cursor.getString(cursor.getColumnIndexOrThrow("username"))
-                        val avatarPath = cursor.getString(cursor.getColumnIndexOrThrow("avatar_media_id"))
-
-                        val tvName = headerView.findViewById<TextView>(R.id.tvProfileName)
-                        val ivAvatar = headerView.findViewById<ImageView>(R.id.ivProfileAvatar)
-
-                        tvName.text = name
-
-                        if (!avatarPath.isNullOrEmpty()) {
-                            try {
-                                val file = File(avatarPath)
-                                if (file.exists()) {
-                                    ivAvatar.setImageURI(Uri.fromFile(file))
-                                } else {
-                                    ivAvatar.setImageURI(avatarPath.toUri())
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                                ivAvatar.setImageResource(R.drawable.ic_launcher_foreground)
-                            }
-                        } else {
-                            ivAvatar.setImageResource(R.drawable.ic_launcher_foreground)
-                        }
-                    }
-                    cursor.close()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                val tvName = headerView.findViewById<TextView>(R.id.tvProfileName)
+                val ivAvatar = headerView.findViewById<ImageView>(R.id.ivProfileAvatar)
+                val prefs = getSharedPreferences("profile", Context.MODE_PRIVATE)
+                tvName.text = prefs.getString("username", "User")
+                ivAvatar.setImageResource(R.drawable.ic_launcher_foreground)
             }
+
         })
 
         headerView.setOnClickListener {

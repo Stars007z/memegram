@@ -1,5 +1,6 @@
 package com.example.memegram
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.widget.EditText
@@ -9,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
 import java.io.FileOutputStream
 import androidx.core.net.toUri
+import androidx.core.content.edit
 
 class ProfileActivity : BaseActivity() {
 
@@ -51,69 +53,25 @@ class ProfileActivity : BaseActivity() {
     }
 
     private fun loadUserData() {
-        val db = DBhelper.getInstance(this)
-        val cursor = db.readableDatabase.rawQuery("SELECT * FROM users ORDER BY created_at DESC LIMIT 1", null)
-
-        if (cursor.moveToFirst()) {
-            currentUserId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
-            val username = cursor.getString(cursor.getColumnIndexOrThrow("username"))
-            val bio = cursor.getString(cursor.getColumnIndexOrThrow("bio"))
-            val avatarPath = cursor.getString(cursor.getColumnIndexOrThrow("avatar_media_id"))
-
-            etNickname.setText(username)
-            etBio.setText(bio)
-
-            if (!avatarPath.isNullOrEmpty()) {
-                try {
-                    val file = File(avatarPath)
-                    if (file.exists()) {
-                        ivAvatar.setImageURI(Uri.fromFile(file))
-                    } else {
-                        ivAvatar.setImageURI(avatarPath.toUri())
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-        cursor.close()
+        val prefs = getSharedPreferences("profile", Context.MODE_PRIVATE)
+        etNickname.setText(prefs.getString("username", ""))
+        etBio.setText(prefs.getString("bio", ""))
     }
 
     private fun saveUserData() {
         val newNick = etNickname.text.toString().trim()
         val newBio = etBio.text.toString().trim()
-
         if (newNick.isEmpty()) {
             Toast.makeText(this, "Nickname cannot be empty", Toast.LENGTH_SHORT).show()
             return
         }
-
-        if (currentUserId != null) {
-            var savedImagePath: String? = null
-
-            if (selectedImageUri != null) {
-                savedImagePath = copyImageToInternalStorage(selectedImageUri!!)
-            } else {
-                //Skibob
-            }
-
-            val db = DBhelper.getInstance(this)
-
-            var finalAvatarPath: String? = savedImagePath
-            if (finalAvatarPath == null) {
-                val cursor = db.readableDatabase.rawQuery("SELECT avatar_media_id FROM users WHERE id = ?", arrayOf(currentUserId))
-                if (cursor.moveToFirst()) {
-                    finalAvatarPath = cursor.getString(0)
-                }
-                cursor.close()
-            }
-
-            db.updateUserProfile(currentUserId!!, newNick, newBio, finalAvatarPath)
-            Toast.makeText(this, "Profile updated!", Toast.LENGTH_SHORT).show()
-            finish()
-        } else {
-            Toast.makeText(this, "Error: User not found", Toast.LENGTH_SHORT).show()
+        val prefs = getSharedPreferences("profile", Context.MODE_PRIVATE)
+        prefs.edit {
+            putString("username", newNick)
+                .putString("bio", newBio)
         }
+        Toast.makeText(this, "Profile updated!", Toast.LENGTH_SHORT).show()
+        finish()
     }
 
     private fun copyImageToInternalStorage(uri: Uri): String? {
