@@ -47,16 +47,13 @@ class AppearanceActivity : BaseActivity() {
         setContentView(R.layout.activity_appearance)
         applyWindowInsets(R.id.mainLayout)
 
-        // Явно указываем тип View (или ImageButton, если это кнопка)
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
 
-        // Явно указываем типы для переменных, чтобы устранить ошибки
         val previewTopBar = findViewById<View>(R.id.previewTopBar)
         val previewChatBg = findViewById<View>(R.id.previewContainer)
         val previewMyBubble = findViewById<View>(R.id.tvPreviewMessageOutgoing)
         val previewTheirBubble = findViewById<View>(R.id.tvPreviewMessageIncoming)
 
-        // --- Status Bar setting REMOVED ---
 
         // Top Bar
         setupItem(
@@ -111,11 +108,8 @@ class AppearanceActivity : BaseActivity() {
         isBubble: Boolean = false,
         onColorChanged: ((Int) -> Unit)? = null
     ) {
-        // Указываем тип контейнера (это include, скорее всего это View или LinearLayout)
         val container = findViewById<View>(itemId) ?: return
 
-        // Внутри контейнера ищем TextView.
-        // Обратите внимание: container.findViewById также требует явного типа, если автовывод не работает.
         container.findViewById<TextView>(R.id.tvSettingTitle).apply {
             text = title
         }
