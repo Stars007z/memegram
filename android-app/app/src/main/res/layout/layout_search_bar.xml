@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="@dimen/_8sdp"
+    android:background="#F0F0F0">
+
+    <ImageView
+        android:id="@+id/btnExitSearch"
+        android:layout_width="@dimen/_32sdp"
+        android:layout_height="@dimen/_32sdp"
+        android:src="@drawable/ic_arrow_back"
+        android:padding="@dimen/_6sdp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        app:tint="#000000"
+        android:layout_marginBottom="2dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <EditText
+        android:id="@+id/etSearchChat"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_8sdp"
+        android:layout_marginEnd="@dimen/_8sdp"
+        android:hint="Search in chat"
+        android:background="@drawable/rounded_search_bg"
+        android:padding="@dimen/_10sdp"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:textSize="@dimen/_14ssp"
+        android:textColor="#000000"
+        android:textColorHint="#8E8E93"
+        android:inputType="text"
+        android:imeOptions="actionSearch"
+        app:layout_constraintStart_toEndOf="@id/btnExitSearch"
+        app:layout_constraintEnd_toStartOf="@id/tvMatchCounter"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="1.0" />
+
+    <TextView
+        android:id="@+id/tvMatchCounter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="@dimen/_11ssp"
+        android:textColor="#8E8E93"
+        android:minWidth="@dimen/_40sdp"
+        android:gravity="center"
+        android:layout_marginBottom="2dp"
+        app:layout_constraintEnd_toStartOf="@id/btnMatchPrev"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- ↑ Предыдущее совпадение -->
+    <ImageView
+        android:id="@+id/btnMatchPrev"
+        android:layout_width="@dimen/_32sdp"
+        android:layout_height="@dimen/_32sdp"
+        android:padding="@dimen/_6sdp"
+        android:src="@drawable/ic_arrow_back"
+        android:rotation="270"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_marginBottom="2dp"
+        app:layout_constraintEnd_toStartOf="@id/btnMatchNext"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- ↓ Следующее совпадение -->
+    <ImageView
+        android:id="@+id/btnMatchNext"
+        android:layout_width="@dimen/_32sdp"
+        android:layout_height="@dimen/_32sdp"
+        android:padding="@dimen/_6sdp"
+        android:src="@drawable/ic_arrow_back"
+        android:rotation="90"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_marginBottom="2dp"
+        app:layout_constraintEnd_toStartOf="@id/btnSearchList"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Открыть список совпадений -->
+    <ImageView
+        android:id="@+id/btnSearchList"
+        android:layout_width="@dimen/_32sdp"
+        android:layout_height="@dimen/_32sdp"
+        android:padding="@dimen/_6sdp"
+        android:src="@android:drawable/ic_menu_agenda"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_marginBottom="2dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
