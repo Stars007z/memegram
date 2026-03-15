@@ -1,0 +1,18 @@
+// Прокинуть по app/build.gradle
+
+android {
+    // ...
+    externalNativeBuild {
+        cmake {
+            path "CMakeLists.txt"
+        }
+    }
+    
+    aaptOptions {
+        noCompress "bin"
+    }
+    
+    ndk {
+        abiFilters 'arm64-v8a', 'armeabi-v7a'
+    }
+}
