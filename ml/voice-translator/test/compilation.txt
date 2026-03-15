@@ -1,0 +1,12 @@
+# Клонируем whisper.cpp
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp
+
+# Скачиваем модель
+./models/download-ggml-model.sh small-q5_1
+
+# Компилируем тест
+g++ -std=c++11 -O3 -o test_whisper test_whisper.cpp -I. -lwhisper -L. -Wl,-rpath,.
+
+# Запуск
+./test_whisper models/ggml-small-q5_1.bin test_audio.wav
