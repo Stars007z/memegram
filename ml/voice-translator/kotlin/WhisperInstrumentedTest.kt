@@ -62,9 +62,9 @@ class WhisperInstrumentedTest {
             state is WhisperManager.WhisperState.Error)
         
         if (state is WhisperManager.WhisperState.Success) {
-            println("✅ Original: ${state.result.originalText}")
-            println("✅ Translated: ${state.result.translatedText}")
-            println("✅ Duration: ${state.result.durationMs}ms")
+            println(" Original: ${state.result.originalText}")
+            println(" Translated: ${state.result.translatedText}")
+            println(" Duration: ${state.result.durationMs}ms")
         }
         
         testAudio.delete()
