@@ -95,7 +95,7 @@ async def health_check(
 @router.post("/invite", response_model=CreateInviteResponseSchema, status_code=201)
 async def create_invite(
     body: CreateInviteRequestSchema,
-    session: SessionContext = Depends(require_device_type("primary", "admin")),
+    session: SessionContext = Depends(require_device_type("admin")),
     usecase: CreateInviteUseCase = Depends(get_create_invite_use_case),
 ) -> CreateInviteResponseSchema:
     result = await use_case.execute(
