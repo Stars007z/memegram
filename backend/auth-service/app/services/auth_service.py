@@ -13,6 +13,7 @@ from app.config import settings
 from app.database.redis import store_challenge, get_challenge, delete_challenge
 
 
+
 class AuthService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -206,11 +207,11 @@ class AuthService:
             raise ValueError("Invalid access token")
 
         # 3. Ревоцируем сессию
-        await self.session_repo.update(session, {
-            "is_revoked": True,
-            "last_used": datetime.utcnow()
-        })
+        await self.session_repo.update(session, is_revoked=True, last_used=datetime.utcnow())
 
+        redis = await RedisClient.get_instance()
+        cache_key = f"session:valid:{access_token}"
+        await redis.delete(cache_key)
 
         return {
             "success": True,
@@ -261,3 +262,55 @@ class AuthService:
         refresh_token = jwt.encode(refresh_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
         return access_token, refresh_token, expires_at
+
+    async def validate_token(self, access_token: str) -> dict:
+        # 1. Проверить кэш Redis
+
+        redis = await RedisClient.get_instance()
+        cache_key = f"session_valid:{access_token}"
+        cached = await redis.get(cache_key)
+        if cached:
+            import json
+            return json.loads(cached)
+
+        # 2. Декодировать JWT
+        try:
+            payload = jwt.decode(
+                access_token,
+                settings.JWT_SECRET,
+                algorithms=[settings.JWT_ALGORITHM]
+            )
+        except jwt.ExpiredSignatureError:
+            return {"valid": False, "user_id": "", "device_id": "", "device_type": "", "expires_at": 0}
+        except jwt.InvalidTokenError:
+            return {"valid": False, "user_id": "", "device_id": "", "device_type": "", "expires_at": 0}
+
+        device_id = payload.get("device_id")
+        expires_at = payload.get("exp", 0)
+
+        # 3. Проверить сессию в БД (не отозвана ли)
+        session_record = await self.session_repo.get_by_access_token(access_token)
+        if not session_record or session_record.is_revoked:
+            return {"valid": False, "user_id": "", "device_id": "", "device_type": "", "expires_at": 0}
+
+        # 4. Получить device_type из устройства
+        device = await self.device_repo.get_by_id(session_record.device_id)
+        if not device or not device.is_active:
+            return {"valid": False, "user_id": "", "device_id": "", "device_type": "", "expires_at": 0}
+
+        result = {
+            "valid": True,
+            "user_id": str(device.user_id),
+            "device_id": str(device.id),
+            "device_type": device.device_type,
+            "expires_at": expires_at,
+        }
+
+        # 5. Кэшировать в Redis до истечения токена
+        import json
+        from datetime import datetime
+        ttl = max(0, expires_at - int(datetime.utcnow().timestamp()))
+        if ttl > 0:
+            await redis.setex(cache_key, ttl, json.dumps(result))
+
+        return result

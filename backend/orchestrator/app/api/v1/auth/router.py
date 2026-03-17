@@ -27,6 +27,10 @@ from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.interfaces.auth_gateway import IAuthGateway
 
+from app.api.dependencies import require_device_type
+
+from app.core.session_context import SessionContext
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -73,6 +77,7 @@ async def login_complete(
 @router.post("/logout", response_model=LogoutResponseSchema)
 async def logout(
     body: LogoutRequestSchema,
+    session: SessionContext = Depends(),
     use_case: LogoutUseCase = Depends(get_logout_use_case),
 ) -> LogoutResponseSchema:
     result = await use_case.execute(access_token=body.access_token)
@@ -90,10 +95,21 @@ async def health_check(
 @router.post("/invite", response_model=CreateInviteResponseSchema, status_code=201)
 async def create_invite(
     body: CreateInviteRequestSchema,
-    use_case: CreateInviteUseCase = Depends(get_create_invite_use_case),
+    session: SessionContext = Depends(require_device_type("primary", "admin")),
+    usecase: CreateInviteUseCase = Depends(get_create_invite_use_case),
 ) -> CreateInviteResponseSchema:
     result = await use_case.execute(
         expires_in_days=body.expires_in_days,
         created_by_device_id=body.created_by_device_id,
     )
     return CreateInviteResponseSchema(**result.__dict__)
+
+
+# # Logout: любой авторизованный
+# @router.post("/logout", ...)
+# async def logout(
+#     body: LogoutRequestSchema,
+#     session: SessionContext = Depends(get_current_session),  # просто аутентифицирован
+#     usecase: LogoutUseCase = Depends(get_logout_usecase),
+# ):
+#     ...

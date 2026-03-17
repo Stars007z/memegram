@@ -25,7 +25,7 @@ def _create_channel() -> grpc.aio.Channel:
             ("grpc.initial_reconnect_backoff_ms", 500),
             ("grpc.max_reconnect_backoff_ms", 5000),
             # Keepalive: пингуем сервер каждые 30с, чтобы не протух idle-коннект
-            ("grpc.keepalive_time_ms", 30_000),
+            ("grpc.keepalive_time_ms", 300_000),
             ("grpc.keepalive_timeout_ms", 10_000),
             ("grpc.keepalive_permit_without_calls", True),
         ],

@@ -7,6 +7,41 @@ from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.core.session_context import SessionContext
+from app.core.interfaces.auth_gateway import IAuthGateway
+
+_bearer = HTTPBearer()
+
+async def get_current_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    gateway: IAuthGateway = Depends(lambda: _get_cached_gateway()),
+) -> SessionContext:
+    result = await gateway.validate_token(credentials.credentials)
+    if not result.valid:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    session = SessionContext(
+        userid=result.userid,
+        deviceid=result.deviceid,
+        devicetype=result.devicetype,
+        expiresat=result.expiresat,
+    )
+    request.state.session = session  # ← добавить
+    return session
+
+
+def require_device_type(*allowed_types: str):
+    async def dependency(session: SessionContext = Depends(get_current_session)) -> SessionContext:
+        if session.device_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires device type: {', '.join(allowed_types)}",
+            )
+        return session
+    return dependency
+
 
 @lru_cache
 def _get_cached_gateway() -> IAuthGateway:

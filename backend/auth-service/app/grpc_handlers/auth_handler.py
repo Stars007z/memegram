@@ -132,6 +132,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
             version="1.0.0"
         )
 
+
     async def CreateInvite(self, request, context):
         """Создание нового инвайт-кода (админ)"""
 
@@ -161,3 +162,20 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {str(e)}")
                 return auth_pb2.CreateInviteResponse()
+
+
+    async def ValidateToken(self, request, context):
+        if not request.access_token:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("access_token is required")
+            return auth_pb2.ValidateTokenResponse(valid=False)
+
+        async with self.get_session() as session:
+            service = AuthService(session)
+            try:
+                result = await service.validate_token(
+                    access_token=request.access_token
+                )
+                return auth_pb2.ValidateTokenResponse(**result)
+            except Exception as e:
+                return auth_pb2.ValidateTokenResponse(valid=False)
