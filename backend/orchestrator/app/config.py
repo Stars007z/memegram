@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     AUTH_GRPC_PORT: int = 50051
     AUTH_GRPC_TIMEOUT: float = 10.0
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    USER_GRPC_HOST: str = "localhost"
+    USER_GRPC_PORT: int = 50052
+    USER_GRPC_TIMEOUT: float = 10.0
+
+    @property
+    def USER_GRPC_ADDRESS(self) -> str:
+        return f"{self.USER_GRPC_HOST}:{self.USER_GRPC_PORT}"
+
     @property
     def AUTH_GRPC_ADDRESS(self) -> str:
         return f"{self.AUTH_GRPC_HOST}:{self.AUTH_GRPC_PORT}"

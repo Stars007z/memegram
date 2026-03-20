@@ -10,7 +10,7 @@ from app.repositories.device_repo import DeviceRepository
 from app.repositories.session_repo import SessionRepository
 from app.repositories.invite_repo import InviteRepository
 from app.config import settings
-from app.database.redis import store_challenge, get_challenge, delete_challenge
+from app.database.redis import store_challenge, get_challenge, delete_challenge, RedisClient
 
 
 
@@ -71,9 +71,7 @@ class AuthService:
         # 6. Помечаем инвайт как использованный
         await self.invite_repo.mark_as_used(invite, used_by_user_id=user_id)
 
-        # 7. TODO: Вызов User Service для создания профиля
 
-        # commit делает контекст-менеджер get_session
 
         return {
             "user_id": str(user_id),
@@ -201,16 +199,16 @@ class AuthService:
             if str(session.device_id) != token_device_id:
                 raise ValueError("Token device mismatch")
         except jwt.ExpiredSignatureError:
-            # Истёкший токен всё равно ревоцируем
             pass
         except jwt.InvalidTokenError:
             raise ValueError("Invalid access token")
 
         # 3. Ревоцируем сессию
-        await self.session_repo.update(session, is_revoked=True, last_used=datetime.utcnow())
+        await self.session_repo.update(session, {"is_revoked": True, "last_used": datetime.utcnow()})
 
         redis = await RedisClient.get_instance()
         cache_key = f"session:valid:{access_token}"
+
         await redis.delete(cache_key)
 
         return {
@@ -267,7 +265,7 @@ class AuthService:
         # 1. Проверить кэш Redis
 
         redis = await RedisClient.get_instance()
-        cache_key = f"session_valid:{access_token}"
+        cache_key = f"session:valid:{access_token}"
         cached = await redis.get(cache_key)
         if cached:
             import json

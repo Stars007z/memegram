@@ -14,10 +14,18 @@ services:
       - DEBUG=false
       - AUTH_GRPC_HOST=auth-service
       - AUTH_GRPC_PORT=50051
+      - AUTH_GRPC_TIMEOUT=10.0
+      - AUTH_GRPC_HOST=auth-service
       - AUTH_GRPC_TIMEOUT=30.0
+      - USER_GRPC_HOST=user-service
+      - USER_GRPC_PORT=50052
+      - USER_GRPC_TIMEOUT=10.0
     depends_on:
       auth-service:
         condition: service_healthy
+      user-service:
+        condition: service_healthy
+
     networks:
       - memegram-backend
     restart: unless-stopped

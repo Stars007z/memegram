@@ -4,6 +4,34 @@ from app.config import settings
 
 _channel: grpc.aio.Channel | None = None
 
+_user_channel: grpc.aio.Channel | None = None
+
+def _create_user_channel() -> grpc.aio.Channel:
+    return grpc.aio.insecure_channel(
+        settings.USER_GRPC_ADDRESS,
+        options=[
+            ("grpc.initial_reconnect_backoff_ms", 500),
+            ("grpc.max_reconnect_backoff_ms", 5000),
+        ],
+    )
+
+async def get_user_grpc_channel() -> grpc.aio.Channel:
+    global _user_channel
+    if _user_channel is None:
+        _user_channel = _create_user_channel()
+        return _user_channel
+    state = _user_channel.get_state(try_to_connect=False)
+    if state == grpc.ChannelConnectivity.SHUTDOWN:
+        _user_channel = _create_user_channel()
+    return _user_channel
+
+async def close_grpc_channel():
+    global channel, _user_channel
+    if channel:
+        await channel.close()
+    if _user_channel:
+        await _user_channel.close()
+
 
 async def get_grpc_channel() -> grpc.aio.Channel:
     global _channel
@@ -31,9 +59,3 @@ def _create_channel() -> grpc.aio.Channel:
         ],
     )
 
-
-async def close_grpc_channel() -> None:
-    global _channel
-    if _channel is not None:
-        await _channel.close()
-        _channel = None

@@ -1,0 +1,164 @@
+syntax = "proto3";
+package user;
+
+service UserService {
+    // Пользователь
+    rpc CreateUser(CreateUserRequest) returns (UserProfileResponse);
+    rpc GetUser(GetUserRequest) returns (UserProfileResponse);
+    rpc GetUserByUserPublicKey(GetUserByUserPublicKeyRequest) returns (UserProfileResponse);
+    rpc UpdateUser(UpdateUserRequest) returns (UserProfileResponse);
+    rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+    rpc CheckAndProcessAutoDelete(CheckAndProcessAutoDeleteRequest) returns (CheckAndProcessAutoDeleteResponse);
+
+    // Настройки
+    rpc GetUserSettings(GetUserSettingsRequest) returns (UserSettingsResponse);
+    rpc UpdateUserSettings(UpdateUserSettingsRequest) returns (UserSettingsResponse);
+
+    // Internal-методы
+    rpc GetUsersBatch(GetUsersBatchRequest) returns (GetUsersBatchResponse);
+    rpc UserExists(UserExistsRequest) returns (UserExistsResponse);
+    rpc UpdateLastActive(UpdateLastActiveRequest) returns (UpdateLastActiveResponse);
+    rpc GetPrivacySettings(GetPrivacySettingsRequest) returns (GetPrivacySettingsResponse);
+
+    // Системные
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message UserProfile {
+    string id           = 1;
+    string username     = 2;
+    string user_public_key = 3;
+    string bio          = 4;
+    bool   is_deleted   = 5;
+    optional string avatar_media_id              = 6;
+    optional string profile_background_media_id  = 7;
+    optional int64  last_active                  = 8;
+}
+
+message UserProfileResponse {
+    UserProfile profile = 1;
+}
+
+message CreateUserRequest {
+    string user_id   = 1;
+    string username  = 2;
+}
+
+message GetUserRequest {
+    string user_id           = 1;
+    string requester_user_id = 2;
+}
+
+message GetUserByUserPublicKeyRequest {
+    string user_public_key   = 1;
+    string requester_user_id = 2;
+}
+
+message UpdateUserRequest {
+    string user_id                          = 1;
+    optional string bio                     = 2;
+    optional string username                = 3;
+    optional string avatar_media_id         = 4;
+    optional string profile_background_media_id = 5;
+}
+
+message DeleteUserRequest {
+    string user_id = 1;
+}
+
+message DeleteUserResponse {
+    bool  success    = 1;
+    int64 deleted_at = 2;
+}
+
+message CheckAndProcessAutoDeleteRequest {}
+
+message CheckAndProcessAutoDeleteResponse {
+    int32            deleted_count = 1;
+    repeated string  user_ids      = 2;
+}
+
+message GetUserSettingsRequest {
+    string user_id = 1;
+}
+
+message UserSettings {
+    string user_id                  = 1;
+    string theme                    = 2;
+    string language                 = 3;
+    bool   is_translator_active     = 4;
+    bool   animations_enabled       = 5;
+    optional int32  account_auto_delete_after_days = 6;
+    string profile_visible_to       = 7;
+    string last_active_visible_to   = 8;
+    optional string chat_background_media_id = 9;
+    optional string top_bar_color            = 10;
+    optional string ringtone_media_id        = 11;
+    optional int32  ringtone_vibration_strength = 12;
+    optional string notification_sound          = 13;
+    optional int32  notification_vibration_strength = 14;
+}
+
+message UserSettingsResponse {
+    UserSettings settings = 1;
+}
+
+message UpdateUserSettingsRequest {
+    string          user_id                 = 1;
+    optional string theme                   = 2;
+    optional string language                = 3;
+    optional bool   is_translator_active    = 4;
+    optional bool   animations_enabled      = 5;
+    optional int32  account_auto_delete_after_days = 6;
+    optional string profile_visible_to      = 7;
+    optional string last_active_visible_to  = 8;
+    optional string chat_background_media_id    = 9;
+    optional string top_bar_color               = 10;
+    optional string ringtone_media_id           = 11;
+    optional int32  ringtone_vibration_strength = 12;
+    optional string notification_sound          = 13;
+    optional int32  notification_vibration_strength = 14;
+}
+
+message GetUsersBatchRequest {
+    repeated string user_ids = 1;
+}
+
+message GetUsersBatchResponse {
+    repeated UserProfile users = 1;
+}
+
+message UserExistsRequest {
+    string user_id = 1;
+}
+
+message UserExistsResponse {
+    bool exists     = 1;
+    bool is_deleted = 2;
+}
+
+message UpdateLastActiveRequest {
+    string user_id = 1;
+}
+
+message UpdateLastActiveResponse {
+    bool success = 1;
+}
+
+message GetPrivacySettingsRequest {
+    string user_id = 1;
+}
+
+message GetPrivacySettingsResponse {
+    string profile_visible_to     = 1;
+    string last_active_visible_to = 2;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+    string status      = 1;
+    string db_status   = 2;
+    string redis_status = 3;
+    string version     = 4;
+}

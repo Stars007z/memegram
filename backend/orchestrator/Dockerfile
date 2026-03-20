@@ -1,5 +1,4 @@
 FROM python:3.12-slim
-
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,41 +8,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
+# Зависимости отдельным слоем для кэша
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем весь проект
 COPY . .
 
-RUN mkdir -p app/infrastructure/grpc/generated && \
-    python -m grpc_tools.protoc \
+RUN mkdir -p app/infrastructure/grpc/generated
+
+RUN python -m grpc_tools.protoc \
         -I./proto \
         --python_out=./app/infrastructure/grpc/generated \
         --grpc_python_out=./app/infrastructure/grpc/generated \
-        ./proto/auth.proto
+        ./proto/auth.proto \
+        ./proto/user.proto
+
+RUN echo "=== GENERATED FILES ===" && \
+    ls -la app/infrastructure/grpc/generated/ && \
+    echo "=== __init__.py CONTENT ===" && \
+    cat app/infrastructure/grpc/generated/__init__.py && \
+    echo "=== auth_pb2.py EXISTS ===" && \
+    python -c "import sys; sys.path.insert(0, '.'); from app.infrastructure.grpc.generated import auth_pb2; print('OK')" 2>&1
+
+
+RUN test -f app/infrastructure/grpc/generated/auth_pb2.py || (echo "ERROR: auth_pb2.py not generated!" && exit 1)
 
 RUN python - <<'EOF'
 import re, pathlib
-
-target = pathlib.Path("app/infrastructure/grpc/generated/auth_pb2_grpc.py")
-text = target.read_text()
-# Заменяем любой абсолютный "import auth_pb2" на относительный
-text = re.sub(r'^import (\w+_pb2)', r'from . import \1', text, flags=re.MULTILINE)
-target.write_text(text)
-print("Patched:", target)
+for name in ["auth_pb2_grpc", "user_pb2_grpc"]:
+    target = pathlib.Path(f"app/infrastructure/grpc/generated/{name}.py")
+    text = target.read_text()
+    text = re.sub(r"^import (\w+pb2)", r"from . import \1", text, flags=re.MULTILINE)
+    target.write_text(text)
+    print("Patched", target)
 EOF
 
-RUN touch app/__init__.py \
-         app/api/__init__.py \
-         app/api/v1/__init__.py \
-         app/api/v1/auth/__init__.py \
-         app/core/__init__.py \
-         app/core/interfaces/__init__.py \
-         app/core/use_cases/__init__.py \
-         app/core/use_cases/auth/__init__.py \
-         app/infrastructure/__init__.py \
-         app/infrastructure/grpc/__init__.py \
-         app/infrastructure/grpc/generated/__init__.py \
-         app/exceptions/__init__.py
+# __init__.py создаём ПОСЛЕДНИМ — после всей генерации
+RUN find app -type d | xargs -I{} touch {}/__init__.py 2>/dev/null || true
+
 
 EXPOSE 8000
 
