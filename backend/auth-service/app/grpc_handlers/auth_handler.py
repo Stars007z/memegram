@@ -2,7 +2,6 @@ import grpc
 from app.generated import auth_pb2, auth_pb2_grpc
 from app.services.auth_service import AuthService
 from app.database.redis import check_redis_health
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
@@ -10,7 +9,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
         self.get_session = get_session
 
     async def Register(self, request, context):
-        """Регистрация нового пользователя"""
         if not request.invite_code or not request.device_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("Missing required fields")
@@ -39,7 +37,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 return auth_pb2.AuthResponse()
 
     async def LoginInit(self, request, context):
-        """Этап 1: Генерация challenge"""
         if not request.device_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("device_id is required")
@@ -60,7 +57,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 return auth_pb2.LoginInitResponse()
 
     async def LoginComplete(self, request, context):
-        """Этап 2: Верификация и выдача токенов"""
         if not request.device_id or not request.challenge or not request.signature:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("Missing required fields")
@@ -85,8 +81,33 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 context.set_details(f"Internal error: {str(e)}")
                 return auth_pb2.AuthResponse()
 
+    async def RefreshToken(self, request, context):
+        if not request.refresh_token:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("refresh_token is required")
+            return auth_pb2.AuthResponse()
+
+        async with self.get_session() as session:
+            service = AuthService(session)
+            try:
+                result = await service.refresh_token(refresh_token=request.refresh_token)
+                return auth_pb2.AuthResponse(**result)
+            except ValueError as e:
+                msg = str(e)
+                if "expired" in msg.lower():
+                    context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+                elif "revoked" in msg.lower() or "not found" in msg.lower():
+                    context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+                else:
+                    context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details(msg)
+                return auth_pb2.AuthResponse()
+            except Exception as e:
+                context.set_code(grpc.StatusCode.INTERNAL)
+                context.set_details(f"Internal error: {str(e)}")
+                return auth_pb2.AuthResponse()
+
     async def Logout(self, request, context):
-        """Завершение сессии"""
         if not request.access_token:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("access_token is required")
@@ -107,7 +128,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 return auth_pb2.LogoutResponse(success=False, message=str(e))
 
     async def HealthCheck(self, request, context):
-        """Проверка работоспособности"""
         db_status = "unknown"
         redis_status = "unknown"
 
@@ -129,13 +149,10 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
             status="ok" if db_status == "connected" and redis_status == "connected" else "degraded",
             db_status=db_status,
             redis_status=redis_status,
-            version="1.0.0"
+            version="1.0.0",
         )
 
-
     async def CreateInvite(self, request, context):
-        """Создание нового инвайт-кода (админ)"""
-
         if not request.expires_in_days:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("expires_in_days is required")
@@ -146,23 +163,19 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
             try:
                 result = await service.create_invite(
                     expires_in_days=request.expires_in_days,
-                    created_by_device_id=request.created_by_device_id if request.created_by_device_id else None
+                    created_by_device_id=request.created_by_device_id
+                    if request.created_by_device_id
+                    else None,
                 )
                 return auth_pb2.CreateInviteResponse(**result)
-
             except ValueError as e:
                 context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details(str(e))
-                return auth_pb2.CreateInviteResponse()
-            except PermissionError as e:
-                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
                 context.set_details(str(e))
                 return auth_pb2.CreateInviteResponse()
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {str(e)}")
                 return auth_pb2.CreateInviteResponse()
-
 
     async def ValidateToken(self, request, context):
         if not request.access_token:
@@ -173,9 +186,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
         async with self.get_session() as session:
             service = AuthService(session)
             try:
-                result = await service.validate_token(
-                    access_token=request.access_token
-                )
+                result = await service.validate_token(access_token=request.access_token)
                 return auth_pb2.ValidateTokenResponse(**result)
-            except Exception as e:
+            except Exception:
                 return auth_pb2.ValidateTokenResponse(valid=False)

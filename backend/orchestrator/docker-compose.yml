@@ -15,22 +15,27 @@ services:
       - AUTH_GRPC_HOST=auth-service
       - AUTH_GRPC_PORT=50051
       - AUTH_GRPC_TIMEOUT=10.0
-      - AUTH_GRPC_HOST=auth-service
-      - AUTH_GRPC_TIMEOUT=30.0
       - USER_GRPC_HOST=user-service
       - USER_GRPC_PORT=50052
       - USER_GRPC_TIMEOUT=10.0
+      - CONTACTS_GRPC_HOST=contacts-service
+      - CONTACTS_GRPC_PORT=50053
+      - CONTACTS_GRPC_TIMEOUT=10.0
+      - AUTO_DELETE_CRON_HOUR=3
+      - AUTO_DELETE_CRON_MINUTE=0
     depends_on:
       auth-service:
         condition: service_healthy
       user-service:
         condition: service_healthy
-
+      contacts-service:
+        condition: service_healthy
     networks:
       - memegram-backend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]
+      test: ["CMD", "python", "-c",
+        "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]
       interval: 20s
       timeout: 5s
       retries: 3

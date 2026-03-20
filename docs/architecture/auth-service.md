@@ -82,11 +82,6 @@
 **Возврат:** `user_id`, `device_id` (= `devices.id`), `is_primary`,
 `access_token`, `refresh_token`, `expires_at`
 
-> ⚠️ **Saga-проблема:** оркестратор вызывает `user-service.CreateUser` ПОСЛЕ
-> того, как `auth.Register` уже завершился (инвайт помечен использованным,
-> сессия создана). При падении `CreateUser` откатить состояние auth-service
-> невозможно без реализации `RevokeRegistration`. До реализации этого метода
-> регистрация не является атомарной операцией на уровне системы.
 
 ---
 
@@ -170,16 +165,6 @@
 Проверяет PostgreSQL (`SELECT 1`) и Redis (ping).
 
 **Возврат:** `status` (`ok`/`degraded`), `db_status`, `redis_status`, `version`
-
----
-
-### ❌ Не реализовано (есть в спецификации)
-| Метод / Endpoint | Приоритет | Примечание |
-|-----------------|-----------|------------|
-| `RevokeRegistration` | 🔴 Критично | Без него Saga регистрации не откатываема |
-| Все `/devices/*` endpoints | 🟡 | Таблица `device_registration` создана, логика — нет |
-| `GetStatus` | 🟢 | Нет gRPC-метода |
-| `GetInvite` | 🟢 | Нет gRPC-метода |
 
 ---
 

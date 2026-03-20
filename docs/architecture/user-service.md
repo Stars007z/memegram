@@ -124,11 +124,7 @@ Soft-delete: `is_deleted = true`, `deleted_at = now()`.
 ### `UpdateUserSettings(UpdateUserSettingsRequest) → UserSettingsResponse`
 Patch-семантика через `google.protobuf.FieldMask`.
 
-> ⚠️ Нельзя использовать семантику "числовое поле обновляется если `!= 0`" —
-> это исключает возможность явно выставить нулевое значение (например,
-> `ringtone_vibration_strength = 0`). Все поля, включая числовые, должны
-> обновляться только если они присутствуют в `FieldMask`, либо использовать
-> обёрточные типы (`google.protobuf.Int32Value`).
+
 
 ---
 

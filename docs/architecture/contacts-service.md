@@ -46,10 +46,6 @@ contacts-service
 
 └── user-service (UserExists, GetUsersBatch, GetPrivacySettings)
 
-> ⚠️ **Циклическая зависимость:** user-service также вызывает contacts-service.IsContact
-> для проверки приватности. После деплоя contacts-service эту проверку берёт на себя
-> оркестратор, и user-service перестаёт обращаться к contacts-service напрямую.
-> До этого момента user-service работает через graceful fallback (IsContact = false).
 
 ---
 

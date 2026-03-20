@@ -4,6 +4,7 @@ from app.models.device import Device
 from app.repositories.base import BaseRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 class DeviceRepository(BaseRepository[Device]):
     def __init__(self, session: AsyncSession):
         super().__init__(Device, session)
@@ -13,5 +14,13 @@ class DeviceRepository(BaseRepository[Device]):
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_by_device_id(self, device_id: str) -> Device:
-        return await self.get_by_id(uuid.UUID(device_id))
+    async def get_by_device_id(self, device_id: str) -> Device | None:
+        """Lookup by primary key devices.id (UUID issued to client at registration)."""
+        try:
+            return await self.get_by_id(uuid.UUID(device_id))
+        except (ValueError, AttributeError):
+            return None
+
+    async def get_by_client_device_id(self, client_device_id: str) -> Device | None:
+        """Lookup by client-provided device identifier (client_device_id)."""
+        return await self.get_by_field("client_device_id", client_device_id)

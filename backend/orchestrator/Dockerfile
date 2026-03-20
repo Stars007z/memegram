@@ -1,52 +1,41 @@
 FROM python:3.12-slim
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    netcat-openbsd \
+    build-essential libpq-dev curl netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Зависимости отдельным слоем для кэша
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь проект
 COPY . .
 
 RUN mkdir -p app/infrastructure/grpc/generated
 
+# Compile all proto files
 RUN python -m grpc_tools.protoc \
-        -I./proto \
-        --python_out=./app/infrastructure/grpc/generated \
-        --grpc_python_out=./app/infrastructure/grpc/generated \
-        ./proto/auth.proto \
-        ./proto/user.proto
+    -I./proto \
+    --python_out=./app/infrastructure/grpc/generated \
+    --grpc_python_out=./app/infrastructure/grpc/generated \
+    ./proto/auth.proto \
+    ./proto/user.proto \
+    ./proto/contacts.proto
 
-RUN echo "=== GENERATED FILES ===" && \
-    ls -la app/infrastructure/grpc/generated/ && \
-    echo "=== __init__.py CONTENT ===" && \
-    cat app/infrastructure/grpc/generated/__init__.py && \
-    echo "=== auth_pb2.py EXISTS ===" && \
-    python -c "import sys; sys.path.insert(0, '.'); from app.infrastructure.grpc.generated import auth_pb2; print('OK')" 2>&1
-
-
-RUN test -f app/infrastructure/grpc/generated/auth_pb2.py || (echo "ERROR: auth_pb2.py not generated!" && exit 1)
-
+# Fix relative imports in generated stubs
 RUN python - <<'EOF'
 import re, pathlib
-for name in ["auth_pb2_grpc", "user_pb2_grpc"]:
+for name in ["auth_pb2_grpc", "user_pb2_grpc", "contacts_pb2_grpc"]:
     target = pathlib.Path(f"app/infrastructure/grpc/generated/{name}.py")
-    text = target.read_text()
-    text = re.sub(r"^import (\w+pb2)", r"from . import \1", text, flags=re.MULTILINE)
-    target.write_text(text)
-    print("Patched", target)
+    if target.exists():
+        text = target.read_text()
+        text = re.sub(r"^import (\w+_pb2)", r"from . import \1", text, flags=re.MULTILINE)
+        target.write_text(text)
+        print("Patched", target)
 EOF
 
-# __init__.py создаём ПОСЛЕДНИМ — после всей генерации
-RUN find app -type d | xargs -I{} touch {}/__init__.py 2>/dev/null || true
-
+# Ensure all __init__.py files exist
+RUN find app -type d | xargs -I{} touch {}/__init__.py 2>/dev/null; true
 
 EXPOSE 8000
 
