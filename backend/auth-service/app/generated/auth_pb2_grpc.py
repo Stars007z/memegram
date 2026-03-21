@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import auth_pb2 as auth__pb2
+from . import auth_pb2 as auth_pb2
 
 GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
@@ -36,33 +36,38 @@ class AuthServiceStub(object):
         """
         self.Register = channel.unary_unary(
                 '/auth.AuthService/Register',
-                request_serializer=auth__pb2.RegisterRequest.SerializeToString,
-                response_deserializer=auth__pb2.AuthResponse.FromString,
+                request_serializer=auth_pb2.RegisterRequest.SerializeToString,
+                response_deserializer=auth_pb2.AuthResponse.FromString,
                 _registered_method=True)
         self.LoginInit = channel.unary_unary(
                 '/auth.AuthService/LoginInit',
-                request_serializer=auth__pb2.LoginInitRequest.SerializeToString,
-                response_deserializer=auth__pb2.LoginInitResponse.FromString,
+                request_serializer=auth_pb2.LoginInitRequest.SerializeToString,
+                response_deserializer=auth_pb2.LoginInitResponse.FromString,
                 _registered_method=True)
         self.LoginComplete = channel.unary_unary(
                 '/auth.AuthService/LoginComplete',
-                request_serializer=auth__pb2.LoginCompleteRequest.SerializeToString,
-                response_deserializer=auth__pb2.AuthResponse.FromString,
+                request_serializer=auth_pb2.LoginCompleteRequest.SerializeToString,
+                response_deserializer=auth_pb2.AuthResponse.FromString,
                 _registered_method=True)
         self.Logout = channel.unary_unary(
                 '/auth.AuthService/Logout',
-                request_serializer=auth__pb2.LogoutRequest.SerializeToString,
-                response_deserializer=auth__pb2.LogoutResponse.FromString,
+                request_serializer=auth_pb2.LogoutRequest.SerializeToString,
+                response_deserializer=auth_pb2.LogoutResponse.FromString,
                 _registered_method=True)
         self.HealthCheck = channel.unary_unary(
                 '/auth.AuthService/HealthCheck',
-                request_serializer=auth__pb2.HealthCheckRequest.SerializeToString,
-                response_deserializer=auth__pb2.HealthCheckResponse.FromString,
+                request_serializer=auth_pb2.HealthCheckRequest.SerializeToString,
+                response_deserializer=auth_pb2.HealthCheckResponse.FromString,
                 _registered_method=True)
         self.CreateInvite = channel.unary_unary(
                 '/auth.AuthService/CreateInvite',
-                request_serializer=auth__pb2.CreateInviteRequest.SerializeToString,
-                response_deserializer=auth__pb2.CreateInviteResponse.FromString,
+                request_serializer=auth_pb2.CreateInviteRequest.SerializeToString,
+                response_deserializer=auth_pb2.CreateInviteResponse.FromString,
+                _registered_method=True)
+        self.ValidateToken = channel.unary_unary(
+                '/auth.AuthService/ValidateToken',
+                request_serializer=auth_pb2.ValidateTokenRequest.SerializeToString,
+                response_deserializer=auth_pb2.ValidateTokenResponse.FromString,
                 _registered_method=True)
 
 
@@ -110,38 +115,49 @@ class AuthServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ValidateToken(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AuthServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Register': grpc.unary_unary_rpc_method_handler(
                     servicer.Register,
-                    request_deserializer=auth__pb2.RegisterRequest.FromString,
-                    response_serializer=auth__pb2.AuthResponse.SerializeToString,
+                    request_deserializer=auth_pb2.RegisterRequest.FromString,
+                    response_serializer=auth_pb2.AuthResponse.SerializeToString,
             ),
             'LoginInit': grpc.unary_unary_rpc_method_handler(
                     servicer.LoginInit,
-                    request_deserializer=auth__pb2.LoginInitRequest.FromString,
-                    response_serializer=auth__pb2.LoginInitResponse.SerializeToString,
+                    request_deserializer=auth_pb2.LoginInitRequest.FromString,
+                    response_serializer=auth_pb2.LoginInitResponse.SerializeToString,
             ),
             'LoginComplete': grpc.unary_unary_rpc_method_handler(
                     servicer.LoginComplete,
-                    request_deserializer=auth__pb2.LoginCompleteRequest.FromString,
-                    response_serializer=auth__pb2.AuthResponse.SerializeToString,
+                    request_deserializer=auth_pb2.LoginCompleteRequest.FromString,
+                    response_serializer=auth_pb2.AuthResponse.SerializeToString,
             ),
             'Logout': grpc.unary_unary_rpc_method_handler(
                     servicer.Logout,
-                    request_deserializer=auth__pb2.LogoutRequest.FromString,
-                    response_serializer=auth__pb2.LogoutResponse.SerializeToString,
+                    request_deserializer=auth_pb2.LogoutRequest.FromString,
+                    response_serializer=auth_pb2.LogoutResponse.SerializeToString,
             ),
             'HealthCheck': grpc.unary_unary_rpc_method_handler(
                     servicer.HealthCheck,
-                    request_deserializer=auth__pb2.HealthCheckRequest.FromString,
-                    response_serializer=auth__pb2.HealthCheckResponse.SerializeToString,
+                    request_deserializer=auth_pb2.HealthCheckRequest.FromString,
+                    response_serializer=auth_pb2.HealthCheckResponse.SerializeToString,
             ),
             'CreateInvite': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateInvite,
-                    request_deserializer=auth__pb2.CreateInviteRequest.FromString,
-                    response_serializer=auth__pb2.CreateInviteResponse.SerializeToString,
+                    request_deserializer=auth_pb2.CreateInviteRequest.FromString,
+                    response_serializer=auth_pb2.CreateInviteResponse.SerializeToString,
+            ),
+            'ValidateToken': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateToken,
+                    request_deserializer=auth_pb2.ValidateTokenRequest.FromString,
+                    response_serializer=auth_pb2.ValidateTokenResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -169,8 +185,8 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/Register',
-            auth__pb2.RegisterRequest.SerializeToString,
-            auth__pb2.AuthResponse.FromString,
+            auth_pb2.RegisterRequest.SerializeToString,
+            auth_pb2.AuthResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -196,8 +212,8 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/LoginInit',
-            auth__pb2.LoginInitRequest.SerializeToString,
-            auth__pb2.LoginInitResponse.FromString,
+            auth_pb2.LoginInitRequest.SerializeToString,
+            auth_pb2.LoginInitResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -223,8 +239,8 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/LoginComplete',
-            auth__pb2.LoginCompleteRequest.SerializeToString,
-            auth__pb2.AuthResponse.FromString,
+            auth_pb2.LoginCompleteRequest.SerializeToString,
+            auth_pb2.AuthResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -250,8 +266,8 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/Logout',
-            auth__pb2.LogoutRequest.SerializeToString,
-            auth__pb2.LogoutResponse.FromString,
+            auth_pb2.LogoutRequest.SerializeToString,
+            auth_pb2.LogoutResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -277,8 +293,8 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/HealthCheck',
-            auth__pb2.HealthCheckRequest.SerializeToString,
-            auth__pb2.HealthCheckResponse.FromString,
+            auth_pb2.HealthCheckRequest.SerializeToString,
+            auth_pb2.HealthCheckResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -304,8 +320,35 @@ class AuthService(object):
             request,
             target,
             '/auth.AuthService/CreateInvite',
-            auth__pb2.CreateInviteRequest.SerializeToString,
-            auth__pb2.CreateInviteResponse.FromString,
+            auth_pb2.CreateInviteRequest.SerializeToString,
+            auth_pb2.CreateInviteResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ValidateToken(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/auth.AuthService/ValidateToken',
+            auth_pb2.ValidateTokenRequest.SerializeToString,
+            auth_pb2.ValidateTokenResponse.FromString,
             options,
             channel_credentials,
             insecure,

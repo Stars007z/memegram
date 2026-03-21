@@ -61,6 +61,13 @@ class CreateInviteResult:
     is_used: bool
     message: str
 
+@dataclass
+class ValidateTokenResult:
+    valid: bool
+    user_id: str
+    device_id: str
+    device_type: str
+    expires_at: int
 
 class IAuthGateway(ABC):
 
@@ -86,4 +93,8 @@ class IAuthGateway(ABC):
 
     @abstractmethod
     async def create_invite(self, expires_in_days: int, created_by_device_id: Optional[str]) -> CreateInviteResult:
+        ...
+
+    @abstractmethod
+    async def validate_token(self, access_token: str) -> ValidateTokenResult:
         ...

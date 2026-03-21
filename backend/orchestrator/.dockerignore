@@ -1,0 +1,1 @@
+app/infrastructure/grpc/generated/*_pb2*.py
