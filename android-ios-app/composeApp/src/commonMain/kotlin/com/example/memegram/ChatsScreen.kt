@@ -156,7 +156,12 @@ fun ChatsScreen(
                     label = { Text("Выйти", color = MaterialTheme.colorScheme.error) },
                     icon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
                     selected = false,
-                    onClick = { scope.launch { drawerState.close(); viewModel.logout(); onLogout() } },
+                    onClick = {
+                        scope.launch {
+                            drawerState.close()
+                            viewModel.logout { onLogout() }
+                        }
+                    },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }

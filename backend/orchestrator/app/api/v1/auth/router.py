@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+import dataclasses
 
 from app.api.dependencies import (
     get_register_use_case,
@@ -26,7 +27,7 @@ from app.core.use_cases.auth.login_init import LoginInitUseCase
 from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
-from app.core.interfaces.auth_gateway import IAuthGateway
+from app.core.interfaces.auth_gateway import IAuthGateway, RegisterRequest
 from app.core.session_context import SessionContext
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,9 +36,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=AuthResponseSchema, status_code=201)
 async def register(
     body: RegisterRequestSchema,
-    use_case: RegisterUseCase = Depends(get_register_use_case),
+    usecase: RegisterUseCase = Depends(get_register_use_case),
 ) -> AuthResponseSchema:
-    result = await use_case.execute(
+    request = RegisterRequest(
         username=body.username,
         invite_code=body.invite_code,
         device_id=body.device_id,
@@ -46,7 +47,9 @@ async def register(
         init_key_pub=body.init_key_pub_bytes,
         credential_data=body.credential_data_bytes,
     )
-    return AuthResponseSchema(**result.__dict__)
+    result = await usecase.execute(request)
+    return AuthResponseSchema(**dataclasses.asdict(result))
+
 
 
 @router.post("/login-init", response_model=LoginInitResponseSchema)

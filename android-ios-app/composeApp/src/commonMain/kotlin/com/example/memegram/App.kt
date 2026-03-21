@@ -155,16 +155,6 @@ fun App() {
                             onBlackListClick = { navController.navigate(BlackListRoute) }
                         )
                     }
-
-                    composable<BlackListRoute> {
-                        BlackListScreen(
-                            topBarColor = topBarColor,
-                            onBack = {
-                                if (navController.previousBackStackEntry != null)
-                                    navController.popBackStack()
-                            }
-                        )
-                    }
                 }
             }
         }
