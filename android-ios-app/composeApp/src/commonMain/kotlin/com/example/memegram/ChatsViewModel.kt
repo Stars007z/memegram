@@ -3,14 +3,20 @@ package com.example.memegram
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.network.ApiService
+import com.example.memegram.data.models.LogoutRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
-class ChatsViewModel(sessionManager: SessionManager) : ViewModel() {
+class ChatsViewModel(
+    private val sessionManager: SessionManager,
+    private val api: ApiService
+) : ViewModel() {
 
     private val _sessionManager = sessionManager
 
@@ -34,11 +40,20 @@ class ChatsViewModel(sessionManager: SessionManager) : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, _allChats.value)
 
-    fun setSearchQuery(query: String) {
-        _searchQuery.value = query
-    }
+    fun setSearchQuery(query: String) { _searchQuery.value = query }
 
-    fun logout() {
-        _sessionManager.clear()
+    fun logout(onDone: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = sessionManager.getAccessToken()
+                if (token != null) {
+                    api.logout(LogoutRequest(accessToken = token))
+                }
+            } catch (_: Exception) {
+            } finally {
+                sessionManager.clear()
+                onDone()
+            }
+        }
     }
 }

@@ -51,13 +51,14 @@ class AuthViewModel(
         viewModelScope.launch {
             _uiState.value = AuthState.Loading
             try {
-                val deviceId = sessionManager.getDeviceId() ?: "unknown_device"
-
+                val deviceId = sessionManager.getDeviceId()
+                    ?: run {
+                        _uiState.value = AuthState.Error("Устройство не зарегистрировано. Пройдите регистрацию.")
+                        return@launch
+                    }
                 val initResp = api.loginInit(LoginInitRequest(deviceId = deviceId))
-
                 val signatureBytes = keyManager.signChallenge(initResp.challenge)
                 val signatureBase64 = Base64.encode(signatureBytes)
-
                 val result = api.loginComplete(
                     LoginCompleteRequest(
                         deviceId = deviceId,
@@ -66,11 +67,10 @@ class AuthViewModel(
                         deviceName = "KMP Device"
                     )
                 )
-
                 sessionManager.save(result)
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
-                _uiState.value = AuthState.Error(e.message ?: "Unknown login error")
+                _uiState.value = AuthState.Error(e.message ?: "Ошибка входа")
             }
         }
     }
@@ -83,7 +83,6 @@ class AuthViewModel(
                 keyManager.getOrCreateKeyPair()
                 val pubKey = keyManager.getPublicKeyBase64()
                 val deviceId = "dev_${(0..10000).random()}"
-
                 val req = RegisterRequest(
                     username = username,
                     inviteCode = inviteCode,
@@ -91,15 +90,13 @@ class AuthViewModel(
                     deviceName = "KMP Device",
                     identityKeyPub = pubKey,
                     initKeyPub = pubKey,
-                    credentialData = "none"
+                    credentialData = pubKey
                 )
-
                 val result = api.register(req)
-
                 sessionManager.save(result)
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
-                _uiState.value = AuthState.Error(e.message ?: "Unknown registration error")
+                _uiState.value = AuthState.Error(e.message ?: "Ошибка регистрации")
             }
         }
     }

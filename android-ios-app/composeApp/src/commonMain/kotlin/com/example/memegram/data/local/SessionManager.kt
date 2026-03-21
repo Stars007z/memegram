@@ -30,7 +30,10 @@ class SessionManager(private val settings: Settings) {
 
 
     fun clear() {
-        settings.clear()
+        settings.remove("access_token")
+        settings.remove("refresh_token")
+        settings.remove("expires_at")
+        settings.remove("is_primary")
     }
 
     fun saveProfile(username: String, bio: String) {
