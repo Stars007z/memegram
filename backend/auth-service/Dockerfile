@@ -24,13 +24,13 @@ RUN mkdir -p app/generated && \
 
 RUN python - <<'EOF'
 import re, pathlib
-
 target = pathlib.Path("app/generated/auth_pb2_grpc.py")
 text = target.read_text()
-text = re.sub(r'^import (\w+_pb2)', r'from . import \1', text, flags=re.MULTILINE)
+text = re.sub(r'^import auth_pb2', 'from . import auth_pb2', text, flags=re.MULTILINE)
 target.write_text(text)
-print("Patched:", target)
+print("Patched", target)
 EOF
+
 
 RUN touch app/__init__.py app/generated/__init__.py
 

@@ -2,12 +2,42 @@ Table users {
   id uuid
   username varchar [not null]
   avatar_media_id uuid
+  profile_background_media_id uuid
   bio varchar
   created_at timestamp
 
-  account_auto_delete_after_days integer
+
   last_active timestamp
+  is_deleted bool
+  deleted_at timestamp
 }
+Table user_settings {
+  id uuid
+  user_id uuid
+
+  theme varchar             // light/dark/system
+  language varchar
+  is_translator_active bool
+  animations_enabled bool
+  account_auto_delete_after_days integer
+
+  profile_visible_to varchar
+    last_active_visible_to varchar
+
+  chat_background_media_id uuid
+  top_bar_color varchar
+
+  ringtone_media_id uuid
+  ringtone_vibration_strength int
+
+  notification_sound uuid
+  notification_vibration_strength int
+
+  created_at timestamp
+  updated_at timestamp
+}
+
+
 
 Table devices {
   id uuid
@@ -160,18 +190,7 @@ Table blocked_users {
   created_at timestamp
 }
 
-Table user_settings {
-  id uuid
-  user_id uuid
 
-  theme varchar             // light/dark/system
-  language varchar
-  font_size int
-  animations_enabled bool
-
-  created_at timestamp
-  updated_at timestamp
-}
 
 Table sessions {
   id uuid

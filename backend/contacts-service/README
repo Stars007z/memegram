@@ -1,0 +1,14 @@
+# contacts-service
+
+## Генерация proto (macOS)
+```bash
+python -m grpc_tools.protoc \
+  -I=proto \
+  --python_out=app/generated \
+  --grpc_python_out=app/generated \
+  proto/contacts.proto \
+  proto/user.proto
+
+sed -i '' 's/^import contacts_pb2/from . import contacts_pb2/' app/generated/contacts_pb2_grpc.py
+sed -i '' 's/^import user_pb2/from . import user_pb2/' app/generated/user_pb2_grpc.py
+```

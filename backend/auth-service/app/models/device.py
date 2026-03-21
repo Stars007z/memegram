@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, LargeBinary
+from sqlalchemy import String, Boolean, DateTime, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import uuid
@@ -11,9 +11,10 @@ class Device(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    device_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    # external identifier provided by the client at registration
+    client_device_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     device_name: Mapped[str] = mapped_column(String(255), nullable=True)
-    device_type: Mapped[str] = mapped_column(String(50), default="secondary")  # primary, secondary, admin
+    device_type: Mapped[str] = mapped_column(String(50), default="secondary")  # primary | secondary
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=True)

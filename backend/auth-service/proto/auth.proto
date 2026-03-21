@@ -6,54 +6,60 @@ service AuthService {
     rpc Register(RegisterRequest) returns (AuthResponse);
 
     // Login в 2 этапа
-    rpc LoginInit(LoginInitRequest) returns (LoginInitResponse);
+    rpc LoginInit(LoginInitRequest)       returns (LoginInitResponse);
     rpc LoginComplete(LoginCompleteRequest) returns (AuthResponse);
 
-    // Logout
-    rpc Logout(LogoutRequest) returns (LogoutResponse);
+    // Refresh & Logout
+    rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+    rpc Logout(LogoutRequest)             returns (LogoutResponse);
 
     // Health check
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 
-    // Создание инвайт-кода (админ)
+    // Создание инвайт-кода
     rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
+
+    rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
 }
 
 message RegisterRequest {
-    string username = 1;
-    string invite_code = 2;
-    string device_id = 3;
-    string device_name = 4;
-
-    bytes identity_key_pub = 5;
-    bytes init_key_pub = 6;
-    bytes credential_data = 7;
+    string username         = 1;
+    string invite_code      = 2;
+    string device_id        = 3;   // client-provided device identifier
+    string device_name      = 4;
+    bytes  identity_key_pub = 5;
+    bytes  init_key_pub     = 6;
+    bytes  credential_data  = 7;
 }
 
 message LoginInitRequest {
-    string device_id = 1;
+    string device_id = 1;   // devices.id UUID returned at registration
 }
 
 message LoginInitResponse {
-    string challenge = 1;           // Base64-encoded случайная строка
-    int64 expires_at = 2;           // Unix timestamp, когда challenge истечёт
-    string device_id = 3;
+    string challenge  = 1;
+    int64  expires_at = 2;
+    string device_id  = 3;
 }
 
 message LoginCompleteRequest {
-    string device_id = 1;
-    string challenge = 2;           // Полученный из LoginInit
-    bytes signature = 3;            // Подпись challenge приватным ключом
-    string device_name = 4;         // Обновление имени устройства
+    string device_id   = 1;
+    string challenge   = 2;
+    bytes  signature   = 3;
+    string device_name = 4;
+}
+
+message RefreshTokenRequest {
+    string refresh_token = 1;
 }
 
 message AuthResponse {
-    string user_id = 1;
-    string device_id = 2;
-    bool is_primary = 3;
-    string access_token = 4;
-    string refresh_token = 5;
-    int64 expires_at = 6;
+    string user_id        = 1;
+    string device_id      = 2;
+    bool   is_primary     = 3;
+    string access_token   = 4;
+    string refresh_token  = 5;
+    int64  expires_at     = 6;
 }
 
 message LogoutRequest {
@@ -61,27 +67,40 @@ message LogoutRequest {
 }
 
 message LogoutResponse {
-    bool success = 1;
+    bool   success = 1;
     string message = 2;
 }
 
 message HealthCheckRequest {}
 
 message HealthCheckResponse {
-    string status = 1;
-    string db_status = 2;
+    string status       = 1;
+    string db_status    = 2;
     string redis_status = 3;
-    string version = 4;
+    string version      = 4;
 }
+
 message CreateInviteRequest {
-    int32 expires_in_days = 1;
-    optional string created_by_device_id = 2;
+    int32           expires_in_days       = 1;
+    optional string created_by_device_id  = 2;
 }
 
 message CreateInviteResponse {
-    string code = 1;
-    int64 created_at = 2;
-    int64 expires_at = 3;
-    bool is_used = 4;
-    string message = 5;
+    string code       = 1;
+    int64  created_at = 2;
+    int64  expires_at = 3;
+    bool   is_used    = 4;
+    string message    = 5;
+}
+
+message ValidateTokenRequest {
+    string access_token = 1;
+}
+
+message ValidateTokenResponse {
+    bool   valid       = 1;
+    string user_id     = 2;
+    string device_id   = 3;
+    string device_type = 4;
+    int64  expires_at  = 5;
 }

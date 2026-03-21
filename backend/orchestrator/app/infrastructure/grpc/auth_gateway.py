@@ -11,10 +11,12 @@ from app.core.interfaces.auth_gateway import (
     LogoutResult,
     HealthResult,
     CreateInviteResult,
+    ValidateTokenResult
 )
 from app.exceptions import GatewayError, NotFoundError, ValidationError, PermissionDeniedError
 from app.infrastructure.grpc.client import get_grpc_channel
 from app.infrastructure.grpc.generated import auth_pb2, auth_pb2_grpc
+
 
 
 def _grpc_error_to_exception(e: grpc.RpcError) -> Exception:
@@ -154,4 +156,21 @@ class GrpcAuthGateway(IAuthGateway):
             expires_at=response.expires_at,
             is_used=response.is_used,
             message=response.message,
+        )
+
+    async def validate_token(self, access_token: str) -> ValidateTokenResult:
+        stub = await self.get_stub()
+        try:
+            response = await stub.ValidateToken(
+                authpb2.ValidateTokenRequest(access_token=access_token),
+                timeout=settings.AUTH_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e)
+        return ValidateTokenResult(
+            valid=response.valid,
+            user_id=response.user_id,
+            device_id=response.device_id,
+            device_type=response.device_type,
+            expires_at=response.expires_at,
         )

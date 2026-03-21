@@ -9,6 +9,9 @@ venv/
 .venv/
 ENV/
 
+all_files.txt
+skibiobi.py
+
 .env
 .env.local
 .env.*.local
@@ -44,3 +47,5 @@ coverage.xml
 .tox/
 
 alembic/versions/*.pyc
+
+static/
