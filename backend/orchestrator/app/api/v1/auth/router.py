@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 import dataclasses
 
 from app.api.dependencies import (
@@ -9,6 +9,7 @@ from app.api.dependencies import (
     get_create_invite_use_case,
     get_auth_gateway,
     get_current_session,
+    get_user_gateway,
 )
 from app.api.v1.auth.schemas import (
     RegisterRequestSchema,
@@ -28,7 +29,9 @@ from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.interfaces.auth_gateway import IAuthGateway, RegisterRequest
+from app.core.interfaces.user_gateway import IUserGateway
 from app.core.session_context import SessionContext
+from app.exceptions import NotFoundError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,6 +68,7 @@ async def login_init(
 async def login_complete(
     body: LoginCompleteRequestSchema,
     use_case: LoginCompleteUseCase = Depends(get_login_complete_use_case),
+    user_gateway: IUserGateway = Depends(get_user_gateway),
 ) -> AuthResponseSchema:
     result = await use_case.execute(
         device_id=body.device_id,
@@ -72,6 +76,13 @@ async def login_complete(
         signature=body.signature_bytes,
         device_name=body.device_name,
     )
+    try:
+        await user_gateway.get_user(
+            user_id=result.user_id,
+            requester_user_id=result.user_id,
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=401, detail="Account has been deleted")
     return AuthResponseSchema(**result.__dict__)
 
 

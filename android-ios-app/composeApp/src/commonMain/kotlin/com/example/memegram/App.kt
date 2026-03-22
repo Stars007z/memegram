@@ -126,12 +126,11 @@ fun App() {
                         )
                     }
                     composable<NotificationsRoute> {
+                        val viewModel = koinViewModel<NotificationsViewModel>()
                         NotificationsScreen(
                             topBarColor = topBarColor,
-                            onBack = {
-                                if (navController.previousBackStackEntry != null)
-                                    navController.popBackStack()
-                            }
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            viewModel = viewModel
                         )
                     }
                     composable<LanguageRoute> {
@@ -146,13 +145,15 @@ fun App() {
                         )
                     }
                     composable<PrivacyRoute> {
+                        val viewModel = koinViewModel<PrivacyViewModel>()
                         PrivacyScreen(
                             topBarColor = topBarColor,
-                            onBack = {
-                                if (navController.previousBackStackEntry != null)
-                                    navController.popBackStack()
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            onBlackListClick = { navController.navigate(BlackListRoute) },
+                            onAccountDeleted = {
+                                navController.navigate(AuthRoute) { popUpTo(0) { inclusive = true } }
                             },
-                            onBlackListClick = { navController.navigate(BlackListRoute) }
+                            viewModel = viewModel
                         )
                     }
                 }
