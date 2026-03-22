@@ -48,4 +48,9 @@ class SessionManager(private val settings: Settings) {
     fun getBio(): String {
         return settings.getString("profile_bio", "KMP Developer")
     }
+
+    fun clearDeviceId() {
+        settings.remove("deviceid")
+        settings.remove("userid")
+    }
 }

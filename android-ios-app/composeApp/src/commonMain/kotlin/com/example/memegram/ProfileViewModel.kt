@@ -1,58 +1,82 @@
 package com.example.memegram
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.models.UpdateProfileRequest
+import com.example.memegram.data.repository.UserRepository
 import com.russhwolf.settings.Settings
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalEncodingApi::class)
-class ProfileViewModel(private val settings: Settings) : ViewModel() {
+class ProfileViewModel(
+    private val userRepository: UserRepository,
+    private val settings: Settings
+) : ViewModel() {
 
-    companion object {
-        const val KEY_USERNAME = "profile_username"
-        const val KEY_BIO     = "profile_bio"
-        const val KEY_AVATAR  = "profile_avatar_b64"
-        const val KEY_COVER   = "profile_cover_b64"
-    }
+    val username: StateFlow<String> = userRepository.profile
+        .map { it?.username ?: "" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
-    private val _username = MutableStateFlow(settings.getString(KEY_USERNAME, "User"))
-    val username: StateFlow<String> = _username.asStateFlow()
+    val bio: StateFlow<String> = userRepository.profile
+        .map { it?.bio ?: "" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
-    private val _bio = MutableStateFlow(settings.getString(KEY_BIO, ""))
-    val bio: StateFlow<String> = _bio.asStateFlow()
-
-    private val _avatarBytes = MutableStateFlow(
-        settings.getStringOrNull(KEY_AVATAR)?.let { Base64.decode(it) }
+    private val _avatarBytes = MutableStateFlow<ByteArray?>(
+        settings.getStringOrNull("profile_avatar")?.let { runCatching { Base64.decode(it) }.getOrNull() }
     )
     val avatarBytes: StateFlow<ByteArray?> = _avatarBytes.asStateFlow()
 
-    private val _coverBytes = MutableStateFlow(
-        settings.getStringOrNull(KEY_COVER)?.let { Base64.decode(it) }
+    private val _coverBytes = MutableStateFlow<ByteArray?>(
+        settings.getStringOrNull("profile_cover")?.let { runCatching { Base64.decode(it) }.getOrNull() }
     )
     val coverBytes: StateFlow<ByteArray?> = _coverBytes.asStateFlow()
 
-    fun updateUsername(name: String) {
-        settings.putString(KEY_USERNAME, name)
-        _username.value = name
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    init { loadProfile() }
+
+    fun loadProfile() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            userRepository.loadProfile().onFailure { _error.value = it.message }
+            _isLoading.value = false
+        }
+    }
+
+    fun updateUsername(newUsername: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            userRepository.updateProfile(UpdateProfileRequest(username = newUsername))
+                .onFailure { _error.value = it.message }
+            _isLoading.value = false
+        }
     }
 
     fun updateBio(newBio: String) {
-        settings.putString(KEY_BIO, newBio)
-        _bio.value = newBio
+        viewModelScope.launch {
+            _isLoading.value = true
+            userRepository.updateProfile(UpdateProfileRequest(bio = newBio))
+                .onFailure { _error.value = it.message }
+            _isLoading.value = false
+        }
     }
 
-    fun updateAvatar(bytes: ByteArray?) {
+    fun updateAvatar(bytes: ByteArray) {
         _avatarBytes.value = bytes
-        if (bytes != null) settings.putString(KEY_AVATAR, Base64.encode(bytes))
-        else settings.remove(KEY_AVATAR)
+        settings.putString("profile_avatar", Base64.encode(bytes))
     }
 
-    fun updateCover(bytes: ByteArray?) {
+    fun updateCover(bytes: ByteArray) {
         _coverBytes.value = bytes
-        if (bytes != null) settings.putString(KEY_COVER, Base64.encode(bytes))
-        else settings.remove(KEY_COVER)
+        settings.putString("profile_cover", Base64.encode(bytes))
     }
+
+    fun clearError() { _error.value = null }
 }

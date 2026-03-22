@@ -1,7 +1,6 @@
 package com.example.memegram
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,8 +26,6 @@ import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,25 +34,33 @@ fun ProfileScreen(
     onBack: () -> Unit,
     viewModel: ProfileViewModel
 ) {
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
-    val username by viewModel.username.collectAsState()
-    val bio by viewModel.bio.collectAsState()
+    val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val username    by viewModel.username.collectAsState()
+    val bio         by viewModel.bio.collectAsState()
+    val isLoading   by viewModel.isLoading.collectAsState()
+    val error       by viewModel.error.collectAsState()
     val avatarBytes by viewModel.avatarBytes.collectAsState()
-    val scope = rememberCoroutineScope()
-    var editingName by remember { mutableStateOf(false) }
-    var editingBio by remember { mutableStateOf(false) }
-    var nameInput by remember(username) { mutableStateOf(username) }
-    var bioInput by remember(bio) { mutableStateOf(bio) }
+    val coverBytes  by viewModel.coverBytes.collectAsState()
 
-    val avatarPickerLauncher = rememberFilePickerLauncher(
-        type = PickerType.Image,
-        mode = PickerMode.Single
-    ) { file ->
-        file?.let {
-            scope.launch {
-                viewModel.updateAvatar(it.readBytes())
-            }
-        }
+    var usernameInput by remember(username) { mutableStateOf(username) }
+    var bioInput      by remember(bio)      { mutableStateOf(bio) }
+    val scope = rememberCoroutineScope()
+
+    val avatarPicker = rememberFilePickerLauncher(
+        type = PickerType.Image, mode = PickerMode.Single
+    ) { file -> file?.let { scope.launch { viewModel.updateAvatar(it.readBytes()) } } }
+
+    val coverPicker = rememberFilePickerLauncher(
+        type = PickerType.Image, mode = PickerMode.Single
+    ) { file -> file?.let { scope.launch { viewModel.updateCover(it.readBytes()) } } }
+
+    error?.let { msg ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearError,
+            title = { Text("Ошибка") },
+            text  = { Text(msg) },
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+        )
     }
 
     Scaffold(
@@ -64,11 +69,7 @@ fun ProfileScreen(
                 title = { Text("Профиль") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = null,
-                            tint = topBarTextColor
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -86,185 +87,133 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(24.dp))
-
-            val coverBytes by viewModel.coverBytes.collectAsState()
-
-            val coverPickerLauncher = rememberFilePickerLauncher(
-                type = PickerType.Image,
-                mode = PickerMode.Single
-            ) { file ->
-                file?.let { scope.launch { viewModel.updateCover(it.readBytes()) } }
-            }
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
+                    .height(150.dp)
+                    .clickable { coverPicker.launch() },
+                contentAlignment = Alignment.BottomEnd
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .background(topBarColor.copy(alpha = 0.4f))
-                        .clickable { coverPickerLauncher.launch() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (coverBytes != null) {
-                        val coverBitmap = remember(coverBytes) { coverBytes!!.decodeToImageBitmap() }
+                if (coverBytes != null) {
+                    val bitmap = remember(coverBytes) {
+                        runCatching { coverBytes!!.decodeToImageBitmap() }.getOrNull()
+                    }
+                    if (bitmap != null) {
                         Image(
-                            bitmap = coverBitmap,
-                            contentDescription = null,
+                            bitmap = bitmap, contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     }
+                } else {
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceVariant) {}
+                }
+                Surface(
+                    modifier = Modifier.padding(10.dp),
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.4f)
+                ) {
                     Icon(
-                        Icons.Default.AddPhotoAlternate,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(32.dp)
+                        Icons.Default.CameraAlt, null,
+                        modifier = Modifier.padding(7.dp).size(16.dp),
+                        tint = Color.White
                     )
                 }
+            }
 
+            Box(
+                contentAlignment = Alignment.BottomEnd,
+                modifier = Modifier.offset(y = (-38).dp)
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 16.dp)
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .border(3.dp, MaterialTheme.colorScheme.background, CircleShape)
+                        .clickable { avatarPicker.launch() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(90.dp)
-                            .clip(CircleShape)
-                            .background(topBarColor)
-                            .border(3.dp, MaterialTheme.colorScheme.background, CircleShape)
-                            .clickable { avatarPickerLauncher.launch() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (avatarBytes != null) {
-                            val imageBitmap = remember(avatarBytes) { avatarBytes!!.decodeToImageBitmap() }
+                    if (avatarBytes != null) {
+                        val bitmap = remember(avatarBytes) {
+                            runCatching { avatarBytes!!.decodeToImageBitmap() }.getOrNull()
+                        }
+                        if (bitmap != null) {
                             Image(
-                                bitmap = imageBitmap,
-                                contentDescription = null,
+                                bitmap = bitmap, contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
-                        } else {
-                            Text(
-                                text = username.take(1).uppercase(),
-                                fontSize = 36.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                        }
+                    } else {
+                        Surface(modifier = Modifier.fillMaxSize(), color = topBarColor) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    username.take(1).uppercase(),
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = topBarTextColor
+                                )
+                            }
                         }
                     }
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .align(Alignment.BottomEnd)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(1.dp, MaterialTheme.colorScheme.background, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.CameraAlt, null, modifier = Modifier.size(14.dp))
-                    }
+                }
+                Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f)) {
+                    Icon(
+                        Icons.Default.CameraAlt, null,
+                        modifier = Modifier.padding(5.dp).size(13.dp),
+                        tint = Color.White
+                    )
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            Spacer(Modifier.height(24.dp))
-
-            Surface(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .offset(y = (-24).dp)
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(12.dp),
-                tonalElevation = 2.dp
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-
-                    Text("Никнейм", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                    if (editingName) {
-                        OutlinedTextField(
-                            value = nameInput,
-                            onValueChange = { nameInput = it },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                Row {
-                                    IconButton(onClick = {
-                                        if (nameInput.isNotBlank())
-                                            viewModel.updateUsername(nameInput.trim())
-                                        editingName = false
-                                    }) {
-                                        Icon(Icons.Default.Check, null, tint = topBarColor)
-                                    }
-                                    IconButton(onClick = { nameInput = username; editingName = false }) {
-                                        Icon(Icons.Default.Close, null)
-                                    }
-                                }
-                            }
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { editingName = true }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(username.ifBlank { "Не задан" }, fontSize = 15.sp)
-                            Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                OutlinedTextField(
+                    value = usernameInput,
+                    onValueChange = { usernameInput = it },
+                    label = { Text("Имя пользователя") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    trailingIcon = {
+                        if (usernameInput != username) {
+                            TextButton(
+                                onClick = { viewModel.updateUsername(usernameInput) },
+                                enabled = !isLoading
+                            ) { Text("Сохранить") }
                         }
                     }
+                )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    Text("О себе", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                    if (editingBio) {
-                        OutlinedTextField(
-                            value = bioInput,
-                            onValueChange = { bioInput = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 4,
-                            trailingIcon = {
-                                Row {
-                                    IconButton(onClick = {
-                                        viewModel.updateBio(bioInput.trim())
-                                        editingBio = false
-                                    }) {
-                                        Icon(Icons.Default.Check, null, tint = topBarColor)
-                                    }
-                                    IconButton(onClick = { bioInput = bio; editingBio = false }) {
-                                        Icon(Icons.Default.Close, null)
-                                    }
-                                }
-                            }
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { editingBio = true }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = bio.ifBlank { "Не задано" },
-                                fontSize = 15.sp,
-                                color = if (bio.isBlank()) Color.Gray else MaterialTheme.colorScheme.onSurface
-                            )
-                            Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                OutlinedTextField(
+                    value = bioInput,
+                    onValueChange = { bioInput = it },
+                    label = { Text("О себе") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    maxLines = 5,
+                    trailingIcon = {
+                        if (bioInput != bio) {
+                            TextButton(
+                                onClick = { viewModel.updateBio(bioInput) },
+                                enabled = !isLoading
+                            ) { Text("Сохранить") }
                         }
                     }
+                )
+
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.CenterHorizontally).size(26.dp),
+                        strokeWidth = 2.5.dp
+                    )
                 }
             }
-
-            Spacer(Modifier.height(32.dp))
         }
     }
 }

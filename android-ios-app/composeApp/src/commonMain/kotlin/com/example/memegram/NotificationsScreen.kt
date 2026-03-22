@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 sealed class NotifItem {
     data class Category(
@@ -44,8 +45,11 @@ sealed class NotifItem {
 @Composable
 fun NotificationsScreen(
     topBarColor: Color,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: NotificationsViewModel
 ) {
+    val currentVibrate  by viewModel.vibrate.collectAsState()
+    val currentRingtone by viewModel.ringtone.collectAsState()
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val allData = remember {
         mutableStateListOf<NotifItem>().apply {
@@ -64,8 +68,6 @@ fun NotificationsScreen(
     var muteDialogTarget by remember { mutableStateOf<NotifItem.Chat?>(null) }
     var muteHoursDialog by remember { mutableStateOf<NotifItem.Chat?>(null) }
     var muteHoursInput by remember { mutableStateOf("") }
-    var currentVibrate by remember { mutableStateOf("Medium") }
-    var currentRingtone by remember { mutableStateOf("Default") }
     var showVibrateDialog by remember { mutableStateOf(false) }
     var showRingtoneDialog by remember { mutableStateOf(false) }
 
@@ -170,7 +172,7 @@ fun NotificationsScreen(
     }
 
     if (showVibrateDialog) {
-        val options = listOf("Выкл", "Короткая", "Средняя", "Длинная")
+        val options = NotificationsViewModel.vibrateOptions
         AlertDialog(
             onDismissRequest = { showVibrateDialog = false },
             title = { Text("Вибрация для звонков") },
@@ -181,7 +183,7 @@ fun NotificationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    currentVibrate = opt
+                                    viewModel.setVibrate(opt)
                                     showVibrateDialog = false
                                 }
                                 .padding(vertical = 10.dp),
@@ -189,7 +191,7 @@ fun NotificationsScreen(
                         ) {
                             RadioButton(
                                 selected = currentVibrate == opt,
-                                onClick = { currentVibrate = opt; showVibrateDialog = false }
+                                onClick = { viewModel.setVibrate(opt); showVibrateDialog = false }
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(opt)
@@ -205,7 +207,7 @@ fun NotificationsScreen(
     }
 
     if (showRingtoneDialog) {
-        val options = listOf("По умолчанию", "Классический", "Цифровой", "Без звука")
+        val options = NotificationsViewModel.ringtoneOptions
         AlertDialog(
             onDismissRequest = { showRingtoneDialog = false },
             title = { Text("Мелодия звонка") },
@@ -216,7 +218,7 @@ fun NotificationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    currentRingtone = opt
+                                    viewModel.setRingtone(opt)
                                     showRingtoneDialog = false
                                 }
                                 .padding(vertical = 10.dp),
@@ -224,7 +226,7 @@ fun NotificationsScreen(
                         ) {
                             RadioButton(
                                 selected = currentRingtone == opt,
-                                onClick = { currentRingtone = opt; showRingtoneDialog = false }
+                                onClick = { viewModel.setRingtone(opt); showRingtoneDialog = false }
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(opt)
