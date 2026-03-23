@@ -16,6 +16,10 @@ class ProfileViewModel(
     private val settings: Settings
 ) : ViewModel() {
 
+    val myPublicKey: StateFlow<String> = userRepository.profile
+        .map { it?.userPublicKey ?: "" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     val username: StateFlow<String> = userRepository.profile
         .map { it?.username ?: "" }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")

@@ -6,6 +6,8 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.local.createPlatformKeyManager
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.network.createHttpClient
+import com.example.memegram.data.repository.ContactsRepository
+import com.example.memegram.data.repository.ContactsRepositoryImpl
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
 import com.russhwolf.settings.Settings
@@ -20,6 +22,7 @@ val appModule = module {
     single { ApiService(get(), get()) }
     single { ThemePreferences(get()) }
     single<UserRepository> { UserRepositoryImpl(get()) }
+    single<ContactsRepository> { ContactsRepositoryImpl(get()) }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)
@@ -30,4 +33,6 @@ val appModule = module {
     viewModelOf(::LanguageViewModel)
     viewModelOf(::PrivacyViewModel)
     viewModelOf(::NotificationsViewModel)
+    viewModelOf(::BlackListViewModel)
+    viewModelOf(::ContactsViewModel)
 }

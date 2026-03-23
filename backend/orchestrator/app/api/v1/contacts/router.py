@@ -15,6 +15,8 @@ from app.api.v1.contacts.schemas import (
     UnblockUserResponseSchema,
     GetBlockedUsersResponseSchema,
     ContactsHealthResponseSchema,
+    UserBriefProfileSchema,
+    ContactEntrySchema,
 )
 from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.session_context import SessionContext
@@ -64,14 +66,27 @@ async def get_contacts(
     offset: int = Query(0, ge=0),
 ) -> GetContactsResponseSchema:
     result = await gateway.get_contacts(
-        user_id=session.user_id,
-        limit=limit,
-        offset=offset,
+        user_id=session.user_id, limit=limit, offset=offset,
     )
     return GetContactsResponseSchema(
-        contacts=[c.__dict__ for c in result.contacts],
+        contacts=[
+            ContactEntrySchema(
+                contact_user_id=c.contact_user_id,
+                is_favorite=c.is_favorite,
+                created_at=c.created_at,
+                profile=UserBriefProfileSchema(
+                    user_id=c.profile.user_id,
+                    username=c.profile.username,
+                    user_public_key=c.profile.user_public_key,
+                    bio=c.profile.bio,
+                    avatar_media_id=c.profile.avatar_media_id,
+                ) if c.profile else None,
+            )
+            for c in result.contacts
+        ],
         total_count=result.total_count,
     )
+
 
 
 @router.patch("/{contact_user_id}", response_model=UpdateContactResponseSchema)

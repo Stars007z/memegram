@@ -26,6 +26,8 @@ import org.koin.dsl.koinConfiguration
 @Serializable object LanguageRoute
 @Serializable object PrivacyRoute
 @Serializable object BlackListRoute
+@Serializable object ContactsRoute
+
 @Composable
 fun App() {
     LaunchedEffect(Unit) {
@@ -77,6 +79,7 @@ fun App() {
                             onLanguageClick = { navController.navigate(LanguageRoute) },
                             onPrivacyClick = { navController.navigate(PrivacyRoute) },
                             profileViewModel = profileViewModel,
+                            onContactsClick = { navController.navigate(ContactsRoute) },
                             viewModel = viewModel
                         )
                     }
@@ -117,12 +120,11 @@ fun App() {
                         )
                     }
                     composable<BlackListRoute> {
+                        val viewModel = koinViewModel<BlackListViewModel>()
                         BlackListScreen(
                             topBarColor = topBarColor,
-                            onBack = {
-                                if (navController.previousBackStackEntry != null)
-                                    navController.popBackStack()
-                            }
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            viewModel = viewModel
                         )
                     }
                     composable<NotificationsRoute> {
@@ -156,6 +158,16 @@ fun App() {
                             viewModel = viewModel
                         )
                     }
+                    composable<ContactsRoute> {
+                        val viewModel = koinViewModel<ContactsViewModel>()
+                        ContactsScreen(
+                            topBarColor = topBarColor,
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            onChatClick = { chatName -> navController.navigate(ChatDetailRoute(chatName)) },
+                            viewModel = viewModel
+                        )
+                    }
+
                 }
             }
         }

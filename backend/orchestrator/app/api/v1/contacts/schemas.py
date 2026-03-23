@@ -1,8 +1,9 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class UserBriefProfileSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     user_id: str
     username: str
     user_public_key: str
@@ -11,6 +12,7 @@ class UserBriefProfileSchema(BaseModel):
 
 
 class ContactEntrySchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     contact_user_id: str
     is_favorite: bool
     created_at: int
