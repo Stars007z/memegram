@@ -159,10 +159,10 @@ class GrpcAuthGateway(IAuthGateway):
         )
 
     async def validate_token(self, access_token: str) -> ValidateTokenResult:
-        stub = await self.get_stub()
+        stub = await self._get_stub()
         try:
             response = await stub.ValidateToken(
-                authpb2.ValidateTokenRequest(access_token=access_token),
+                auth_pb2.ValidateTokenRequest(access_token=access_token),
                 timeout=settings.AUTH_GRPC_TIMEOUT,
             )
         except grpc.RpcError as e:
