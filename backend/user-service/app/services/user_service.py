@@ -1,4 +1,6 @@
 import uuid
+import base64
+import secrets
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import select, update
@@ -19,9 +21,12 @@ class UserService:
 
     async def create_user(self, user_id: str, username: str) -> User:
         # username is intentionally NOT unique per architecture — search is by user_public_key
+        raw_key = secrets.token_bytes(32)
+        user_public_key = base64.b64encode(raw_key).decode()
         user = User(
             id=uuid.UUID(user_id),
             username=username,
+            user_public_key=user_public_key,
             created_at=_now(),
         )
         self.session.add(user)

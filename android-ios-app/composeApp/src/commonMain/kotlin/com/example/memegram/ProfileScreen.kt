@@ -11,6 +11,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,16 +39,19 @@ fun ProfileScreen(
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
-    val username    by viewModel.username.collectAsState()
-    val bio         by viewModel.bio.collectAsState()
-    val isLoading   by viewModel.isLoading.collectAsState()
-    val error       by viewModel.error.collectAsState()
-    val avatarBytes by viewModel.avatarBytes.collectAsState()
-    val coverBytes  by viewModel.coverBytes.collectAsState()
+    val username      by viewModel.username.collectAsState()
+    val bio           by viewModel.bio.collectAsState()
+    val isLoading     by viewModel.isLoading.collectAsState()
+    val error         by viewModel.error.collectAsState()
+    val avatarBytes   by viewModel.avatarBytes.collectAsState()
+    val coverBytes    by viewModel.coverBytes.collectAsState()
+    val myPublicKey   by viewModel.myPublicKey.collectAsState()
 
     var usernameInput by remember(username) { mutableStateOf(username) }
     var bioInput      by remember(bio)      { mutableStateOf(bio) }
     val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
+    var keyCopied by remember { mutableStateOf(false) }
 
     val avatarPicker = rememberFilePickerLauncher(
         type = PickerType.Image, mode = PickerMode.Single
@@ -87,6 +94,7 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // ── Обложка ──────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -106,7 +114,10 @@ fun ProfileScreen(
                         )
                     }
                 } else {
-                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceVariant) {}
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {}
                 }
                 Surface(
                     modifier = Modifier.padding(10.dp),
@@ -121,6 +132,7 @@ fun ProfileScreen(
                 }
             }
 
+            // ── Аватар ───────────────────────────────────────────────────
             Box(
                 contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier.offset(y = (-38).dp)
@@ -166,6 +178,7 @@ fun ProfileScreen(
                 }
             }
 
+            // ── Поля профиля ─────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,7 +207,9 @@ fun ProfileScreen(
                     value = bioInput,
                     onValueChange = { bioInput = it },
                     label = { Text("О себе") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 90.dp),
                     shape = RoundedCornerShape(12.dp),
                     maxLines = 5,
                     trailingIcon = {
@@ -207,9 +222,30 @@ fun ProfileScreen(
                     }
                 )
 
+                if (myPublicKey.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(myPublicKey))
+                            keyCopied = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            if (keyCopied) Icons.Default.ContentCopy else Icons.Default.VpnKey,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (keyCopied) "Скопировано!" else "Скопировать мой публичный ключ")
+                    }
+                }
+
                 if (isLoading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally).size(26.dp),
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .size(26.dp),
                         strokeWidth = 2.5.dp
                     )
                 }

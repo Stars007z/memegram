@@ -85,23 +85,20 @@ class UserServiceClient:
         """Вернуть словарь {user_id: UserBriefProfile}."""
         if not user_ids:
             return {}
-        try:
-            resp: user_pb2.GetUsersBatchResponse = await self._stub.GetUsersBatch(
-                user_pb2.GetUsersBatchRequest(user_ids=user_ids),
-                timeout=self._timeout,
+        resp: user_pb2.GetUsersBatchResponse = await self._stub.GetUsersBatch(
+            user_pb2.GetUsersBatchRequest(user_ids=user_ids),
+            timeout=self._timeout,
+        )
+        result: dict[str, UserBriefProfile] = {}
+        for p in resp.users:
+            result[p.id] = UserBriefProfile(
+                user_id=p.id,
+                username=p.username,
+                user_public_key=p.user_public_key,
+                bio=p.bio,
+                avatar_media_id=p.avatar_media_id if p.HasField("avatar_media_id") else "",
             )
-            result: dict[str, UserBriefProfile] = {}
-            for p in resp.users:
-                result[p.id] = UserBriefProfile(
-                    user_id=p.id,
-                    username=p.username,
-                    user_public_key=p.user_public_key,
-                    bio=p.bio,
-                    avatar_media_id=p.avatar_media_id if p.HasField("avatar_media_id") else "",
-                )
-            return result
-        except grpc.aio.AioRpcError:
-            return {}
+        return result
 
 
 @lru_cache(maxsize=1)
