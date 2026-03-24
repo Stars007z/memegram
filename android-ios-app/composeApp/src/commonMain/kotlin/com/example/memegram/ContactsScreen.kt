@@ -40,8 +40,8 @@ fun ContactsScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var publicKeyInput by remember { mutableStateOf("") }
     var pendingRemoveId by remember { mutableStateOf<String?>(null) }
+    var pendingBlockId by remember { mutableStateOf<String?>(null) }
 
-    // Закрываем диалог добавления при успехе
     LaunchedEffect(addSuccess) {
         if (addSuccess) {
             showAddDialog = false
@@ -114,7 +114,7 @@ fun ContactsScreen(
         )
     }
 
-    // Диалог удаления
+    // Диалог подтверждения удаления
     pendingRemoveId?.let { userId ->
         val name = contacts.find { it.contactUserId == userId }
             ?.profile?.username ?: (userId.take(8) + "...")
@@ -132,6 +132,28 @@ fun ContactsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingRemoveId = null }) { Text("Отмена") }
+            }
+        )
+    }
+
+    // Диалог подтверждения блокировки
+    pendingBlockId?.let { userId ->
+        val name = contacts.find { it.contactUserId == userId }
+            ?.profile?.username ?: (userId.take(8) + "...")
+        AlertDialog(
+            onDismissRequest = { pendingBlockId = null },
+            title = { Text("Заблокировать?") },
+            text = { Text("Заблокировать $name? Он будет удалён из контактов.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.blockUser(userId); pendingBlockId = null },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("Заблокировать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBlockId = null }) { Text("Отмена") }
             }
         )
     }
@@ -198,15 +220,12 @@ fun ContactsScreen(
                 }
 
                 else -> {
-                    // Секция избранных
                     val favorites = contacts.filter { it.isFavorite }
                     val others = contacts.filter { !it.isFavorite }
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         if (favorites.isNotEmpty()) {
-                            item {
-                                SectionHeader("⭐ Избранные", topBarColor)
-                            }
+                            item { SectionHeader("⭐ Избранные", topBarColor) }
                             items(favorites, key = { it.contactUserId }) { entry ->
                                 ContactItem(
                                     entry = entry,
@@ -214,8 +233,11 @@ fun ContactsScreen(
                                     onChatClick = {
                                         onChatClick(entry.profile?.username ?: entry.contactUserId)
                                     },
-                                    onFavoriteToggle = { viewModel.toggleFavorite(entry.contactUserId) },
-                                    onRemove = { pendingRemoveId = entry.contactUserId }
+                                    onFavoriteToggle = {
+                                        viewModel.toggleFavorite(entry.contactUserId)
+                                    },
+                                    onRemove = { pendingRemoveId = entry.contactUserId },
+                                    onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 72.dp),
@@ -225,9 +247,7 @@ fun ContactsScreen(
                         }
 
                         if (others.isNotEmpty()) {
-                            item {
-                                SectionHeader("Все контакты", topBarColor)
-                            }
+                            item { SectionHeader("Все контакты", topBarColor) }
                             items(others, key = { it.contactUserId }) { entry ->
                                 ContactItem(
                                     entry = entry,
@@ -235,8 +255,11 @@ fun ContactsScreen(
                                     onChatClick = {
                                         onChatClick(entry.profile?.username ?: entry.contactUserId)
                                     },
-                                    onFavoriteToggle = { viewModel.toggleFavorite(entry.contactUserId) },
-                                    onRemove = { pendingRemoveId = entry.contactUserId }
+                                    onFavoriteToggle = {
+                                        viewModel.toggleFavorite(entry.contactUserId)
+                                    },
+                                    onRemove = { pendingRemoveId = entry.contactUserId },
+                                    onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 72.dp),
@@ -268,7 +291,8 @@ private fun ContactItem(
     accentColor: Color,
     onChatClick: () -> Unit,
     onFavoriteToggle: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onBlock: () -> Unit
 ) {
     val displayName = entry.profile?.username
         ?.takeIf { it.isNotBlank() }
@@ -347,9 +371,7 @@ private fun ContactItem(
                     onClick = { onFavoriteToggle(); showMenu = false }
                 )
                 DropdownMenuItem(
-                    text = {
-                        Text("Удалить", color = MaterialTheme.colorScheme.error)
-                    },
+                    text = { Text("Удалить", color = MaterialTheme.colorScheme.error) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.PersonRemove,
@@ -358,6 +380,17 @@ private fun ContactItem(
                         )
                     },
                     onClick = { onRemove(); showMenu = false }
+                )
+                DropdownMenuItem(
+                    text = { Text("Заблокировать", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Block,
+                            null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    onClick = { onBlock(); showMenu = false }
                 )
             }
         }
