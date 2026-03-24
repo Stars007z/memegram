@@ -56,7 +56,7 @@ class AppearanceViewModel(
 
     private fun syncTopBarToServer(color: Color) {
         viewModelScope.launch {
-            val hex = "#%06X".format(color.toArgb() and 0xFFFFFF)
+            val hex = "#" + (color.toArgb() and 0xFFFFFF).toString(16).padStart(6, '0').uppercase()
             userRepository.updateSettings(UpdateSettingsRequest(topBarColor = hex))
         }
     }

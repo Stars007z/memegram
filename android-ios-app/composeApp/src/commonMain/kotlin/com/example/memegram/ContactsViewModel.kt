@@ -80,6 +80,16 @@ class ContactsViewModel(
         }
     }
 
+    fun blockUser(contactUserId: String) {
+        viewModelScope.launch {
+            contactsRepository.blockUser(contactUserId)
+                .onSuccess {
+                    _contacts.value = contacts.value.filter { it.contactUserId != contactUserId }
+                }
+                .onFailure { _error.value = it.message }
+        }
+    }
+
     fun resetAddSuccess() { _addSuccess.value = false }
     fun clearError() { _error.value = null }
 }
