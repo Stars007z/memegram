@@ -48,6 +48,7 @@ fun ChatsScreen(
     onLanguageClick: () -> Unit,
     onPrivacyClick: () -> Unit,
     viewModel: ChatsViewModel,
+    onContactsClick: () -> Unit,
     profileViewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
@@ -140,6 +141,13 @@ fun ChatsScreen(
                     icon = { Icon(Icons.Default.Lock, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onPrivacyClick() } },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Контакты") },
+                    icon = { Icon(Icons.Default.People, null) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; onContactsClick() },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(

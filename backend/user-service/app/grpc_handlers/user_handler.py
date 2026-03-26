@@ -294,18 +294,14 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
                 users = await service.get_users_batch(list(request.user_ids))
                 # Architecture: { id, username, avatar_media_id, is_deleted }
                 # contacts-service user_client also reads user_public_key + bio
-                brief_list = [
-                    user_pb2.UserProfile(
-                        id=str(u.id),
-                        username=u.username,
-                        user_public_key=u.user_public_key or "",
-                        bio=u.bio or "",
-                        avatar_media_id=str(u.avatar_media_id) if u.avatar_media_id else "",
-                        is_deleted=u.is_deleted,
-                    )
-                    for u in users
-                ]
-                return user_pb2.GetUsersBatchResponse(users=brief_list)
+                brieflist = [user_pb2.UserBriefProfile(
+                    id=str(u.id),
+                    username=u.username,
+                    avatar_media_id=str(u.avatar_media_id) if u.avatar_media_id else "",
+                    is_deleted=u.is_deleted,
+                ) for u in users]
+                return user_pb2.GetUsersBatchResponse(users=brieflist)
+
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {str(e)}")

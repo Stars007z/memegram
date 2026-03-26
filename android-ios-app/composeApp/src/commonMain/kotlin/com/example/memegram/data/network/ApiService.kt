@@ -102,4 +102,65 @@ class ApiService(
         client.get("$baseUrl/api/v1/user/by-key/$key") {
             bearerAuth(token())
         }.body()
+
+    // ── Contacts ─────────────────────────────────────────────────────────────
+
+    suspend fun getContacts(limit: Int = 50, offset: Int = 0): ContactsListResponse =
+        client.get("$baseUrl/api/v1/contacts") {
+            bearerAuth(token())
+            parameter("limit", limit)
+            parameter("offset", offset)
+        }.body()
+
+    suspend fun addContact(request: AddContactRequest): ContactEntry {
+        val response = client.post("$baseUrl/api/v1/contacts") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("addContact: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body<Map<String, ContactEntry>>()["contact"]
+            ?: throw Exception("addContact: empty response")
+    }
+
+    suspend fun removeContact(contactUserId: String): RemoveContactResponse =
+        client.delete("$baseUrl/api/v1/contacts/$contactUserId") {
+            bearerAuth(token())
+        }.body()
+
+    suspend fun updateContact(contactUserId: String, request: UpdateContactRequest): ContactEntry {
+        val response = client.patch("$baseUrl/api/v1/contacts/$contactUserId") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("updateContact: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body<Map<String, ContactEntry>>()["contact"]
+            ?: throw Exception("updateContact: empty response")
+    }
+
+    suspend fun getBlockedUsers(limit: Int = 50, offset: Int = 0): BlockedUsersListResponse =
+        client.get("$baseUrl/api/v1/contacts/blocked") {
+            bearerAuth(token())
+            parameter("limit", limit)
+            parameter("offset", offset)
+        }.body()
+
+    suspend fun blockUser(request: BlockUserRequest): BlockUserResponse {
+        val response = client.post("$baseUrl/api/v1/contacts/blocked") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("blockUser: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
+
+    suspend fun unblockUser(blockedUserId: String): UnblockUserResponse =
+        client.delete("$baseUrl/api/v1/contacts/blocked/$blockedUserId") {
+            bearerAuth(token())
+        }.body()
 }
