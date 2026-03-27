@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+app/generated/*_pb2*.py
+!app/generated/__init__.py
+.venv/
+*.egg-info/
+dist/

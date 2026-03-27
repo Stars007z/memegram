@@ -1,0 +1,96 @@
+syntax = "proto3";
+package media;
+
+service MediaService {
+    rpc GetUploadPresignedUrl(GetUploadPresignedUrlRequest)       returns (GetUploadPresignedUrlResponse);
+    rpc VerifyObjectExists(VerifyObjectExistsRequest)             returns (VerifyObjectExistsResponse);
+    rpc GetDownloadPresignedUrl(GetDownloadPresignedUrlRequest)   returns (GetDownloadPresignedUrlResponse);
+    rpc DeleteObject(DeleteObjectRequest)                         returns (DeleteObjectResponse);
+    rpc DeleteObjectsBatch(DeleteObjectsBatchRequest)             returns (DeleteObjectsBatchResponse);
+    rpc ProcessExpiredObjects(ProcessExpiredObjectsRequest)       returns (ProcessExpiredObjectsResponse);
+    rpc HealthCheck(MediaHealthCheckRequest)                      returns (MediaHealthCheckResponse);
+}
+
+// ── GetUploadPresignedUrl ──────────────────────────
+
+message GetUploadPresignedUrlRequest {
+    string media_id           = 1;
+    string conversation_id    = 2;
+    string mime_type          = 3;
+    int64  encrypted_size     = 4;
+    int32  expires_in_seconds = 5;
+}
+message GetUploadPresignedUrlResponse {
+    string upload_url = 1;
+    string s3_key     = 2;
+    int64  expires_at = 3;
+}
+
+// ── VerifyObjectExists ─────────────────────────────
+
+message VerifyObjectExistsRequest {
+    string media_id = 1;
+    string s3_key   = 2;
+}
+message VerifyObjectExistsResponse {
+    bool  exists      = 1;
+    int64 actual_size = 2;
+}
+
+// ── GetDownloadPresignedUrl ────────────────────────
+
+message GetDownloadPresignedUrlRequest {
+    string s3_key             = 1;
+    int32  expires_in_seconds = 2;
+}
+message GetDownloadPresignedUrlResponse {
+    string download_url = 1;
+    int64  expires_at   = 2;
+}
+
+// ── DeleteObject ───────────────────────────────────
+
+message DeleteObjectRequest {
+    string media_id = 1;
+    string s3_key   = 2;
+}
+message DeleteObjectResponse {
+    bool success = 1;
+}
+
+// ── DeleteObjectsBatch ─────────────────────────────
+
+message DeleteObjectsBatchRequest {
+    repeated BatchDeleteItem objects = 1;
+}
+message BatchDeleteItem {
+    string media_id = 1;
+    string s3_key   = 2;
+}
+message DeleteObjectsBatchResponse {
+    int32 deleted_count = 1;
+    repeated BatchDeleteError failed = 2;
+}
+message BatchDeleteError {
+    string media_id = 1;
+    string error    = 2;
+}
+
+// ── ProcessExpiredObjects ──────────────────────────
+
+message ProcessExpiredObjectsRequest {
+    int32 batch_size = 1;
+}
+message ProcessExpiredObjectsResponse {
+    int32 deleted_count = 1;
+}
+
+// ── HealthCheck ────────────────────────────────────
+
+message MediaHealthCheckRequest {}
+message MediaHealthCheckResponse {
+    string status    = 1;
+    string db_status = 2;
+    string s3_status = 3;
+    string version   = 4;
+}

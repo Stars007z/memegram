@@ -1,0 +1,23 @@
+syntax = "proto3";
+package contacts;
+
+service ContactsService {
+    rpc IsBlocked(IsBlockedRequest) returns (IsBlockedResponse);
+    rpc IsContact(IsContactRequest) returns (IsContactResponse);
+}
+
+message IsBlockedRequest {
+    string user_id         = 1;
+    string blocked_user_id = 2;
+}
+message IsBlockedResponse {
+    bool is_blocked = 1;
+}
+
+message IsContactRequest {
+    string user_id         = 1;
+    string contact_user_id = 2;
+}
+message IsContactResponse {
+    bool is_contact = 1;
+}

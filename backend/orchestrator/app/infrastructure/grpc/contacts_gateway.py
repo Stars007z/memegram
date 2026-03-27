@@ -1,6 +1,7 @@
 import grpc
+from typing import Optional
 
-from app.config import settings
+from app.config import Settings
 from app.core.interfaces.contacts_gateway import (
     IContactsGateway,
     UserBriefProfile,
@@ -15,24 +16,11 @@ from app.core.interfaces.contacts_gateway import (
     GetBlockedUsersResult,
     ContactsHealthResult,
 )
-from app.exceptions import GatewayError, NotFoundError, ValidationError
-from app.infrastructure.grpc.client import get_contacts_grpc_channel
+from app.infrastructure.grpc.errors import grpc_error_to_exception
+from app.infrastructure.grpc.client import GrpcChannelManager
 from app.infrastructure.grpc.generated import contacts_pb2, contacts_pb2_grpc
-from typing import Optional
 
-
-def _grpc_error_to_exception(e: grpc.RpcError) -> Exception:
-    code = e.code()
-    details = e.details() or "Unknown gRPC error"
-    if code == grpc.StatusCode.INVALID_ARGUMENT:
-        return ValidationError(details)
-    if code == grpc.StatusCode.NOT_FOUND:
-        return NotFoundError(details)
-    if code == grpc.StatusCode.ALREADY_EXISTS:
-        return ValidationError(f"ALREADY_EXISTS: {details}")
-    if code == grpc.StatusCode.UNAVAILABLE:
-        return GatewayError("Contacts service is unavailable", code=503)
-    return GatewayError(f"Contacts service error: {details}", code=502)
+_SERVICE = "Contacts service"
 
 
 def _brief_proto_to_dc(p) -> Optional[UserBriefProfile]:
@@ -65,130 +53,113 @@ def _blocked_proto_to_dc(b) -> BlockedEntry:
 
 
 class GrpcContactsGateway(IContactsGateway):
-    async def _stub(self) -> contacts_pb2_grpc.ContactsServiceStub:
-        channel = await get_contacts_grpc_channel()
-        return contacts_pb2_grpc.ContactsServiceStub(channel)
+
+    def __init__(self, channels: GrpcChannelManager, settings: Settings):
+        self._channels = channels
+        self._settings = settings
+
+    def _stub(self) -> contacts_pb2_grpc.ContactsServiceStub:
+        return contacts_pb2_grpc.ContactsServiceStub(self._channels.get("contacts"))
 
     async def add_contact(self, user_id: str, user_public_key: str) -> AddContactResult:
-        stub = await self._stub()
         try:
-            resp = await stub.AddContact(
+            resp = await self._stub().AddContact(
                 contacts_pb2.AddContactRequest(
-                    user_id=user_id,
-                    user_public_key=user_public_key,
+                    user_id=user_id, user_public_key=user_public_key,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return AddContactResult(contact=_contact_proto_to_dc(resp.contact))
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def remove_contact(self, user_id: str, contact_user_id: str) -> RemoveContactResult:
-        stub = await self._stub()
         try:
-            resp = await stub.RemoveContact(
+            resp = await self._stub().RemoveContact(
                 contacts_pb2.RemoveContactRequest(
-                    user_id=user_id,
-                    contact_user_id=contact_user_id,
+                    user_id=user_id, contact_user_id=contact_user_id,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return RemoveContactResult(success=resp.success)
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def get_contacts(self, user_id: str, limit: int, offset: int) -> GetContactsResult:
-        stub = await self._stub()
         try:
-            resp = await stub.GetContacts(
+            resp = await self._stub().GetContacts(
                 contacts_pb2.GetContactsRequest(
-                    user_id=user_id,
-                    limit=limit,
-                    offset=offset,
+                    user_id=user_id, limit=limit, offset=offset,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return GetContactsResult(
                 contacts=[_contact_proto_to_dc(c) for c in resp.contacts],
                 total_count=resp.total_count,
             )
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def update_contact(
-        self,
-        user_id: str,
-        contact_user_id: str,
-        is_favorite: Optional[bool],
+        self, user_id: str, contact_user_id: str, is_favorite: Optional[bool],
     ) -> UpdateContactResult:
-        stub = await self._stub()
         req = contacts_pb2.UpdateContactRequest(
-            user_id=user_id,
-            contact_user_id=contact_user_id,
+            user_id=user_id, contact_user_id=contact_user_id,
         )
         if is_favorite is not None:
             req.is_favorite = is_favorite
         try:
-            resp = await stub.UpdateContact(req, timeout=settings.CONTACTS_GRPC_TIMEOUT)
+            resp = await self._stub().UpdateContact(
+                req, timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
+            )
             return UpdateContactResult(contact=_contact_proto_to_dc(resp.contact))
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def block_user(self, user_id: str, blocked_user_id: str) -> BlockUserResult:
-        stub = await self._stub()
         try:
-            resp = await stub.BlockUser(
+            resp = await self._stub().BlockUser(
                 contacts_pb2.BlockUserRequest(
-                    user_id=user_id,
-                    blocked_user_id=blocked_user_id,
+                    user_id=user_id, blocked_user_id=blocked_user_id,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return BlockUserResult(success=resp.success, created_at=resp.created_at)
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def unblock_user(self, user_id: str, blocked_user_id: str) -> UnblockUserResult:
-        stub = await self._stub()
         try:
-            resp = await stub.UnblockUser(
+            resp = await self._stub().UnblockUser(
                 contacts_pb2.UnblockUserRequest(
-                    user_id=user_id,
-                    blocked_user_id=blocked_user_id,
+                    user_id=user_id, blocked_user_id=blocked_user_id,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return UnblockUserResult(success=resp.success)
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def get_blocked_users(
-        self, user_id: str, limit: int, offset: int
+        self, user_id: str, limit: int, offset: int,
     ) -> GetBlockedUsersResult:
-        stub = await self._stub()
         try:
-            resp = await stub.GetBlockedUsers(
+            resp = await self._stub().GetBlockedUsers(
                 contacts_pb2.GetBlockedUsersRequest(
-                    user_id=user_id,
-                    limit=limit,
-                    offset=offset,
+                    user_id=user_id, limit=limit, offset=offset,
                 ),
-                timeout=settings.CONTACTS_GRPC_TIMEOUT,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return GetBlockedUsersResult(
                 blocked_users=[_blocked_proto_to_dc(b) for b in resp.blocked_users],
                 total_count=resp.total_count,
             )
         except grpc.RpcError as e:
-            raise _grpc_error_to_exception(e)
+            raise grpc_error_to_exception(e, _SERVICE)
 
     async def health_check(self) -> ContactsHealthResult:
-        """
-        contacts-service has no HealthCheck RPC.
-        We probe connectivity by checking the gRPC channel state.
-        """
         try:
-            channel = await get_contacts_grpc_channel()
+            channel = self._channels.get("contacts")
             state = channel.get_state(try_to_connect=True)
             if state in (
                 grpc.ChannelConnectivity.READY,

@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     CONTACTS_GRPC_PORT: int = 50053
     CONTACTS_GRPC_TIMEOUT: float = 10.0
 
-    # Cron schedule for CheckAndProcessAutoDelete (UTC)
+    MESSAGING_GRPC_HOST: str = "localhost"
+    MESSAGING_GRPC_PORT: int = 50054
+    MESSAGING_GRPC_TIMEOUT: float = 10.0
+
+    MEDIA_GRPC_HOST: str = "localhost"
+    MEDIA_GRPC_PORT: int = 50055
+    MEDIA_GRPC_TIMEOUT: float = 10.0
+
     AUTO_DELETE_CRON_HOUR: int = 3
     AUTO_DELETE_CRON_MINUTE: int = 0
 
@@ -39,6 +46,14 @@ class Settings(BaseSettings):
     @property
     def CONTACTS_GRPC_ADDRESS(self) -> str:
         return f"{self.CONTACTS_GRPC_HOST}:{self.CONTACTS_GRPC_PORT}"
+
+    @property
+    def MESSAGING_GRPC_ADDRESS(self) -> str:
+        return f"{self.MESSAGING_GRPC_HOST}:{self.MESSAGING_GRPC_PORT}"
+
+    @property
+    def MEDIA_GRPC_ADDRESS(self) -> str:
+        return f"{self.MEDIA_GRPC_HOST}:{self.MEDIA_GRPC_PORT}"
 
 
 settings = Settings()
