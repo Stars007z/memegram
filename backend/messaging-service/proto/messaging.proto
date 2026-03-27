@@ -1,0 +1,445 @@
+syntax = "proto3";
+package messaging;
+
+// ──────────────────────────────────────────────
+// Shared types
+// ──────────────────────────────────────────────
+
+message DeviceWelcome {
+    string device_id    = 1;
+    bytes  welcome_data = 2;
+}
+
+message ConversationMember {
+    string user_id   = 1;
+    string role      = 2; // owner / admin / member
+    int64  joined_at = 3;
+}
+
+message MlsGroupInfo {
+    int64 current_epoch = 1;
+    int32 cipher_suite  = 2;
+}
+
+message MessageEntry {
+    string id                  = 1;
+    string sender_user_id      = 2;
+    string sender_device_id    = 3;
+    string type                = 4; // text / image / video / audio / file / system
+    bytes  mls_ciphertext      = 5;
+    string media_id            = 6;
+    string reply_to_message_id = 7;
+    int64  mls_epoch           = 8;
+    int64  created_at          = 9;
+    int64  edited_at           = 10; // 0 = not edited
+    int64  deleted_at          = 11; // 0 = not deleted
+}
+
+message ConversationSummary {
+    string id                = 1;
+    string type              = 2;
+    string name              = 3;
+    string last_message_type = 4;
+    int32  unread_count      = 5;
+    int64  last_activity_at  = 6;
+}
+
+// ──────────────────────────────────────────────
+// Streaming events
+// ──────────────────────────────────────────────
+
+message ConversationEvent {
+    string conversation_id = 1;
+    oneof event {
+        MessageEntry   new_message     = 2;
+        MessageEdited  message_edited  = 3;
+        MessageDeleted message_deleted = 4;
+        TypingEvent    typing          = 5;
+        MemberEvent    member_joined   = 6;
+        MemberEvent    member_left     = 7;
+        EpochChanged   epoch_changed   = 8;
+        DeviceRevoked  device_revoked  = 9;
+    }
+}
+
+message MessageEdited {
+    string message_id         = 1;
+    bytes  new_mls_ciphertext = 2;
+    int64  edited_at          = 3;
+}
+
+message MessageDeleted {
+    string message_id = 1;
+}
+
+message TypingEvent {
+    string user_id   = 1;
+    bool   is_typing = 2;
+}
+
+message MemberEvent {
+    string user_id = 1;
+}
+
+message EpochChanged {
+    int64 new_epoch = 1;
+}
+
+message DeviceRevoked {
+    string          user_id            = 1;
+    string          revoked_device_id  = 2;
+    repeated string conversation_ids   = 3;
+}
+
+// ──────────────────────────────────────────────
+// MLS Key Material
+// ──────────────────────────────────────────────
+
+message UploadKeyPackagesRequest {
+    string         user_id      = 1;
+    string         device_id    = 2;
+    repeated bytes key_packages = 3;
+}
+message UploadKeyPackagesResponse {
+    int32 uploaded_count = 1;
+}
+
+message GetKeyPackageRequest {
+    string target_user_id   = 1;
+    string target_device_id = 2;
+}
+message GetKeyPackageResponse {
+    bytes key_package_data = 1;
+    bytes key_package_ref  = 2;
+}
+
+message GetKeyPackagesCountRequest {
+    string user_id   = 1;
+    string device_id = 2;
+}
+message GetKeyPackagesCountResponse {
+    int32 available_count = 1;
+}
+
+// ──────────────────────────────────────────────
+// Conversations
+// ──────────────────────────────────────────────
+
+message CreateDirectConversationRequest {
+    string                initiator_user_id   = 1;
+    string                initiator_device_id = 2;
+    string                recipient_user_id   = 3;
+    repeated DeviceWelcome welcome_messages    = 4;
+}
+
+message CreateGroupConversationRequest {
+    string creator_user_id   = 1;
+    string creator_device_id = 2;
+    string name              = 3;
+
+    message MemberWithWelcomes {
+        string                 user_id  = 1;
+        repeated DeviceWelcome welcomes = 2;
+    }
+    repeated MemberWithWelcomes members = 4;
+}
+
+message ConversationResponse {
+    string                       id         = 1;
+    string                       type       = 2;
+    string                       name       = 3;
+    repeated ConversationMember  members    = 4;
+    MlsGroupInfo                 mls_group  = 5;
+    int64                        created_at = 6;
+}
+
+message GetConversationsRequest {
+    string user_id = 1;
+    int32  limit   = 2;
+    string cursor  = 3;
+}
+message GetConversationsResponse {
+    repeated ConversationSummary items       = 1;
+    string                       next_cursor = 2;
+}
+
+message GetConversationRequest {
+    string user_id         = 1;
+    string conversation_id = 2;
+}
+
+message LeaveConversationRequest {
+    string user_id         = 1;
+    string device_id       = 2;
+    string conversation_id = 3;
+    bytes  commit_data     = 4;
+}
+message LeaveConversationResponse {
+    bool success = 1;
+}
+
+// ──────────────────────────────────────────────
+// Messages
+// ──────────────────────────────────────────────
+
+message SendMessageRequest {
+    string sender_user_id      = 1;
+    string sender_device_id    = 2;
+    string conversation_id     = 3;
+    bytes  mls_ciphertext      = 4;
+    string type                = 5;
+    string media_id            = 6;
+    string reply_to_message_id = 7;
+    string client_message_id   = 8;
+}
+message SendMessageResponse {
+    string message_id = 1;
+    int64  created_at = 2;
+}
+
+message GetMessagesRequest {
+    string user_id           = 1;
+    string conversation_id   = 2;
+    string before_message_id = 3;
+    int32  limit             = 4;
+}
+message GetMessagesResponse {
+    repeated MessageEntry messages = 1;
+    bool                  has_more = 2;
+}
+
+message EditMessageRequest {
+    string user_id             = 1;
+    string device_id           = 2;
+    string message_id          = 3;
+    bytes  new_mls_ciphertext  = 4;
+}
+message EditMessageResponse {
+    MessageEntry message = 1;
+}
+
+message DeleteMessageRequest {
+    string user_id             = 1;
+    string message_id          = 2;
+    bool   delete_for_everyone = 3;
+}
+message DeleteMessageResponse {
+    bool success = 1;
+}
+
+message MarkAsReadRequest {
+    string user_id              = 1;
+    string device_id            = 2;
+    string conversation_id      = 3;
+    string last_read_message_id = 4;
+}
+message MarkAsReadResponse {
+    int32 unread_count = 1;
+}
+
+// ──────────────────────────────────────────────
+// Streaming
+// ──────────────────────────────────────────────
+
+message SubscribeRequest {
+    string          user_id          = 1;
+    string          device_id        = 2;
+    repeated string conversation_ids = 3;
+}
+
+// ──────────────────────────────────────────────
+// MLS Group Management
+// ──────────────────────────────────────────────
+
+message CommitGroupChangeRequest {
+    string                 user_id            = 1;
+    string                 device_id          = 2;
+    string                 conversation_id    = 3;
+    bytes                  commit_data        = 4;
+    int64                  new_epoch          = 5;
+    repeated DeviceWelcome welcome_messages   = 6;
+    bytes                  ratchet_tree       = 7;
+    repeated string        removed_device_ids = 8;
+}
+message CommitGroupChangeResponse {
+    int64 new_epoch    = 1;
+    int64 committed_at = 2;
+}
+
+message GetPendingWelcomesRequest {
+    string device_id = 1;
+}
+message GetPendingWelcomesResponse {
+    message WelcomeEntry {
+        string id              = 1;
+        string conversation_id = 2;
+        bytes  welcome_data    = 3;
+        int64  created_at      = 4;
+    }
+    repeated WelcomeEntry items = 1;
+}
+
+message AckWelcomeRequest {
+    string device_id  = 1;
+    string welcome_id = 2;
+}
+message AckWelcomeResponse {
+    bool success = 1;
+}
+
+message GetPendingCommitsRequest {
+    string device_id       = 1;
+    string conversation_id = 2;
+    int64  since_epoch     = 3;
+}
+message GetPendingCommitsResponse {
+    message CommitEntry {
+        int64 epoch       = 1;
+        bytes commit_data = 2;
+        int64 created_at  = 3;
+    }
+    repeated CommitEntry commits = 1;
+}
+
+message NotifyDeviceRevokedRequest {
+    string user_id           = 1;
+    string revoked_device_id = 2;
+}
+message NotifyDeviceRevokedResponse {
+    int32 notified_conversations_count = 1;
+}
+
+// ──────────────────────────────────────────────
+// Media
+// ──────────────────────────────────────────────
+
+message InitiateMediaUploadRequest {
+    string user_id             = 1;
+    string conversation_id     = 2;
+    string mime_type           = 3;
+    int64  encrypted_size      = 4;
+    bytes  encryption_metadata = 5;
+}
+message InitiateMediaUploadResponse {
+    string media_id   = 1;
+    string upload_url = 2;
+    int32  expires_in = 3;
+}
+
+message ConfirmMediaUploadRequest {
+    string user_id  = 1;
+    string media_id = 2;
+}
+message ConfirmMediaUploadResponse {
+    bool success = 1;
+}
+
+message GetMediaDownloadUrlRequest {
+    string user_id  = 1;
+    string media_id = 2;
+}
+message GetMediaDownloadUrlResponse {
+    string download_url         = 1;
+    int32  expires_in           = 2;
+    bytes  encryption_metadata  = 3;
+}
+
+// ──────────────────────────────────────────────
+// Presence
+// ──────────────────────────────────────────────
+
+message SetTypingRequest {
+    string user_id         = 1;
+    string device_id       = 2;
+    string conversation_id = 3;
+    bool   is_typing       = 4;
+}
+message SetTypingResponse {
+    bool success = 1;
+}
+
+message SetOnlineRequest {
+    string user_id   = 1;
+    string device_id = 2;
+}
+message SetOnlineResponse {
+    bool success = 1;
+}
+
+// ──────────────────────────────────────────────
+// Internal
+// ──────────────────────────────────────────────
+
+message GetConversationMembersRequest {
+    string conversation_id = 1;
+}
+message GetConversationMembersResponse {
+    message MemberInfo {
+        string user_id = 1;
+        string role    = 2;
+    }
+    repeated MemberInfo members = 1;
+}
+
+// ──────────────────────────────────────────────
+// Health
+// ──────────────────────────────────────────────
+
+message HealthCheckRequest {}
+message HealthCheckResponse {
+    string status               = 1;
+    string db_status            = 2;
+    string redis_status         = 3;
+    string media_service_status = 4;
+    string version              = 5;
+}
+
+// ──────────────────────────────────────────────
+// Service definition
+// ──────────────────────────────────────────────
+
+service MessagingService {
+    // MLS Key Material
+    rpc UploadKeyPackages(UploadKeyPackagesRequest)     returns (UploadKeyPackagesResponse);
+    rpc GetKeyPackage(GetKeyPackageRequest)             returns (GetKeyPackageResponse);
+    rpc GetKeyPackagesCount(GetKeyPackagesCountRequest) returns (GetKeyPackagesCountResponse);
+
+    // Conversations
+    rpc CreateDirectConversation(CreateDirectConversationRequest) returns (ConversationResponse);
+    rpc CreateGroupConversation(CreateGroupConversationRequest)   returns (ConversationResponse);
+    rpc GetConversations(GetConversationsRequest)                 returns (GetConversationsResponse);
+    rpc GetConversation(GetConversationRequest)                   returns (ConversationResponse);
+    rpc LeaveConversation(LeaveConversationRequest)               returns (LeaveConversationResponse);
+
+    // Messages
+    rpc SendMessage(SendMessageRequest)   returns (SendMessageResponse);
+    rpc GetMessages(GetMessagesRequest)   returns (GetMessagesResponse);
+    rpc EditMessage(EditMessageRequest)   returns (EditMessageResponse);
+    rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
+    rpc MarkAsRead(MarkAsReadRequest)     returns (MarkAsReadResponse);
+
+    // Streaming
+    rpc SubscribeToConversation(SubscribeRequest) returns (stream ConversationEvent);
+
+    // MLS Group Management
+    rpc CommitGroupChange(CommitGroupChangeRequest)       returns (CommitGroupChangeResponse);
+    rpc GetPendingWelcomes(GetPendingWelcomesRequest)     returns (GetPendingWelcomesResponse);
+    rpc AckWelcome(AckWelcomeRequest)                     returns (AckWelcomeResponse);
+    rpc GetPendingCommits(GetPendingCommitsRequest)       returns (GetPendingCommitsResponse);
+    rpc NotifyDeviceRevoked(NotifyDeviceRevokedRequest)   returns (NotifyDeviceRevokedResponse);
+
+    // Media
+    rpc InitiateMediaUpload(InitiateMediaUploadRequest)   returns (InitiateMediaUploadResponse);
+    rpc ConfirmMediaUpload(ConfirmMediaUploadRequest)      returns (ConfirmMediaUploadResponse);
+    rpc GetMediaDownloadUrl(GetMediaDownloadUrlRequest)    returns (GetMediaDownloadUrlResponse);
+
+    // Presence
+    rpc SetTyping(SetTypingRequest)   returns (SetTypingResponse);
+    rpc SetOnline(SetOnlineRequest)   returns (SetOnlineResponse);
+
+    // Internal
+    rpc GetConversationMembers(GetConversationMembersRequest) returns (GetConversationMembersResponse);
+
+    // Health
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}

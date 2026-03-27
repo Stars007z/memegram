@@ -1,0 +1,193 @@
+import hashlib
+import uuid
+from datetime import datetime
+from typing import Optional
+
+import redis.asyncio as aioredis
+
+from app.repositories.member_repo import MemberRepository
+from app.repositories.mls_commit_repo import MlsCommitRepository
+from app.repositories.mls_group_repo import MlsGroupRepository
+from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
+from app.repositories.mls_welcome_repo import MlsWelcomeRepository
+from app.services.interfaces.mls_service import (
+    CommitEntryResult,
+    CommitResult,
+    IMlsService,
+    KeyPackageResult,
+    WelcomeEntryResult,
+)
+from app.services.interfaces.stream_service import IStreamService
+
+
+DEFAULT_CIPHER_SUITE = 1  # MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+
+
+class MlsServiceImpl(IMlsService):
+
+    def __init__(
+        self,
+        key_package_repo: MlsKeyPackageRepository,
+        mls_group_repo: MlsGroupRepository,
+        welcome_repo: MlsWelcomeRepository,
+        commit_repo: MlsCommitRepository,
+        member_repo: MemberRepository,
+        redis: aioredis.Redis,
+        stream_service: IStreamService,
+    ) -> None:
+        self._key_packages = key_package_repo
+        self._mls_groups = mls_group_repo
+        self._welcomes = welcome_repo
+        self._commits = commit_repo
+        self._members = member_repo
+        self._redis = redis
+        self._stream = stream_service
+
+    # ── Key Packages ────────────────────────────────
+
+    async def upload_key_packages(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+        key_packages: list[bytes],
+    ) -> int:
+        items = []
+        for kp_data in key_packages:
+            kp_ref = hashlib.sha256(kp_data).digest()
+            items.append({
+                "user_id": user_id,
+                "device_id": device_id,
+                "key_package_data": kp_data,
+                "key_package_ref": kp_ref,
+                "cipher_suite": DEFAULT_CIPHER_SUITE,
+            })
+
+        created = await self._key_packages.create_many(items)
+        return len(created)
+
+    async def get_key_package(
+        self,
+        target_user_id: uuid.UUID,
+        target_device_id: uuid.UUID,
+    ) -> KeyPackageResult:
+        package = await self._key_packages.consume_one(target_user_id, target_device_id)
+        if not package:
+            raise ValueError("NOT_FOUND: No available key packages for this device")
+        return KeyPackageResult(
+            key_package_data=package.key_package_data,
+            key_package_ref=package.key_package_ref,
+        )
+
+    async def get_key_packages_count(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+    ) -> int:
+        return await self._key_packages.count_available(user_id, device_id)
+
+    # ── Group Management ────────────────────────────
+
+    async def commit_group_change(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        commit_data: bytes,
+        new_epoch: int,
+        welcome_messages: Optional[list[tuple[uuid.UUID, bytes]]] = None,
+        ratchet_tree: Optional[bytes] = None,
+        removed_device_ids: Optional[list[uuid.UUID]] = None,
+    ) -> CommitResult:
+        mls_group = await self._mls_groups.get_by_conversation_id(conversation_id)
+        if not mls_group:
+            raise ValueError("NOT_FOUND: MLS group not found")
+
+        if mls_group.current_epoch + 1 != new_epoch:
+            raise ValueError("ABORTED: Epoch conflict — expected "
+                             f"{mls_group.current_epoch + 1}, got {new_epoch}")
+
+        await self._commits.create({
+            "conversation_id": conversation_id,
+            "sender_device_id": device_id,
+            "epoch": new_epoch,
+            "commit_data": commit_data,
+        })
+
+        if welcome_messages:
+            for wm_device_id, welcome_data in welcome_messages:
+                await self._welcomes.create({
+                    "recipient_device_id": wm_device_id,
+                    "conversation_id": conversation_id,
+                    "welcome_data": welcome_data,
+                })
+
+        update_data: dict = {"current_epoch": new_epoch}
+        if ratchet_tree is not None:
+            update_data["ratchet_tree"] = ratchet_tree
+        await self._mls_groups.update(mls_group, update_data)
+
+        now = datetime.utcnow()
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "epoch_changed",
+            "new_epoch": new_epoch,
+        })
+
+        return CommitResult(new_epoch=new_epoch, committed_at=now.timestamp())
+
+    # ── Welcomes & Commits ──────────────────────────
+
+    async def get_pending_welcomes(
+        self, device_id: uuid.UUID,
+    ) -> list[WelcomeEntryResult]:
+        rows = await self._welcomes.get_pending_for_device(device_id)
+        return [
+            WelcomeEntryResult(
+                id=w.id,
+                conversation_id=w.conversation_id,
+                welcome_data=w.welcome_data,
+                created_at=w.created_at.timestamp(),
+            )
+            for w in rows
+        ]
+
+    async def ack_welcome(
+        self, device_id: uuid.UUID, welcome_id: uuid.UUID,
+    ) -> bool:
+        welcome = await self._welcomes.get_by_id(welcome_id)
+        if not welcome or welcome.recipient_device_id != device_id:
+            raise ValueError("NOT_FOUND: Welcome message not found")
+        await self._welcomes.update(welcome, {"delivered_at": datetime.utcnow()})
+        return True
+
+    async def get_pending_commits(
+        self, conversation_id: uuid.UUID, since_epoch: int,
+    ) -> list[CommitEntryResult]:
+        rows = await self._commits.get_since_epoch(conversation_id, since_epoch)
+        return [
+            CommitEntryResult(
+                epoch=c.epoch,
+                commit_data=c.commit_data,
+                created_at=c.created_at.timestamp(),
+            )
+            for c in rows
+        ]
+
+    # ── Device Revoked ──────────────────────────────
+
+    async def notify_device_revoked(
+        self, user_id: uuid.UUID, revoked_device_id: uuid.UUID,
+    ) -> int:
+        conv_ids = await self._members.get_user_conversation_ids(user_id)
+        if not conv_ids:
+            return 0
+
+        for cid in conv_ids:
+            await self._stream.publish_event(cid, {
+                "event_type": "device_revoked",
+                "user_id": str(user_id),
+                "revoked_device_id": str(revoked_device_id),
+                "conversation_ids": [str(c) for c in conv_ids],
+            })
+
+        return len(conv_ids)
