@@ -20,12 +20,14 @@ RUN python -m grpc_tools.protoc \
     --grpc_python_out=./app/infrastructure/grpc/generated \
     ./proto/auth.proto \
     ./proto/user.proto \
-    ./proto/contacts.proto
+    ./proto/contacts.proto \
+    ./proto/messaging.proto \
+    ./proto/media.proto
 
 # Fix relative imports in generated stubs
 RUN python - <<'EOF'
 import re, pathlib
-for name in ["auth_pb2_grpc", "user_pb2_grpc", "contacts_pb2_grpc"]:
+for name in ["auth_pb2_grpc", "user_pb2_grpc", "contacts_pb2_grpc", "messaging_pb2_grpc", "media_pb2_grpc"]:
     target = pathlib.Path(f"app/infrastructure/grpc/generated/{name}.py")
     if target.exists():
         text = target.read_text()

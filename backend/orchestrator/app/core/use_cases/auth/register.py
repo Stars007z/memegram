@@ -18,10 +18,7 @@ class RegisterUseCase:
             )
         except Exception as e:
             try:
-                await self.auth_gateway.revoke_registration(
-                    user_id=auth_result.user_id,
-                    access_token=auth_result.access_token,
-                )
+                await self.auth_gateway.logout(auth_result.access_token)
             except Exception:
                 pass
 
