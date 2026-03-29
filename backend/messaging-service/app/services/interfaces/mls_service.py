@@ -11,6 +11,13 @@ class KeyPackageResult:
 
 
 @dataclass
+class UserDeviceKeyPackageResult:
+    device_id: uuid.UUID
+    key_package_data: bytes
+    key_package_ref: bytes
+
+
+@dataclass
 class CommitResult:
     new_epoch: int
     committed_at: float
@@ -57,6 +64,14 @@ class IMlsService(ABC):
         user_id: uuid.UUID,
         device_id: uuid.UUID,
     ) -> int:
+        ...
+
+    @abstractmethod
+    async def get_key_packages_for_user(
+        self,
+        target_user_id: uuid.UUID,
+    ) -> list[UserDeviceKeyPackageResult]:
+        """Fetch one key package per active device of the given user."""
         ...
 
     @abstractmethod

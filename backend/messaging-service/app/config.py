@@ -14,6 +14,9 @@ class Settings:
     GRPC_PORT: int = int(os.getenv("GRPC_PORT", 50054))
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+    AUTH_GRPC_HOST: str = os.getenv("AUTH_GRPC_HOST", "localhost")
+    AUTH_GRPC_PORT: int = int(os.getenv("AUTH_GRPC_PORT", 50051))
+
     CONTACTS_GRPC_HOST: str = os.getenv("CONTACTS_GRPC_HOST", "localhost")
     CONTACTS_GRPC_PORT: int = int(os.getenv("CONTACTS_GRPC_PORT", 50053))
 
@@ -29,6 +32,10 @@ class Settings:
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT.lower() == "development"
+
+    @property
+    def auth_grpc_address(self) -> str:
+        return f"{self.AUTH_GRPC_HOST}:{self.AUTH_GRPC_PORT}"
 
     @property
     def contacts_grpc_address(self) -> str:
