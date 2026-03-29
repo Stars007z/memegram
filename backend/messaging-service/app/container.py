@@ -14,6 +14,7 @@ import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_session
+from app.infrastructure.auth_client import IAuthClient
 from app.infrastructure.contacts_client import IContactsClient
 from app.infrastructure.media_client import IMediaClient
 
@@ -34,12 +35,14 @@ class RequestScope:
         self,
         session: AsyncSession,
         redis: aioredis.Redis,
+        auth: IAuthClient,
         contacts: IContactsClient,
         media: IMediaClient,
         stream: IStreamService,
     ) -> None:
         self._session = session
         self._redis = redis
+        self._auth = auth
         self._contacts = contacts
         self._media = media
         self._stream = stream
@@ -101,6 +104,7 @@ class RequestScope:
                 welcome_repo=MlsWelcomeRepository(self._session),
                 commit_repo=MlsCommitRepository(self._session),
                 member_repo=MemberRepository(self._session),
+                auth_client=self._auth,
                 redis=self._redis,
                 stream_service=self._stream,
             )
@@ -127,10 +131,12 @@ class Container:
     def __init__(
         self,
         redis: aioredis.Redis,
+        auth_client: IAuthClient,
         contacts_client: IContactsClient,
         media_client: IMediaClient,
     ) -> None:
         self._redis = redis
+        self._auth = auth_client
         self._contacts = contacts_client
         self._media = media_client
         self._stream: IStreamService | None = None
@@ -154,6 +160,7 @@ class Container:
             yield RequestScope(
                 session=session,
                 redis=self._redis,
+                auth=self._auth,
                 contacts=self._contacts,
                 media=self._media,
                 stream=self.stream_service,

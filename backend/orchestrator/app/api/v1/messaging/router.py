@@ -8,7 +8,8 @@ from app.api.v1.messaging.schemas import (
     b64_to_bytes,
     UploadKeyPackagesRequestSchema,
     UploadKeyPackagesResponseSchema,
-    KeyPackageResponseSchema,
+    UserDeviceKeyPackageSchema,
+    GetKeyPackagesForUserResponseSchema,
     KeyPackagesCountResponseSchema,
     CreateDirectConversationRequestSchema,
     CreateGroupConversationRequestSchema,
@@ -103,19 +104,24 @@ async def upload_key_packages(
 
 
 @router.get(
-    "/key-packages/{target_user_id}/{target_device_id}",
-    response_model=KeyPackageResponseSchema,
+    "/key-packages/by-user/{target_user_id}",
+    response_model=GetKeyPackagesForUserResponseSchema,
 )
-async def get_key_package(
+async def get_key_packages_for_user(
     target_user_id: str,
-    target_device_id: str,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
-    result = await gw.get_key_package(target_user_id, target_device_id)
-    return KeyPackageResponseSchema(
-        key_package_data=result.key_package_data,
-        key_package_ref=result.key_package_ref,
+    results = await gw.get_key_packages_for_user(target_user_id)
+    return GetKeyPackagesForUserResponseSchema(
+        key_packages=[
+            UserDeviceKeyPackageSchema(
+                device_id=r.device_id,
+                key_package_data=r.key_package_data,
+                key_package_ref=r.key_package_ref,
+            )
+            for r in results
+        ],
     )
 
 

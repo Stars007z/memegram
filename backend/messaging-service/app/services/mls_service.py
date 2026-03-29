@@ -10,11 +10,13 @@ from app.repositories.mls_commit_repo import MlsCommitRepository
 from app.repositories.mls_group_repo import MlsGroupRepository
 from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
+from app.infrastructure.auth_client import IAuthClient
 from app.services.interfaces.mls_service import (
     CommitEntryResult,
     CommitResult,
     IMlsService,
     KeyPackageResult,
+    UserDeviceKeyPackageResult,
     WelcomeEntryResult,
 )
 from app.services.interfaces.stream_service import IStreamService
@@ -32,6 +34,7 @@ class MlsServiceImpl(IMlsService):
         welcome_repo: MlsWelcomeRepository,
         commit_repo: MlsCommitRepository,
         member_repo: MemberRepository,
+        auth_client: IAuthClient,
         redis: aioredis.Redis,
         stream_service: IStreamService,
     ) -> None:
@@ -40,6 +43,7 @@ class MlsServiceImpl(IMlsService):
         self._welcomes = welcome_repo
         self._commits = commit_repo
         self._members = member_repo
+        self._auth = auth_client
         self._redis = redis
         self._stream = stream_service
 
@@ -84,6 +88,30 @@ class MlsServiceImpl(IMlsService):
         device_id: uuid.UUID,
     ) -> int:
         return await self._key_packages.count_available(user_id, device_id)
+
+    async def get_key_packages_for_user(
+        self,
+        target_user_id: uuid.UUID,
+    ) -> list[UserDeviceKeyPackageResult]:
+        device_ids = await self._auth.get_active_device_ids(target_user_id)
+        if not device_ids:
+            raise ValueError("NOT_FOUND: No active devices found for user")
+
+        results: list[UserDeviceKeyPackageResult] = []
+        for device_id in device_ids:
+            package = await self._key_packages.consume_one(target_user_id, device_id)
+            if package:
+                results.append(UserDeviceKeyPackageResult(
+                    device_id=device_id,
+                    key_package_data=package.key_package_data,
+                    key_package_ref=package.key_package_ref,
+                ))
+
+        if not results:
+            raise ValueError(
+                "NOT_FOUND: No available key packages for any device of this user"
+            )
+        return results
 
     # ── Group Management ────────────────────────────
 

@@ -24,6 +24,16 @@ class KeyPackageResponseSchema(BaseModel):
     key_package_ref: bytes
 
 
+class UserDeviceKeyPackageSchema(BaseModel):
+    device_id: str
+    key_package_data: bytes
+    key_package_ref: bytes
+
+
+class GetKeyPackagesForUserResponseSchema(BaseModel):
+    key_packages: List[UserDeviceKeyPackageSchema]
+
+
 class KeyPackagesCountResponseSchema(BaseModel):
     available_count: int
 

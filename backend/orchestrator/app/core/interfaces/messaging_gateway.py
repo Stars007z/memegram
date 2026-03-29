@@ -93,6 +93,13 @@ class KeyPackageResult:
     key_package_ref: bytes
 
 
+@dataclass
+class UserDeviceKeyPackageResult:
+    device_id: str
+    key_package_data: bytes
+    key_package_ref: bytes
+
+
 # ── MLS Group Management ─────────────────────────────────────────────
 
 @dataclass
@@ -162,6 +169,11 @@ class IMessagingGateway(ABC):
     async def get_key_packages_count(
         self, user_id: str, device_id: str,
     ) -> int: ...
+
+    @abstractmethod
+    async def get_key_packages_for_user(
+        self, target_user_id: str,
+    ) -> list[UserDeviceKeyPackageResult]: ...
 
     # Conversations
     @abstractmethod
@@ -289,6 +301,10 @@ class IMessagingGateway(ABC):
     def subscribe_to_conversations(
         self, user_id: str, device_id: str, conversation_ids: list[str],
     ) -> AsyncIterator[dict]: ...
+
+    # Device revocation notification
+    @abstractmethod
+    async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int: ...
 
     # Health
     @abstractmethod

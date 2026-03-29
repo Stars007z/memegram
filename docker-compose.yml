@@ -45,17 +45,11 @@ services:
       context: ./backend/auth-service
       dockerfile: Dockerfile
     container_name: memegram-auth-service
-    command: >
-      sh -c "
-        echo 'Waiting for postgres...' &&
-        until pg_isready -h auth-postgres -U ${AUTH_DB_USER:-memegram} -d ${AUTH_DB_NAME:-auth_db}; do sleep 1; done &&
-        echo 'Running migrations...' &&
-        alembic upgrade head &&
-        echo 'Starting gRPC server...' &&
-        python -m app.main
-      "
     environment:
       - DATABASE_URL=postgresql+asyncpg://${AUTH_DB_USER:-memegram}:${AUTH_DB_PASSWORD:-changeme}@auth-postgres:5432/${AUTH_DB_NAME:-auth_db}
+      - DB_HOST=auth-postgres
+      - DB_PORT=5432
+      - DB_USER=${AUTH_DB_USER:-memegram}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_change_in_prod}
       - JWT_ALGORITHM=HS256
       - GRPC_PORT=50051
@@ -271,6 +265,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${MESSAGING_DB_USER:-memegram}:${MESSAGING_DB_PASSWORD:-changeme}@messaging-postgres:5432/${MESSAGING_DB_NAME:-messaging_db}
       - GRPC_PORT=50054
       - REDIS_URL=redis://messaging-redis:6379/0
+      - AUTH_GRPC_HOST=auth-service
+      - AUTH_GRPC_PORT=50051
       - CONTACTS_GRPC_HOST=contacts-service
       - CONTACTS_GRPC_PORT=50053
       - MEDIA_GRPC_HOST=media-service
@@ -282,6 +278,8 @@ services:
       messaging-postgres:
         condition: service_healthy
       messaging-redis:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
       contacts-service:
         condition: service_healthy

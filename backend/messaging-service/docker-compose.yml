@@ -51,6 +51,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - GRPC_PORT=${GRPC_PORT:-50054}
       - REDIS_URL=redis://redis:6379/0
+      - AUTH_GRPC_HOST=${AUTH_GRPC_HOST:-auth-service}
+      - AUTH_GRPC_PORT=${AUTH_GRPC_PORT:-50051}
       - CONTACTS_GRPC_HOST=${CONTACTS_GRPC_HOST:-contacts-service}
       - CONTACTS_GRPC_PORT=${CONTACTS_GRPC_PORT:-50053}
       - MEDIA_GRPC_HOST=${MEDIA_GRPC_HOST:-media-service}

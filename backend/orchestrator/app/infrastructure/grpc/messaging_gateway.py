@@ -16,6 +16,7 @@ from app.core.interfaces.messaging_gateway import (
     SendMessageResult,
     GetMessagesResult,
     KeyPackageResult,
+    UserDeviceKeyPackageResult,
     CommitGroupChangeResult,
     WelcomeEntryResult,
     CommitEntryResult,
@@ -132,6 +133,27 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.available_count
+
+    async def get_key_packages_for_user(
+        self, target_user_id: str,
+    ) -> list[UserDeviceKeyPackageResult]:
+        try:
+            resp = await self._stub().GetKeyPackagesForUser(
+                messaging_pb2.GetKeyPackagesForUserRequest(
+                    target_user_id=target_user_id,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return [
+            UserDeviceKeyPackageResult(
+                device_id=kp.device_id,
+                key_package_data=bytes(kp.key_package_data),
+                key_package_ref=bytes(kp.key_package_ref),
+            )
+            for kp in resp.key_packages
+        ]
 
     # ── Conversations ─────────────────────────────────────────────────
 
@@ -566,6 +588,21 @@ class GrpcMessagingGateway(IMessagingGateway):
                 "conversation_ids": list(dr.conversation_ids),
             }
         return result
+
+    # ── Device revocation notification ────────────────────────────────
+
+    async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int:
+        try:
+            resp = await self._stub().NotifyDeviceRevoked(
+                messaging_pb2.NotifyDeviceRevokedRequest(
+                    user_id=user_id,
+                    revoked_device_id=revoked_device_id,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.notified_conversations_count
 
     # ── Health ────────────────────────────────────────────────────────
 

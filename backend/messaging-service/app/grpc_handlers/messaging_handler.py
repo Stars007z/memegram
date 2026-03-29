@@ -35,6 +35,9 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def GetKeyPackagesCount(self, request, context):
         return await self._mls.get_key_packages_count(request, context)
 
+    async def GetKeyPackagesForUser(self, request, context):
+        return await self._mls.get_key_packages_for_user(request, context)
+
     # ── Conversations ───────────────────────────────
 
     async def CreateDirectConversation(self, request, context):

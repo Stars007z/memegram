@@ -121,6 +121,20 @@ message GetKeyPackagesCountResponse {
     int32 available_count = 1;
 }
 
+message GetKeyPackagesForUserRequest {
+    string target_user_id = 1;
+}
+
+message UserDeviceKeyPackage {
+    string device_id        = 1;
+    bytes  key_package_data = 2;
+    bytes  key_package_ref  = 3;
+}
+
+message GetKeyPackagesForUserResponse {
+    repeated UserDeviceKeyPackage key_packages = 1;
+}
+
 // ──────────────────────────────────────────────
 // Conversations
 // ──────────────────────────────────────────────
@@ -403,6 +417,7 @@ service MessagingService {
     rpc UploadKeyPackages(UploadKeyPackagesRequest)     returns (UploadKeyPackagesResponse);
     rpc GetKeyPackage(GetKeyPackageRequest)             returns (GetKeyPackageResponse);
     rpc GetKeyPackagesCount(GetKeyPackagesCountRequest) returns (GetKeyPackagesCountResponse);
+    rpc GetKeyPackagesForUser(GetKeyPackagesForUserRequest) returns (GetKeyPackagesForUserResponse);
 
     // Conversations
     rpc CreateDirectConversation(CreateDirectConversationRequest) returns (ConversationResponse);
