@@ -21,13 +21,14 @@ RUN mkdir -p app/generated && \
         --python_out=./app/generated \
         --grpc_python_out=./app/generated \
         ./proto/messaging.proto \
+        ./proto/auth.proto \
         ./proto/contacts.proto \
         ./proto/media.proto
 
 RUN python - <<'EOF'
 import re, pathlib
 
-for name in ["messaging", "contacts", "media"]:
+for name in ["messaging", "auth", "contacts", "media"]:
     grpc_file = pathlib.Path(f"app/generated/{name}_pb2_grpc.py")
     if grpc_file.exists():
         text = grpc_file.read_text()

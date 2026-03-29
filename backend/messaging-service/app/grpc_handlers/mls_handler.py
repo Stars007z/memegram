@@ -50,6 +50,31 @@ class MlsHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.GetKeyPackageResponse()
 
+    async def get_key_packages_for_user(self, request, context):
+        if not request.target_user_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("target_user_id is required")
+            return messaging_pb2.GetKeyPackagesForUserResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                results = await scope.mls_service.get_key_packages_for_user(
+                    target_user_id=uuid.UUID(request.target_user_id),
+                )
+                return messaging_pb2.GetKeyPackagesForUserResponse(
+                    key_packages=[
+                        messaging_pb2.UserDeviceKeyPackage(
+                            device_id=str(r.device_id),
+                            key_package_data=r.key_package_data,
+                            key_package_ref=r.key_package_ref,
+                        )
+                        for r in results
+                    ]
+                )
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.GetKeyPackagesForUserResponse()
+
     async def get_key_packages_count(self, request, context):
         if not request.user_id or not request.device_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)

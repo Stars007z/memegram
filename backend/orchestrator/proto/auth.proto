@@ -6,56 +6,80 @@ service AuthService {
     rpc Register(RegisterRequest) returns (AuthResponse);
 
     // Login в 2 этапа
-    rpc LoginInit(LoginInitRequest) returns (LoginInitResponse);
+    rpc LoginInit(LoginInitRequest)       returns (LoginInitResponse);
     rpc LoginComplete(LoginCompleteRequest) returns (AuthResponse);
 
-    // Logout
-    rpc Logout(LogoutRequest) returns (LogoutResponse);
+    // Refresh & Logout
+    rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+    rpc Logout(LogoutRequest)             returns (LogoutResponse);
 
     // Health check
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 
-    // Создание инвайт-кода (админ)
+    // Создание инвайт-кода
     rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
 
     rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+    // ── Device management ────────────────────────────────────────────
+    rpc InitDeviceAddition(InitDeviceAdditionRequest)             returns (InitDeviceAdditionResponse);
+    rpc SubmitDeviceData(SubmitDeviceDataRequest)                 returns (SubmitDeviceDataResponse);
+    rpc GetDeviceAdditionStatus(GetDeviceAdditionStatusRequest)   returns (GetDeviceAdditionStatusResponse);
+    rpc GetPendingDeviceAdditions(GetPendingDeviceAdditionsRequest) returns (GetPendingDeviceAdditionsResponse);
+    rpc ConfirmDeviceAddition(ConfirmDeviceAdditionRequest)       returns (ConfirmDeviceAdditionResponse);
+    rpc GetDevices(GetDevicesRequest)                             returns (GetDevicesResponse);
+    rpc GetDevice(GetDeviceRequest)                               returns (DeviceInfo);
+    rpc RevokeDevice(RevokeDeviceRequest)                         returns (RevokeDeviceResponse);
+    rpc UpdateDeviceKeys(UpdateDeviceKeysRequest)                 returns (UpdateDeviceKeysResponse);
+    rpc RenameDevice(RenameDeviceRequest)                         returns (RenameDeviceResponse);
+    rpc VerifyDevice(VerifyDeviceRequest)                         returns (VerifyDeviceResponse);
+    rpc TransferPrimary(TransferPrimaryRequest)                   returns (TransferPrimaryResponse);
+    rpc BulkRevokeDevices(BulkRevokeDevicesRequest)               returns (BulkRevokeDevicesResponse);
+    rpc GetDeviceStats(GetDeviceStatsRequest)                     returns (GetDeviceStatsResponse);
 }
 
-message RegisterRequest {
-    string username = 1;
-    string invite_code = 2;
-    string device_id = 3;
-    string device_name = 4;
+// ──────────────────────────────────────────────────────────────────────
+// Auth messages (existing)
+// ──────────────────────────────────────────────────────────────────────
 
-    bytes identity_key_pub = 5;
-    bytes init_key_pub = 6;
-    bytes credential_data = 7;
+message RegisterRequest {
+    string username         = 1;
+    string invite_code      = 2;
+    string device_id        = 3;   // client-provided device identifier
+    string device_name      = 4;
+    bytes  identity_key_pub = 5;
+    bytes  init_key_pub     = 6;
+    bytes  credential_data  = 7;
 }
 
 message LoginInitRequest {
-    string device_id = 1;
+    string device_id = 1;   // devices.id UUID returned at registration
 }
 
 message LoginInitResponse {
-    string challenge = 1;           // Base64-encoded случайная строка
-    int64 expires_at = 2;           // Unix timestamp, когда challenge истечёт
-    string device_id = 3;
+    string challenge  = 1;
+    int64  expires_at = 2;
+    string device_id  = 3;
 }
 
 message LoginCompleteRequest {
-    string device_id = 1;
-    string challenge = 2;           // Полученный из LoginInit
-    bytes signature = 3;            // Подпись challenge приватным ключом
-    string device_name = 4;         // Обновление имени устройства
+    string device_id   = 1;
+    string challenge   = 2;
+    bytes  signature   = 3;
+    string device_name = 4;
+}
+
+message RefreshTokenRequest {
+    string refresh_token = 1;
 }
 
 message AuthResponse {
-    string user_id = 1;
-    string device_id = 2;
-    bool is_primary = 3;
-    string access_token = 4;
-    string refresh_token = 5;
-    int64 expires_at = 6;
+    string user_id        = 1;
+    string device_id      = 2;
+    bool   is_primary     = 3;
+    string access_token   = 4;
+    string refresh_token  = 5;
+    int64  expires_at     = 6;
 }
 
 message LogoutRequest {
@@ -63,39 +87,270 @@ message LogoutRequest {
 }
 
 message LogoutResponse {
-    bool success = 1;
+    bool   success = 1;
     string message = 2;
 }
 
 message HealthCheckRequest {}
 
 message HealthCheckResponse {
-    string status = 1;
-    string db_status = 2;
+    string status       = 1;
+    string db_status    = 2;
     string redis_status = 3;
-    string version = 4;
+    string version      = 4;
 }
+
 message CreateInviteRequest {
-    int32 expires_in_days = 1;
-    optional string created_by_device_id = 2;
+    int32           expires_in_days       = 1;
+    optional string created_by_device_id  = 2;
 }
 
 message CreateInviteResponse {
-    string code = 1;
-    int64 created_at = 2;
-    int64 expires_at = 3;
-    bool is_used = 4;
-    string message = 5;
+    string code       = 1;
+    int64  created_at = 2;
+    int64  expires_at = 3;
+    bool   is_used    = 4;
+    string message    = 5;
 }
 
 message ValidateTokenRequest {
-  string access_token = 1;
+    string access_token = 1;
 }
 
 message ValidateTokenResponse {
-  bool valid = 1;
-  string user_id = 2;
-  string device_id = 3;
-  string device_type = 4;
-  int64 expires_at = 5;
+    bool   valid       = 1;
+    string user_id     = 2;
+    string device_id   = 3;
+    string device_type = 4;
+    int64  expires_at  = 5;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Device management messages
+// ──────────────────────────────────────────────────────────────────────
+
+message DeviceInfo {
+    string id               = 1;
+    string user_id          = 2;
+    string client_device_id = 3;
+    string device_name      = 4;
+    string device_type      = 5;  // primary | secondary
+    bool   is_active        = 6;
+    int64  created_at       = 7;
+    int64  last_seen        = 8;
+    bytes  identity_key_pub = 9;
+    bytes  init_key_pub     = 10;
+    int64  revoked_at       = 11; // 0 = not revoked
+}
+
+// ── Init device addition ──
+
+message InitDeviceAdditionRequest {
+    string user_id   = 1;
+    string device_id = 2; // requesting (primary) device UUID
+}
+
+message InitDeviceAdditionResponse {
+    string registration_id   = 1;
+    int64  expires_at        = 2;
+    string registration_code = 3;
+}
+
+// ── Submit new device data ──
+
+message SubmitDeviceDataRequest {
+    string registration_id   = 1;
+    string registration_code = 2;
+    string device_id         = 3; // new device client-provided id
+    string device_name       = 4;
+    string device_type       = 5;
+    bytes  identity_key_pub  = 6;
+    bytes  init_key_pub      = 7;
+    bytes  credential_data   = 8;
+}
+
+message SubmitDeviceDataResponse {
+    string status     = 1; // awaiting_confirmation
+    int64  expires_at = 2;
+}
+
+// ── Get device addition status ──
+
+message GetDeviceAdditionStatusRequest {
+    string registration_id = 1;
+}
+
+message GetDeviceAdditionStatusResponse {
+    string     status     = 1; // pending | awaiting_confirmation | confirmed | rejected
+    int64      expires_at = 2;
+    DeviceInfo device     = 3; // populated when confirmed
+    string     access_token  = 4;
+    string     refresh_token = 5;
+    int64      token_expires_at = 6;
+}
+
+// ── Pending device additions ──
+
+message GetPendingDeviceAdditionsRequest {
+    string user_id   = 1;
+    string device_id = 2; // requesting (primary) device UUID
+}
+
+message PendingRegistrationInfo {
+    string registration_id   = 1;
+    string registration_code = 2;
+    int64  expires_at        = 3;
+    string status            = 4;
+    string device_id         = 5; // new device client id (if submitted)
+    string device_name       = 6;
+    string device_type       = 7;
+    int64  created_at        = 8;
+}
+
+message GetPendingDeviceAdditionsResponse {
+    repeated PendingRegistrationInfo registrations = 1;
+}
+
+// ── Confirm device addition ──
+
+message ConfirmDeviceAdditionRequest {
+    string user_id          = 1;
+    string device_id        = 2; // requesting (primary) device UUID
+    string registration_id  = 3;
+    bool   confirm          = 4;
+    string new_device_name  = 5; // optional override
+}
+
+message ConfirmDeviceAdditionResponse {
+    string new_device_id = 1;
+    string user_id       = 2;
+    string status        = 3; // confirmed | rejected
+    string message       = 4;
+    string access_token  = 5;
+    string refresh_token = 6;
+    int64  expires_at    = 7;
+}
+
+// ── Get devices ──
+
+message GetDevicesRequest {
+    string user_id = 1;
+}
+
+message GetDevicesResponse {
+    repeated DeviceInfo devices = 1;
+}
+
+// ── Get single device ──
+
+message GetDeviceRequest {
+    string user_id   = 1;
+    string device_id = 2;
+}
+
+// ── Revoke device ──
+
+message RevokeDeviceRequest {
+    string user_id              = 1;
+    string requesting_device_id = 2; // primary device UUID
+    string target_device_id     = 3;
+    string reason               = 4;
+}
+
+message RevokeDeviceResponse {
+    bool   success           = 1;
+    string message           = 2;
+    string revoked_device_id = 3;
+    int64  revoked_at        = 4;
+}
+
+// ── Update device keys ──
+
+message UpdateDeviceKeysRequest {
+    string user_id          = 1;
+    string device_id        = 2;
+    bytes  identity_key_pub = 3;
+    bytes  init_key_pub     = 4;
+    bytes  credential_data  = 5;
+}
+
+message UpdateDeviceKeysResponse {
+    bool   success    = 1;
+    string message    = 2;
+    int64  updated_at = 3;
+}
+
+// ── Rename device ──
+
+message RenameDeviceRequest {
+    string user_id              = 1;
+    string requesting_device_id = 2;
+    string target_device_id     = 3;
+    string new_name             = 4;
+}
+
+message RenameDeviceResponse {
+    bool   success  = 1;
+    string new_name = 2;
+    string message  = 3;
+}
+
+// ── Verify device ──
+
+message VerifyDeviceRequest {
+    string device_id = 1;
+    bytes  signature = 2;
+}
+
+message VerifyDeviceResponse {
+    bool   valid   = 1;
+    string message = 2;
+}
+
+// ── Transfer primary ──
+
+message TransferPrimaryRequest {
+    string user_id              = 1;
+    string requesting_device_id = 2;
+    string target_device_id     = 3;
+}
+
+message TransferPrimaryResponse {
+    bool   success               = 1;
+    string new_primary_device_id = 2;
+    string message               = 3;
+}
+
+// ── Bulk revoke ──
+
+message BulkRevokeDevicesRequest {
+    string          user_id              = 1;
+    string          requesting_device_id = 2;
+    repeated string target_device_ids    = 3;
+    string          reason               = 4;
+}
+
+message BulkRevokeDevicesResponse {
+    bool            success            = 1;
+    int32           revoked_count      = 2;
+    repeated string revoked_device_ids = 3;
+}
+
+// ── Device stats ──
+
+message GetDeviceStatsRequest {
+    string user_id = 1;
+}
+
+message DeviceTypeCount {
+    string device_type = 1;
+    int32  count       = 2;
+}
+
+message GetDeviceStatsResponse {
+    int32                   total_count      = 1;
+    int32                   active_count     = 2;
+    int32                   primary_count    = 3;
+    repeated DeviceTypeCount type_stats      = 4;
+    int64                   last_activity_at = 5;
 }

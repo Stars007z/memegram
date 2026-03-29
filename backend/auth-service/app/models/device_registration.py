@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, LargeBinary
+from sqlalchemy import String, DateTime, Text, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 import uuid
@@ -31,3 +31,9 @@ class DeviceRegistration(Base):
     confirmed_by_device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     rejected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     rejection_reason: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # Результат подтверждения (для polling нового устройства)
+    confirmed_device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    result_access_token: Mapped[str] = mapped_column(String(512), nullable=True)
+    result_refresh_token: Mapped[str] = mapped_column(String(512), nullable=True)
+    result_token_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)

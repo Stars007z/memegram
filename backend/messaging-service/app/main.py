@@ -8,6 +8,7 @@ from app.container import Container
 from app.database.redis import RedisClient
 from app.generated import messaging_pb2, messaging_pb2_grpc
 from app.grpc_handlers.messaging_handler import MessagingHandler
+from app.infrastructure.auth_client import GrpcAuthClient
 from app.infrastructure.contacts_client import GrpcContactsClient
 from app.infrastructure.media_client import GrpcMediaClient
 
@@ -20,6 +21,9 @@ SERVICE_NAMES = (
 async def _build_container() -> Container:
     redis = await RedisClient.get_instance()
 
+    auth_channel = grpc.aio.insecure_channel(settings.auth_grpc_address)
+    auth_client = GrpcAuthClient(auth_channel)
+
     contacts_channel = grpc.aio.insecure_channel(settings.contacts_grpc_address)
     contacts_client = GrpcContactsClient(contacts_channel)
 
@@ -28,6 +32,7 @@ async def _build_container() -> Container:
 
     return Container(
         redis=redis,
+        auth_client=auth_client,
         contacts_client=contacts_client,
         media_client=media_client,
     )
