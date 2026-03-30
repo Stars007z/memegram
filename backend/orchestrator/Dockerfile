@@ -3,10 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    netcat-openbsd \
+    build-essential libpq-dev curl netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -14,36 +11,33 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p app/infrastructure/grpc/generated && \
-    python -m grpc_tools.protoc \
-        -I./proto \
-        --python_out=./app/infrastructure/grpc/generated \
-        --grpc_python_out=./app/infrastructure/grpc/generated \
-        ./proto/auth.proto
+RUN mkdir -p app/infrastructure/grpc/generated
 
+# Compile all proto files
+RUN python -m grpc_tools.protoc \
+    -I./proto \
+    --python_out=./app/infrastructure/grpc/generated \
+    --grpc_python_out=./app/infrastructure/grpc/generated \
+    ./proto/auth.proto \
+    ./proto/user.proto \
+    ./proto/contacts.proto \
+    ./proto/messaging.proto \
+    ./proto/media.proto
+
+# Fix relative imports in generated stubs
 RUN python - <<'EOF'
 import re, pathlib
-
-target = pathlib.Path("app/infrastructure/grpc/generated/auth_pb2_grpc.py")
-text = target.read_text()
-# Заменяем любой абсолютный "import auth_pb2" на относительный
-text = re.sub(r'^import (\w+_pb2)', r'from . import \1', text, flags=re.MULTILINE)
-target.write_text(text)
-print("Patched:", target)
+for name in ["auth_pb2_grpc", "user_pb2_grpc", "contacts_pb2_grpc", "messaging_pb2_grpc", "media_pb2_grpc"]:
+    target = pathlib.Path(f"app/infrastructure/grpc/generated/{name}.py")
+    if target.exists():
+        text = target.read_text()
+        text = re.sub(r"^import (\w+_pb2)", r"from . import \1", text, flags=re.MULTILINE)
+        target.write_text(text)
+        print("Patched", target)
 EOF
 
-RUN touch app/__init__.py \
-         app/api/__init__.py \
-         app/api/v1/__init__.py \
-         app/api/v1/auth/__init__.py \
-         app/core/__init__.py \
-         app/core/interfaces/__init__.py \
-         app/core/use_cases/__init__.py \
-         app/core/use_cases/auth/__init__.py \
-         app/infrastructure/__init__.py \
-         app/infrastructure/grpc/__init__.py \
-         app/infrastructure/grpc/generated/__init__.py \
-         app/exceptions/__init__.py
+# Ensure all __init__.py files exist
+RUN find app -type d | xargs -I{} touch {}/__init__.py 2>/dev/null; true
 
 EXPOSE 8000
 

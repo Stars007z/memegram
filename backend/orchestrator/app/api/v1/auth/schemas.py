@@ -51,7 +51,6 @@ class LogoutRequestSchema(BaseModel):
 
 class CreateInviteRequestSchema(BaseModel):
     expires_in_days: int = Field(..., ge=1, le=365)
-    created_by_device_id: Optional[str] = None
 
 
 

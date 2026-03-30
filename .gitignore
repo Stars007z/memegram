@@ -47,3 +47,5 @@ coverage.xml
 .tox/
 
 alembic/versions/*.pyc
+
+static/

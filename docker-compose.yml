@@ -2,6 +2,10 @@ version: '3.9'
 
 services:
 
+  # ─────────────────────────────────────────
+  # AUTH
+  # ─────────────────────────────────────────
+
   auth-postgres:
     image: postgres:15-alpine
     container_name: memegram-auth-postgres
@@ -41,17 +45,11 @@ services:
       context: ./backend/auth-service
       dockerfile: Dockerfile
     container_name: memegram-auth-service
-    command: >
-      sh -c "
-        echo 'Waiting for postgres...' &&
-        until pg_isready -h auth-postgres -U ${AUTH_DB_USER:-memegram} -d ${AUTH_DB_NAME:-auth_db}; do sleep 1; done &&
-        echo 'Running migrations...' &&
-        alembic upgrade head &&
-        echo 'Starting gRPC server...' &&
-        python -m app.main
-      "
     environment:
       - DATABASE_URL=postgresql+asyncpg://${AUTH_DB_USER:-memegram}:${AUTH_DB_PASSWORD:-changeme}@auth-postgres:5432/${AUTH_DB_NAME:-auth_db}
+      - DB_HOST=auth-postgres
+      - DB_PORT=5432
+      - DB_USER=${AUTH_DB_USER:-memegram}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_change_in_prod}
       - JWT_ALGORITHM=HS256
       - GRPC_PORT=50051
@@ -73,6 +71,343 @@ services:
       retries: 3
       start_period: 20s
 
+  # ─────────────────────────────────────────
+  # USER
+  # ─────────────────────────────────────────
+
+  user-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-user-postgres
+    environment:
+      POSTGRES_USER: ${USER_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${USER_DB_NAME:-user_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - user_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER:-memegram} -d ${USER_DB_NAME:-user_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  user-redis:
+    image: redis:7-alpine
+    container_name: memegram-user-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    container_name: memegram-user-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h user-postgres -U ${USER_DB_USER:-memegram} -d ${USER_DB_NAME:-user_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${USER_DB_USER:-memegram}:${USER_DB_PASSWORD:-changeme}@user-postgres:5432/${USER_DB_NAME:-user_db}
+      - GRPC_PORT=50052
+      - REDIS_URL=redis://user-redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    ports:
+      - "50052:50052"
+    depends_on:
+      user-postgres:
+        condition: service_healthy
+      user-redis:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50052'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
+  # CONTACTS
+  # ─────────────────────────────────────────
+
+  contacts-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-contacts-postgres
+    environment:
+      POSTGRES_USER: ${CONTACTS_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${CONTACTS_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${CONTACTS_DB_NAME:-contacts_db}
+    ports:
+      - "5434:5432"
+    volumes:
+      - contacts_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CONTACTS_DB_USER:-memegram} -d ${CONTACTS_DB_NAME:-contacts_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  contacts-service:
+    build:
+      context: ./backend/contacts-service
+      dockerfile: Dockerfile
+    container_name: memegram-contacts-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h contacts-postgres -U ${CONTACTS_DB_USER:-memegram} -d ${CONTACTS_DB_NAME:-contacts_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${CONTACTS_DB_USER:-memegram}:${CONTACTS_DB_PASSWORD:-changeme}@contacts-postgres:5432/${CONTACTS_DB_NAME:-contacts_db}
+      - GRPC_PORT=50053
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+      - USER_GRPC_HOST=user-service
+      - USER_GRPC_PORT=50052
+      - USER_GRPC_TIMEOUT=5.0
+    ports:
+      - "50053:50053"
+    depends_on:
+      contacts-postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50053'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
+  # MESSAGING
+  # ─────────────────────────────────────────
+
+  messaging-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-messaging-postgres
+    environment:
+      POSTGRES_USER: ${MESSAGING_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${MESSAGING_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${MESSAGING_DB_NAME:-messaging_db}
+    ports:
+      - "5435:5432"
+    volumes:
+      - messaging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MESSAGING_DB_USER:-memegram} -d ${MESSAGING_DB_NAME:-messaging_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  messaging-redis:
+    image: redis:7-alpine
+    container_name: memegram-messaging-redis
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  messaging-service:
+    build:
+      context: ./backend/messaging-service
+      dockerfile: Dockerfile
+    container_name: memegram-messaging-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h messaging-postgres -U ${MESSAGING_DB_USER:-memegram} -d ${MESSAGING_DB_NAME:-messaging_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${MESSAGING_DB_USER:-memegram}:${MESSAGING_DB_PASSWORD:-changeme}@messaging-postgres:5432/${MESSAGING_DB_NAME:-messaging_db}
+      - GRPC_PORT=50054
+      - REDIS_URL=redis://messaging-redis:6379/0
+      - AUTH_GRPC_HOST=auth-service
+      - AUTH_GRPC_PORT=50051
+      - CONTACTS_GRPC_HOST=contacts-service
+      - CONTACTS_GRPC_PORT=50053
+      - MEDIA_GRPC_HOST=media-service
+      - MEDIA_GRPC_PORT=50055
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "50054:50054"
+    depends_on:
+      messaging-postgres:
+        condition: service_healthy
+      messaging-redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      contacts-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50054'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
+  # MEDIA (S3 proxy)
+  # ─────────────────────────────────────────
+
+  media-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-media-postgres
+    environment:
+      POSTGRES_USER: ${MEDIA_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${MEDIA_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${MEDIA_DB_NAME:-media_db}
+    ports:
+      - "5436:5432"
+    volumes:
+      - media_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MEDIA_DB_USER:-memegram} -d ${MEDIA_DB_NAME:-media_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: memegram-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: memegram-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} &&
+        mc mb --ignore-existing local/$${S3_BUCKET_NAME:-messenger-media-dev} &&
+        echo 'Bucket created successfully' &&
+        exit 0
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-messenger-media-dev}
+    networks:
+      - memegram-backend
+
+  media-service:
+    build:
+      context: ./backend/media-service
+      dockerfile: Dockerfile
+    container_name: memegram-media-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h media-postgres -U ${MEDIA_DB_USER:-memegram} -d ${MEDIA_DB_NAME:-media_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${MEDIA_DB_USER:-memegram}:${MEDIA_DB_PASSWORD:-changeme}@media-postgres:5432/${MEDIA_DB_NAME:-media_db}
+      - GRPC_PORT=50055
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-messenger-media-dev}
+      - S3_ENDPOINT_URL=http://minio:9000
+      - PRESIGNED_UPLOAD_TTL=${PRESIGNED_UPLOAD_TTL:-3600}
+      - PRESIGNED_DOWNLOAD_TTL=${PRESIGNED_DOWNLOAD_TTL:-900}
+      - MAX_UPLOAD_SIZE_BYTES=${MAX_UPLOAD_SIZE_BYTES:-104857600}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    ports:
+      - "50055:50055"
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50055'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
+  # ORCHESTRATOR
+  # ─────────────────────────────────────────
+
   orchestrator:
     build:
       context: ./backend/orchestrator
@@ -89,20 +424,36 @@ services:
       - AUTH_GRPC_HOST=auth-service
       - AUTH_GRPC_PORT=50051
       - AUTH_GRPC_TIMEOUT=30
+      - USER_GRPC_HOST=user-service
+      - USER_GRPC_PORT=50052
+      - USER_GRPC_TIMEOUT=30
+      - CONTACTS_GRPC_HOST=contacts-service
+      - CONTACTS_GRPC_PORT=50053
+      - CONTACTS_GRPC_TIMEOUT=10
+      - MESSAGING_GRPC_HOST=messaging-service
+      - MESSAGING_GRPC_PORT=50054
+      - MESSAGING_GRPC_TIMEOUT=30
+      - MEDIA_GRPC_HOST=media-service
+      - MEDIA_GRPC_PORT=50055
+      - MEDIA_GRPC_TIMEOUT=10
       - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+      - REDIS_URL=redis://auth-redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       auth-service:
         condition: service_healthy
+      user-service:
+        condition: service_healthy
+      contacts-service:
+        condition: service_healthy
+      messaging-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
     networks:
       - memegram-backend
     restart: unless-stopped
-    volumes:
-      - ./backend/orchestrator/app:/app/app
-      - ./backend/orchestrator/alembic:/app/alembic
-      - ./backend/orchestrator/alembic.ini:/app/alembic.ini
-      - ./backend/orchestrator/.env:/app/.env
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]
       interval: 20s
@@ -110,9 +461,15 @@ services:
       retries: 3
       start_period: 15s
 
+
 networks:
   memegram-backend:
     driver: bridge
 
 volumes:
   auth_postgres_data:
+  user_postgres_data:
+  contacts_postgres_data:
+  messaging_postgres_data:
+  media_postgres_data:
+  minio_data:

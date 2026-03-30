@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# ── Protobuf generation ───────────────────────────────────────────────
 RUN mkdir -p app/generated && \
     python -m grpc_tools.protoc \
         -I./proto \
@@ -24,15 +25,18 @@ RUN mkdir -p app/generated && \
 
 RUN python - <<'EOF'
 import re, pathlib
-
 target = pathlib.Path("app/generated/auth_pb2_grpc.py")
 text = target.read_text()
-text = re.sub(r'^import (\w+_pb2)', r'from . import \1', text, flags=re.MULTILINE)
+text = re.sub(r'^import auth_pb2', 'from . import auth_pb2', text, flags=re.MULTILINE)
 target.write_text(text)
-print("Patched:", target)
+print("Patched", target)
 EOF
 
 RUN touch app/__init__.py app/generated/__init__.py
+
+# ── Entrypoint: wait for DB → run migrations → start server ──────────
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 50051
 
@@ -45,4 +49,4 @@ async def check(): \
     await channel.close(); \
 asyncio.run(check())" || exit 1
 
-CMD ["python", "-m", "app.main"]
+ENTRYPOINT ["/entrypoint.sh"]

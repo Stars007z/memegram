@@ -1,0 +1,83 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: messaging-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - messaging-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: messaging-redis
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - messaging-network
+
+  messaging-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: messaging-service
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        until pg_isready -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB}; do sleep 1; done &&
+        echo 'Applying migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - GRPC_PORT=${GRPC_PORT:-50054}
+      - REDIS_URL=redis://redis:6379/0
+      - AUTH_GRPC_HOST=${AUTH_GRPC_HOST:-auth-service}
+      - AUTH_GRPC_PORT=${AUTH_GRPC_PORT:-50051}
+      - CONTACTS_GRPC_HOST=${CONTACTS_GRPC_HOST:-contacts-service}
+      - CONTACTS_GRPC_PORT=${CONTACTS_GRPC_PORT:-50053}
+      - MEDIA_GRPC_HOST=${MEDIA_GRPC_HOST:-media-service}
+      - MEDIA_GRPC_PORT=${MEDIA_GRPC_PORT:-50055}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "50054:50054"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - messaging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50054'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  messaging-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
