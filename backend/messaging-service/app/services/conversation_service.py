@@ -10,6 +10,7 @@ from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
 from app.repositories.message_repo import MessageRepository
 from app.repositories.mls_group_repo import MlsGroupRepository
+from app.repositories.mls_commit_repo import MlsCommitRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
 from app.services.interfaces.conversation_service import (
     ConversationListResult,
@@ -81,7 +82,7 @@ class ConversationServiceImpl(IConversationService):
         await self._mls_groups.create({
             "id": conv.id,
             "mls_group_id": mls_group_id,
-            "current_epoch": 0,
+            "current_epoch": 1,
             "cipher_suite": 1,
         })
 
@@ -93,7 +94,7 @@ class ConversationServiceImpl(IConversationService):
             })
 
         return self._build_conversation_result(
-            conv, [initiator_member, recipient_member], epoch=0, cipher_suite=1,
+            conv, [initiator_member, recipient_member], epoch=1, cipher_suite=1,
         )
 
     # ── CreateGroup ─────────────────────────────────

@@ -48,6 +48,9 @@ import com.example.memegram.data.gallery.rememberGalleryLoader
 import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +69,20 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
     val scope     = rememberCoroutineScope()
+
+    val lastVisibleServerId by remember {
+        derivedStateOf {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            if (visible.isEmpty()) return@derivedStateOf null
+            messages.getOrNull(visible.last().index)?.serverId
+        }
+    }
+
+    LaunchedEffect(lastVisibleServerId) {
+        lastVisibleServerId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { viewModel.markMessagesRead(it) }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -141,7 +158,6 @@ fun ChatScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // Заголовок
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -486,6 +502,7 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
             ) {
                 items(messages, key = { it.id }) { message ->
+                    if (message.text.isBlank()) return@items
                     MessageBubble(
                         message          = message,
                         myBubbleColor    = myBubbleColor,
@@ -623,6 +640,15 @@ fun AttachmentThumbnail(item: AttachItem, onRemove: () -> Unit) {
     }
 }
 
+fun formatMessageTime(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return try {
+        val instant = Instant.fromEpochMilliseconds(timestamp)
+        val local   = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+        "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+    } catch (e: Exception) { "" }
+}
+
 @Composable
 fun MessageBubble(
     message: Message,
@@ -635,15 +661,34 @@ fun MessageBubble(
     val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
     else if (isOut) myBubbleColor else theirBubbleColor
     val textColor   = if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
+    val timeText    = remember(message.timestamp) { formatMessageTime(message.timestamp) }
+    val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
     Row(
-        modifier            = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start
+        modifier              = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
+        verticalAlignment     = Alignment.Bottom
     ) {
+        if (isOut && timeText.isNotEmpty()) {
+            Text(
+                text     = timeText,
+                color    = timeColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp)
+            )
+        }
+
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isOut) 16.dp else 4.dp, bottomEnd = if (isOut) 4.dp else 16.dp))
+                .clip(
+                    RoundedCornerShape(
+                        topStart    = 16.dp,
+                        topEnd      = 16.dp,
+                        bottomStart = if (isOut) 16.dp else 4.dp,
+                        bottomEnd   = if (isOut) 4.dp else 16.dp
+                    )
+                )
                 .background(bubbleColor)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -665,7 +710,20 @@ fun MessageBubble(
                     }
                 }
             }
-            Text(text = annotated, color = textColor, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text  = annotated,
+                color = textColor,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+
+        if (!isOut && timeText.isNotEmpty()) {
+            Text(
+                text     = timeText,
+                color    = timeColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+            )
         }
     }
 }

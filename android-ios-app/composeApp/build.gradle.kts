@@ -6,6 +6,20 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    id("dev.gobley.cargo")  version "0.3.7"
+    id("dev.gobley.uniffi") version "0.3.7"
+    id("org.jetbrains.kotlin.plugin.atomicfu") version "2.3.20"
+    id("app.cash.sqldelight") version "2.3.2"
+}
+
+cargo {
+    packageDirectory = layout.projectDirectory.dir("../mls-rust")
+}
+
+uniffi {
+    generateFromLibrary {
+        namespace = "mls_core"
+    }
 }
 
 kotlin {
@@ -32,6 +46,9 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation("app.cash.sqldelight:android-driver:2.3.2")
+            implementation("net.zetetic:sqlcipher-android:4.14.0")
+            implementation("androidx.security:security-crypto-ktx:1.1.0")
         }
 
         commonMain.dependencies {
@@ -57,21 +74,27 @@ kotlin {
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.filekit.compose)
             implementation(libs.multiplatform.crypto.libsodium)
+            implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
         }
 
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+            implementation("app.cash.sqldelight:native-driver:2.3.2")
         }
 
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
     }
+    sourceSets.commonMain.dependencies {
+        implementation(kotlin("test"))
+    }
 }
 
 android {
     namespace = "com.example.memegram"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+    ndkVersion = "30.0.14904198"
 
     defaultConfig {
         applicationId = "com.example.memegram"
@@ -94,5 +117,14 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+}
+
+sqldelight {
+    databases {
+        create("AppDatabase") {
+            packageName.set("com.example.memegram.database")
+            generateAsync.set(false)
+        }
     }
 }

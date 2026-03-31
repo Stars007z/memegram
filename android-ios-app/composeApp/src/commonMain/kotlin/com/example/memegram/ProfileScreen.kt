@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +38,7 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(
     topBarColor: Color,
     onBack: () -> Unit,
+    onLogoutDone: () -> Unit,
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
@@ -43,6 +46,7 @@ fun ProfileScreen(
     val bio           by viewModel.bio.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
     val error         by viewModel.error.collectAsState()
+    val message       by viewModel.message.collectAsState()
     val avatarBytes   by viewModel.avatarBytes.collectAsState()
     val coverBytes    by viewModel.coverBytes.collectAsState()
     val myPublicKey   by viewModel.myPublicKey.collectAsState()
@@ -94,7 +98,6 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Обложка ──────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,7 +135,6 @@ fun ProfileScreen(
                 }
             }
 
-            // ── Аватар ───────────────────────────────────────────────────
             Box(
                 contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier.offset(y = (-38).dp)
@@ -178,7 +180,6 @@ fun ProfileScreen(
                 }
             }
 
-            // ── Поля профиля ─────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -196,7 +197,7 @@ fun ProfileScreen(
                     trailingIcon = {
                         if (usernameInput != username) {
                             TextButton(
-                                onClick = { viewModel.updateUsername(usernameInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
                             ) { Text("Сохранить") }
                         }
@@ -215,7 +216,7 @@ fun ProfileScreen(
                     trailingIcon = {
                         if (bioInput != bio) {
                             TextButton(
-                                onClick = { viewModel.updateBio(bioInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
                             ) { Text("Сохранить") }
                         }
@@ -241,11 +242,27 @@ fun ProfileScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { viewModel.logout(onLogoutDone) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Выйти из аккаунта")
+                }
+
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .size(26.dp),
+                            .size(26.dp)
+                            .padding(top = 16.dp),
                         strokeWidth = 2.5.dp
                     )
                 }

@@ -5,9 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.KeyManager
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.network.ApiService
-import com.example.memegram.data.models.LoginCompleteRequest
-import com.example.memegram.data.models.LoginInitRequest
-import com.example.memegram.data.models.RegisterRequest
+import com.example.memegram.data.models.*
+import com.example.memegram.mls.MlsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +24,8 @@ sealed class AuthState {
 class AuthViewModel(
     private val api: ApiService,
     private val sessionManager: SessionManager,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val mlsManager: MlsManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthState>(AuthState.Idle)
@@ -37,12 +37,10 @@ class AuthViewModel(
 
     private fun checkAutoLogin() {
         if (!keyManager.hasKeyPair() || !sessionManager.isLoggedIn) return
-
         if (!sessionManager.isTokenExpired) {
             _uiState.value = AuthState.Success
             return
         }
-
         login()
     }
 
@@ -53,7 +51,7 @@ class AuthViewModel(
             try {
                 val deviceId = sessionManager.getDeviceId()
                     ?: run {
-                        _uiState.value = AuthState.Error("Устройство не зарегистрировано. Пройдите регистрацию.")
+                        _uiState.value = AuthState.Error("Устройство не зарегистрировано.")
                         return@launch
                     }
                 val initResp = api.loginInit(LoginInitRequest(deviceId = deviceId))
@@ -68,6 +66,9 @@ class AuthViewModel(
                     )
                 )
                 sessionManager.save(result)
+
+                initMlsAndUploadKeys()
+
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
                 _uiState.value = AuthState.Error(e.message ?: "Ошибка входа")
@@ -80,9 +81,11 @@ class AuthViewModel(
         viewModelScope.launch {
             _uiState.value = AuthState.Loading
             try {
+                mlsManager.clearAll()
+
                 keyManager.getOrCreateKeyPair()
                 val pubKey = keyManager.getPublicKeyBase64()
-                val deviceId = "dev_${(0..10000).random()}"
+                val deviceId = getHardwareDeviceId()
                 val req = RegisterRequest(
                     username = username,
                     inviteCode = inviteCode,
@@ -94,9 +97,24 @@ class AuthViewModel(
                 )
                 val result = api.register(req)
                 sessionManager.save(result)
+                initMlsAndUploadKeys()
+
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
                 _uiState.value = AuthState.Error(e.message ?: "Ошибка регистрации")
+            }
+        }
+    }
+
+    private suspend fun initMlsAndUploadKeys() {
+        mlsManager.initialize()
+
+        if (mlsManager.needsKeyPackages()) {
+            val countOnServer = runCatching { api.getKeyPackagesCount() }.getOrDefault(0)
+            if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {
+                val packages = mlsManager.generateKeyPackages(MlsManager.BATCH_KEY_PACKAGES)
+                mlsManager.flushState()
+                api.uploadKeyPackages(packages)
             }
         }
     }

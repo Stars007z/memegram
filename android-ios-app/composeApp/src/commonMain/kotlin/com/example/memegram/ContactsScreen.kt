@@ -27,7 +27,7 @@ import com.example.memegram.data.models.ContactEntry
 fun ContactsScreen(
     topBarColor: Color,
     onBack: () -> Unit,
-    onChatClick: (String) -> Unit,
+    onChatClick: (ChatModel) -> Unit,
     viewModel: ContactsViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
@@ -50,7 +50,25 @@ fun ContactsScreen(
         }
     }
 
-    // Диалог ошибки
+    val chatCreated by viewModel.chatCreated.collectAsState()
+
+    LaunchedEffect(chatCreated) {
+        val conversationId = chatCreated
+        if (conversationId != null) {
+            val chatName = viewModel.getPendingChatName() ?: "Чат"
+            viewModel.clearChatCreated()
+            viewModel.clearPendingChatName()
+            onChatClick(
+                ChatModel(
+                    id             = conversationId.hashCode(),
+                    conversationId = conversationId,
+                    name           = chatName,
+                    lastMessage    = "",
+                    timestamp      = 0L
+                )
+            )
+        }
+    }
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
@@ -60,7 +78,6 @@ fun ContactsScreen(
         )
     }
 
-    // Диалог добавления контакта
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { if (!isAdding) showAddDialog = false },
@@ -114,7 +131,6 @@ fun ContactsScreen(
         )
     }
 
-    // Диалог подтверждения удаления
     pendingRemoveId?.let { userId ->
         val name = contacts.find { it.contactUserId == userId }
             ?.profile?.username ?: (userId.take(8) + "...")
@@ -136,7 +152,6 @@ fun ContactsScreen(
         )
     }
 
-    // Диалог подтверждения блокировки
     pendingBlockId?.let { userId ->
         val name = contacts.find { it.contactUserId == userId }
             ?.profile?.username ?: (userId.take(8) + "...")
@@ -231,7 +246,7 @@ fun ContactsScreen(
                                     entry = entry,
                                     accentColor = topBarColor,
                                     onChatClick = {
-                                        onChatClick(entry.profile?.username ?: entry.contactUserId)
+                                        viewModel.startDirectChatWith(entry)
                                     },
                                     onFavoriteToggle = {
                                         viewModel.toggleFavorite(entry.contactUserId)
@@ -253,7 +268,7 @@ fun ContactsScreen(
                                     entry = entry,
                                     accentColor = topBarColor,
                                     onChatClick = {
-                                        onChatClick(entry.profile?.username ?: entry.contactUserId)
+                                        viewModel.startDirectChatWith(entry)
                                     },
                                     onFavoriteToggle = {
                                         viewModel.toggleFavorite(entry.contactUserId)
@@ -305,7 +320,6 @@ private fun ContactItem(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Аватар
         Box(
             modifier = Modifier
                 .size(46.dp)
@@ -326,7 +340,6 @@ private fun ContactItem(
 
         Spacer(Modifier.width(14.dp))
 
-        // Имя + bio
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = displayName,
@@ -343,12 +356,10 @@ private fun ContactItem(
             }
         }
 
-        // Кнопка чата
         IconButton(onClick = onChatClick) {
             Icon(Icons.Default.ChatBubbleOutline, null, tint = accentColor)
         }
 
-        // Меню
         Box {
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Default.MoreVert, null, tint = Color.Gray)
