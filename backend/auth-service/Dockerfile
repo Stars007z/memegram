@@ -36,7 +36,7 @@ RUN touch app/__init__.py app/generated/__init__.py
 
 # ── Entrypoint: wait for DB → run migrations → start server ──────────
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 50051
 

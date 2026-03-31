@@ -1,0 +1,96 @@
+CREATE TABLE chatEntity (
+    conversationId TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    lastMessage TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    unreadCount INTEGER NOT NULL DEFAULT 0,
+    avatarMediaId TEXT
+);
+
+CREATE TABLE messageEntity (
+    serverId TEXT NOT NULL PRIMARY KEY,
+    conversationId TEXT NOT NULL,
+    text TEXT NOT NULL,
+    isOutgoing INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    lastAccessedAt INTEGER NOT NULL DEFAULT 0,
+    accessCount INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
+
+selectAllChats:
+SELECT * FROM chatEntity ORDER BY timestamp DESC;
+
+insertOrUpdateChat:
+INSERT OR REPLACE INTO chatEntity(conversationId, name, lastMessage, timestamp, unreadCount, avatarMediaId)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteChat:
+DELETE FROM chatEntity WHERE conversationId = ?;
+
+selectMessagesByConversation:
+SELECT * FROM messageEntity WHERE conversationId = ? ORDER BY timestamp ASC;
+
+insertMessage:
+INSERT OR REPLACE INTO messageEntity(serverId, conversationId, text, isOutgoing, timestamp, status, lastAccessedAt, accessCount)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteMessagesByConversation:
+DELETE FROM messageEntity WHERE conversationId = ?;
+
+updateMessageAccessStats:
+UPDATE messageEntity
+SET lastAccessedAt = ?, accessCount = accessCount + 1
+WHERE conversationId = ?;
+
+-- СТРАТЕГИИ ОЧИСТКИ
+
+deleteOldMessages_FIFO:
+DELETE FROM messageEntity
+WHERE conversationId = ? AND serverId NOT IN (
+    SELECT serverId FROM messageEntity
+    WHERE conversationId = ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+);
+
+deleteOldMessages_TTL:
+DELETE FROM messageEntity
+WHERE timestamp < ?;
+
+deleteOldMessages_LRU:
+DELETE FROM messageEntity
+WHERE serverId NOT IN (
+    SELECT serverId FROM messageEntity
+    ORDER BY lastAccessedAt DESC
+    LIMIT ?
+);
+
+deleteOldMessages_LFU:
+DELETE FROM messageEntity
+WHERE serverId NOT IN (
+    SELECT serverId FROM messageEntity
+    ORDER BY accessCount DESC
+    LIMIT ?
+);
+
+insertOrIgnoreMessage:
+INSERT OR IGNORE INTO messageEntity(serverId, conversationId, text, isOutgoing, timestamp, status, lastAccessedAt, accessCount)
+VALUES (?, ?, ?, ?, ?, ?, ?, 0);
+
+updateExistingMessage:
+UPDATE messageEntity SET text = ?, status = ?, lastAccessedAt = ?, timestamp = ?
+WHERE serverId = ?;
+
+-- ОЧИСТКА ВСЕГО
+
+deleteAllMessages:
+DELETE FROM messageEntity;
+
+deleteAllChats:
+DELETE FROM chatEntity;
+
+vacuumDb:
+VACUUM;

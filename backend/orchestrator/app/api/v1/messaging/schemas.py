@@ -1,6 +1,6 @@
 import base64
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -23,11 +23,18 @@ class KeyPackageResponseSchema(BaseModel):
     key_package_data: bytes
     key_package_ref: bytes
 
+    @field_serializer('key_package_data', 'key_package_ref')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
+
 
 class UserDeviceKeyPackageSchema(BaseModel):
     device_id: str
     key_package_data: bytes
     key_package_ref: bytes
+
+    @field_serializer('key_package_data', 'key_package_ref')
+    def _b64(self, v: bytes) -> str:
+        return base64.b64encode(v).decode()
 
 
 class GetKeyPackagesForUserResponseSchema(BaseModel):
@@ -130,6 +137,9 @@ class MessageEntrySchema(BaseModel):
     edited_at: int
     deleted_at: int
 
+    @field_serializer('mls_ciphertext')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
+
 
 class GetMessagesResponseSchema(BaseModel):
     messages: List[MessageEntrySchema]
@@ -177,6 +187,9 @@ class WelcomeEntrySchema(BaseModel):
     welcome_data: bytes
     created_at: int
 
+    @field_serializer('welcome_data')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
+
 
 class GetPendingWelcomesResponseSchema(BaseModel):
     items: List[WelcomeEntrySchema]
@@ -190,6 +203,9 @@ class CommitEntrySchema(BaseModel):
     epoch: int
     commit_data: bytes
     created_at: int
+
+    @field_serializer('commit_data')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 class GetPendingCommitsResponseSchema(BaseModel):
@@ -219,6 +235,9 @@ class GetMediaDownloadUrlResponseSchema(BaseModel):
     download_url: str
     expires_in: int
     encryption_metadata: bytes
+
+    @field_serializer('encryption_metadata')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 # ── Presence ──────────────────────────────────────────────────────────

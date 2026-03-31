@@ -35,13 +35,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsScreen(
     topBarColor: Color,
-    onLogout: () -> Unit,
-    onChatClick: (String) -> Unit,
+    onStorageClick: () -> Unit,
+    onChatClick: (ChatModel) -> Unit,
     onAppearanceClick: () -> Unit,
     onProfileClick: () -> Unit,
     onNotificationsClick: () -> Unit,
@@ -144,6 +149,13 @@ fun ChatsScreen(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
+                    label = { Text("Данные и память") },
+                    icon = { Icon(Icons.Default.Storage, null) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close(); onStorageClick() } },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
                     label = { Text("Контакты") },
                     icon = { Icon(Icons.Default.People, null) },
                     selected = false,
@@ -156,21 +168,6 @@ fun ChatsScreen(
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onLanguageClick() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                Spacer(Modifier.weight(1f))
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                NavigationDrawerItem(
-                    label = { Text("Выйти", color = MaterialTheme.colorScheme.error) },
-                    icon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
-                    selected = false,
-                    onClick = {
-                        scope.launch {
-                            drawerState.close()
-                            viewModel.logout { onLogout() }
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
         }
@@ -284,7 +281,7 @@ fun ChatsScreen(
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
                         items(chats, key = { it.id }) { chat ->
-                            ChatItem(chat = chat, onClick = { onChatClick(chat.name) })
+                            ChatItem(chat = chat, onClick = { onChatClick(chat) })
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 76.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -295,6 +292,20 @@ fun ChatsScreen(
             }
         }
     }
+}
+
+fun formatChatTime(timestampMs: Long): String {
+    if (timestampMs <= 0L) return ""
+    return try {
+        val instant = Instant.fromEpochMilliseconds(timestampMs)
+        val local   = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+        val now     = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        if (local.date == now.date) {
+            "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+        } else {
+            "${local.day.toString().padStart(2, '0')}.${local.month.number.toString().padStart(2, '0')}"
+        }
+    } catch (e: Exception) { "" }
 }
 
 @Composable
@@ -346,7 +357,7 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
             modifier = Modifier.padding(start = 8.dp)
         ) {
             Text(
-                text = "12:30",
+                text = formatChatTime(chat.timestamp),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (chat.unreadCount > 0) MaterialTheme.colorScheme.primary else Color.Gray
             )

@@ -15,7 +15,7 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun getDeviceId(): String? = settings.getStringOrNull("device_id")
-
+    fun getUserId(): String? = settings.getStringOrNull("user_id")
     fun getAccessToken(): String? = settings.getStringOrNull("access_token")
 
     val isLoggedIn: Boolean
@@ -50,7 +50,7 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun clearDeviceId() {
-        settings.remove("deviceid")
-        settings.remove("userid")
+        settings.remove("device_id")
+        settings.remove("user_id")
     }
 }

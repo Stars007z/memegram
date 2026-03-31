@@ -1,0 +1,31 @@
+[package]
+name    = "mls-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name       = "mls_core"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+uniffi     = "0.29"
+thiserror  = "2"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dependencies.openmls]
+git      = "https://github.com/openmls/openmls"
+branch   = "main"
+features = ["test-utils"]
+
+[dependencies.openmls_rust_crypto]
+git    = "https://github.com/openmls/openmls"
+branch = "main"
+
+[dependencies.openmls_basic_credential]
+git    = "https://github.com/openmls/openmls"
+branch = "main"
+
+[dependencies.openmls_memory_storage]
+git    = "https://github.com/openmls/openmls"
+branch = "main"

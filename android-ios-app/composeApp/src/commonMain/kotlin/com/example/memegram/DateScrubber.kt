@@ -17,6 +17,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.gallery.GallerySection
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 @Composable
 fun DateScrubber(
@@ -101,5 +110,43 @@ fun DateScrubber(
                     )
                 }
         )
+    }
+}
+
+fun formatChatTimestamp(timestampMs: Long): String {
+    if (timestampMs <= 0L) return ""
+
+    val tz       = TimeZone.currentSystemDefault()
+    val msgLocal = Instant.fromEpochMilliseconds(timestampMs).toLocalDateTime(tz)
+    val nowLocal = Clock.System.now().toLocalDateTime(tz)
+
+    val today  = nowLocal.date
+    val msgDay = msgLocal.date
+
+    return when {
+        msgDay == today -> {
+            "${msgLocal.hour.toString().padStart(2, '0')}:" +
+                    msgLocal.minute.toString().padStart(2, '0')
+        }
+        msgDay >= today.minus(6, DateTimeUnit.DAY) -> {
+            when (msgLocal.dayOfWeek) {
+                DayOfWeek.MONDAY    -> "Пн"
+                DayOfWeek.TUESDAY   -> "Вт"
+                DayOfWeek.WEDNESDAY -> "Ср"
+                DayOfWeek.THURSDAY  -> "Чт"
+                DayOfWeek.FRIDAY    -> "Пт"
+                DayOfWeek.SATURDAY  -> "Сб"
+                DayOfWeek.SUNDAY    -> "Вс"
+            }
+        }
+        msgDay.year == today.year -> {
+            "${msgDay.day.toString().padStart(2, '0')}." +
+                    msgDay.month.number.toString().padStart(2, '0')
+        }
+        else -> {
+            val yy = (msgDay.year % 100).toString().padStart(2, '0')
+            "${msgDay.day.toString().padStart(2, '0')}." +
+                    "${msgDay.month.number.toString().padStart(2, '0')}.$yy"
+        }
     }
 }
