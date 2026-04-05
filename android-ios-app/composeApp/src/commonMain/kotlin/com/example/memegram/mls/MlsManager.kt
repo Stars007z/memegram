@@ -202,6 +202,42 @@ class MlsManager(
 
 // ── Вступление в группу (получатель Welcome) ──────────────────────
 
+    fun getMyUserId(): String = sessionManager.getUserId() ?: ""
+    fun getMyDeviceId(): String = sessionManager.getDeviceId() ?: ""
+
+    suspend fun createGroupForMultiple(
+        mlsGroupId: String,
+        peerPackages: List<com.example.memegram.data.models.UserDeviceKeyPackage>
+    ): List<com.example.memegram.data.models.DeviceWelcome> = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            println("MemegramDebug [MLS] ───── createGroupForMultiple() ─────")
+            val groupIdBytes = mlsGroupId.encodeToByteArray()
+            val c = getOrCreateClient()
+            c.createGroupWithId(groupIdBytes)
+
+            val welcomes = mutableListOf<com.example.memegram.data.models.DeviceWelcome>()
+
+            for (kp in peerPackages) {
+                try {
+                    val bundle = c.addMember(groupIdBytes, kotlin.io.encoding.Base64.decode(kp.keyPackageData))
+                    welcomes.add(
+                        com.example.memegram.data.models.DeviceWelcome(
+                            deviceId = kp.deviceId,
+                            welcomeData = kotlin.io.encoding.Base64.encode(bundle.welcome)
+                        )
+                    )
+                    println("MemegramDebug [MLS]   ✅ Устройство ${kp.deviceId} добавлено в группу")
+                } catch (e: Exception) {
+                    println("MemegramDebug [MLS]   ❌ Ошибка добавления устройства ${kp.deviceId}: ${e.message}")
+                }
+            }
+
+            saveState()
+            println("MemegramDebug [MLS] ────────────────────────")
+            welcomes
+        }
+    }
+
     suspend fun processWelcome(conversationId: String, welcomeB64: String) =
         withContext(Dispatchers.Default) {
             mutex.withLock {
@@ -249,26 +285,21 @@ class MlsManager(
         withContext(Dispatchers.Default) {
             mutex.withLock {
                 println("MemegramDebug [MLS] processCommit: conversationId=$conversationId")
-                val groupId = getMlsGroupId(conversationId)
-                println("MemegramDebug [MLS]   groupId=${Base64.encode(groupId).take(20)}..., " +
-                        "commit size=${commitB64.length} chars")
-                val result = getOrCreateClient().processMessage(groupId, Base64.decode(commitB64))
-                when (result) {
-                    is IncomingMessageKt.CommitApplied -> {
-                        saveState()
-                        println("MemegramDebug [MLS] ✅ processCommit: CommitApplied")
+                try {
+                    val groupId = getMlsGroupId(conversationId)
+                    val result = getOrCreateClient().processMessage(groupId, kotlin.io.encoding.Base64.decode(commitB64))
+                    when (result) {
+                        is IncomingMessageKt.CommitApplied, is IncomingMessageKt.Proposal -> {
+                            saveState()
+                            println("MemegramDebug [MLS] ✅ processCommit: Успешно применен")
+                        }
+                        else -> {
+                            saveState()
+                            println("MemegramDebug [MLS] ⚠️ processCommit: Иной результат ($result)")
+                        }
                     }
-                    is IncomingMessageKt.Proposal -> {
-                        saveState()
-                        println("MemegramDebug [MLS] ✅ processCommit: Proposal")
-                    }
-                    is IncomingMessageKt.Other -> {
-                        saveState()
-                        println("MemegramDebug [MLS] ⚠️ processCommit: Other")
-                    }
-                    is IncomingMessageKt.Application -> {
-                        println("MemegramDebug [MLS] ⚠️ processCommit: получили Application (не ожидалось!)")
-                    }
+                } catch (e: Exception) {
+                    println("MemegramDebug [MLS] ⚠️ Ошибка обработки Commits: ${e.message}. Игнорируем дубликат, чтобы не сломать синхронизацию.")
                 }
             }
         }
@@ -295,46 +326,64 @@ class MlsManager(
     suspend fun decrypt(conversationId: String, ciphertextB64: String): String? =
         withContext(Dispatchers.Default) {
             mutex.withLock {
-                println("MemegramDebug [MLS] decrypt: conversationId=$conversationId, " +
-                        "cipherLen=${ciphertextB64.length}")
-                val groupId = try {
-                    getMlsGroupId(conversationId)
-                } catch (e: IllegalStateException) {
-                    println("MemegramDebug [MLS] ⚠️ decrypt: группа не найдена (${e.message}), " +
-                            "возвращаем null")
-                    return@withLock null
-                }
-                return@withLock try {
-                    val result = getOrCreateClient().processMessage(
-                        groupId,
-                        Base64.decode(ciphertextB64)
-                    )
+                println("MemegramDebug [MLS] decrypt: conversationId=$conversationId, cipherLen=${ciphertextB64.length}")
+                try {
+                    val groupId = getMlsGroupId(conversationId)
+                    val result = getOrCreateClient().processMessage(groupId, kotlin.io.encoding.Base64.decode(ciphertextB64))
                     markDirty()
-                    when (result) {
-                        is IncomingMessageKt.Application -> {
-                            val text = result.data.decodeToString()
-                            println("MemegramDebug [MLS] ✅ decrypt: OK, textLen=${text.length}")
-                            text
-                        }
-                        else -> {
-                            println("MemegramDebug [MLS] ⚠️ decrypt: не Application ($result)")
-                            null
-                        }
+                    if (result is IncomingMessageKt.Application) {
+                        val text = result.data.decodeToString()
+                        println("MemegramDebug [MLS] ✅ decrypt: OK, textLen=${text.length}")
+                        return@withLock text
+                    } else {
+                        println("MemegramDebug [MLS] ⚠️ decrypt: не Application ($result)")
+                        return@withLock null
                     }
                 } catch (e: Exception) {
-                    val msg = e.message ?: ""
-                    if (msg.contains("group not found", ignoreCase = true) ||
-                        msg.contains("unknown group", ignoreCase = true)
-                    ) {
-                        println("MemegramDebug [MLS] ⚠️ decrypt: group not found (${e.message})")
-                        null
-                    } else {
-                        println("MemegramDebug [MLS] ❌ decrypt FAILED: ${e.message}")
-                        throw MlsDecryptionException("Decrypt failed for $conversationId", e)
-                    }
+                    println("MemegramDebug [MLS] ❌ decrypt FAILED: ${e.message}")
+                    return@withLock null
                 }
             }
         }
+
+    suspend fun addMemberToGroup(
+        conversationId: String,
+        keyPackageB64: String
+    ): AddMemberResult = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            println("MemegramDebug [MLS] addMemberToGroup: conversationId=$conversationId")
+            val groupId = getMlsGroupId(conversationId)
+            val c = getOrCreateClient()
+            val bundle = c.addMember(groupId, Base64.decode(keyPackageB64))
+            saveState()
+            println("MemegramDebug [MLS] ✅ addMemberToGroup: welcome=${bundle.welcome.size}b, commit=${bundle.commit.size}b")
+            AddMemberResult(
+                welcomeB64 = Base64.encode(bundle.welcome),
+                commitB64  = Base64.encode(bundle.commit)
+            )
+        }
+    }
+
+
+    suspend fun exportCredentials(): MlsCredentials = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val c = getOrCreateClient()
+
+            val signingKeyBytes = c.exportSigningKey()
+
+            val kpBytes = c.generateKeyPackage()
+            settings[KEY_KP_COUNT] = settings.getInt(KEY_KP_COUNT, 0) + 1
+            saveState()
+
+            val credBytes = identity.encodeToByteArray()
+
+            MlsCredentials(
+                identityKeyPub = Base64.encode(signingKeyBytes),
+                initKeyPub     = Base64.encode(kpBytes),
+                credentialData = Base64.encode(credBytes)
+            )
+        }
+    }
 
 // ── Статус группы ─────────────────────────────────────────────────
 
@@ -382,9 +431,19 @@ class MlsManager(
     }
 }
 
-class MlsDecryptionException(message: String, cause: Throwable) : Exception(message, cause)
 
 data class CreateGroupResult(
+    val welcomeB64: String,
+    val commitB64: String
+)
+
+data class MlsCredentials(
+    val identityKeyPub: String,
+    val initKeyPub: String,
+    val credentialData: String
+)
+
+data class AddMemberResult(
     val welcomeB64: String,
     val commitB64: String
 )

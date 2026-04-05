@@ -8,14 +8,19 @@ CREATE TABLE chatEntity (
 );
 
 CREATE TABLE messageEntity (
-    serverId TEXT NOT NULL PRIMARY KEY,
-    conversationId TEXT NOT NULL,
-    text TEXT NOT NULL,
-    isOutgoing INTEGER NOT NULL,
-    timestamp INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    lastAccessedAt INTEGER NOT NULL DEFAULT 0,
-    accessCount INTEGER NOT NULL DEFAULT 0
+    serverId             TEXT NOT NULL PRIMARY KEY,
+    conversationId       TEXT NOT NULL,
+    text                 TEXT NOT NULL,
+    isOutgoing           INTEGER NOT NULL,
+    timestamp            INTEGER NOT NULL,
+    status               TEXT NOT NULL,
+    type                 TEXT NOT NULL DEFAULT 'text',
+    mediaId              TEXT,
+    encryptionMetadata   TEXT,
+    localPreviewBytes    BLOB,
+    mediaUrl             TEXT,
+    lastAccessedAt       INTEGER NOT NULL DEFAULT 0,
+    accessCount          INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -34,8 +39,12 @@ selectMessagesByConversation:
 SELECT * FROM messageEntity WHERE conversationId = ? ORDER BY timestamp ASC;
 
 insertMessage:
-INSERT OR REPLACE INTO messageEntity(serverId, conversationId, text, isOutgoing, timestamp, status, lastAccessedAt, accessCount)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO messageEntity(
+    serverId, conversationId, text, isOutgoing, timestamp, status,
+    type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
+    lastAccessedAt, accessCount
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMessagesByConversation:
 DELETE FROM messageEntity WHERE conversationId = ?;
@@ -77,12 +86,22 @@ WHERE serverId NOT IN (
 );
 
 insertOrIgnoreMessage:
-INSERT OR IGNORE INTO messageEntity(serverId, conversationId, text, isOutgoing, timestamp, status, lastAccessedAt, accessCount)
-VALUES (?, ?, ?, ?, ?, ?, ?, 0);
+INSERT OR IGNORE INTO messageEntity(
+    serverId, conversationId, text, isOutgoing, timestamp, status,
+    type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
+    lastAccessedAt, accessCount
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0);
 
 updateExistingMessage:
-UPDATE messageEntity SET text = ?, status = ?, lastAccessedAt = ?, timestamp = ?
+UPDATE messageEntity
+SET text = ?, status = ?, type = ?, mediaId = ?,
+    encryptionMetadata = ?, localPreviewBytes = ?, mediaUrl = ?,
+    lastAccessedAt = ?, timestamp = ?
 WHERE serverId = ?;
+
+deleteMessageByServerId:
+DELETE FROM messageEntity WHERE serverId = ?;
 
 -- ОЧИСТКА ВСЕГО
 

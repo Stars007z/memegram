@@ -50,4 +50,6 @@ val appModule = module {
     viewModelOf(::BlackListViewModel)
     viewModelOf(::ContactsViewModel)
     viewModelOf(::StorageViewModel)
+    viewModelOf(::LinkedDevicesViewModel)
+    viewModelOf(::AddDeviceViewModel)
 }

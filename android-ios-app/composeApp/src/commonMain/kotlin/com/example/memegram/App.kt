@@ -38,6 +38,8 @@ import org.koin.dsl.koinConfiguration
 @Serializable object BlackListRoute
 @Serializable object ContactsRoute
 @Serializable object StorageRoute
+@Serializable object LinkedDevicesRoute
+@Serializable object AddDeviceRoute
 
 @Composable
 fun App() {
@@ -68,6 +70,9 @@ fun App() {
                                     popUpTo<AuthRoute> { inclusive = true }
                                 }
                             },
+                            onAddDevice = {
+                                navController.navigate(AddDeviceRoute)
+                            },
                             viewModel = viewModel
                         )
                     }
@@ -92,6 +97,7 @@ fun App() {
                             profileViewModel = profileViewModel,
                             onContactsClick = { navController.navigate(ContactsRoute) },
                             onStorageClick = { navController.navigate(StorageRoute) },
+                            onLinkedDevicesClick = { navController.navigate(LinkedDevicesRoute) },
                             viewModel = viewModel
                         )
                     }
@@ -220,6 +226,22 @@ fun App() {
                             topBarColor = topBarColor,
                             onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
                             viewModel = viewModel
+                        )
+                    }
+                    composable<LinkedDevicesRoute> {
+                        LinkedDevicesScreen(
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            onNavigateToScanQr = { navController.navigate(AddDeviceRoute) }
+                        )
+                    }
+                    composable<AddDeviceRoute> {
+                        AddDeviceScreen(
+                            onBack = { navController.popBackStack() },
+                            onSuccess = {
+                                navController.navigate(ChatsRoute) {
+                                    popUpTo(AuthRoute) { inclusive = true }
+                                }
+                            }
                         )
                     }
                 }

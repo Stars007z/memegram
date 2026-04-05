@@ -48,7 +48,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation("app.cash.sqldelight:android-driver:2.3.2")
             implementation("net.zetetic:sqlcipher-android:4.14.0")
-            implementation("androidx.security:security-crypto-ktx:1.1.0")
+            implementation(libs.androidx.security.crypto.ktx)
         }
 
         commonMain.dependencies {
@@ -74,12 +74,17 @@ kotlin {
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.filekit.compose)
             implementation(libs.multiplatform.crypto.libsodium)
-            implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
+            implementation(libs.coroutines.extensions1)
+            implementation(libs.qrose)
+            implementation(libs.androidx.camera.camera2)
+            implementation(libs.androidx.camera.lifecycle)
+            implementation(libs.androidx.camera.view)
+            implementation(libs.barcode.scanning)
         }
 
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
-            implementation("app.cash.sqldelight:native-driver:2.3.2")
+            implementation(libs.native.driver)
         }
 
         commonTest.dependencies {

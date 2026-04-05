@@ -155,17 +155,11 @@ data class SseEvent(
     val data: SseEventData? = null
 )
 
-@Serializable
-data class WelcomeMessagePayload(
-    @SerialName("device_id") val deviceId: String,
-    @SerialName("welcome_data") val welcomeDataB64: String
-)
 
 @Serializable
 data class CreateDirectConversationRequest(
     @SerialName("recipient_user_id") val recipientUserId: String,
-    @SerialName("welcome_messages") val welcomeMessages: List<WelcomeMessagePayload>,
-    @SerialName("initial_commit_data") val initialCommitData: String
+    @SerialName("welcome_messages")  val welcomeMessages: List<DeviceWelcome> = emptyList()
 )
 
 @Serializable
@@ -179,13 +173,16 @@ data class KeyPackageResponse(
 data class CommitGroupChangeRequest(
     @SerialName("commit_data") val commitData: String,
     @SerialName("new_epoch") val newEpoch: Int,
-    @SerialName("welcome_messages") val welcomeMessages: List<WelcomeMessagePayload> = emptyList(),
+    @SerialName("welcome_messages") val welcomeMessages: List<DeviceWelcome> = emptyList(),
     @SerialName("ratchet_tree") val ratchetTree: String? = null,
     @SerialName("removed_device_ids") val removedDeviceIds: List<String> = emptyList()
 )
 
 @Serializable
-data class SendMessageResponse(val id: String)
+data class SendMessageResponse(
+    @SerialName("message_id") val messageId: String,
+    @SerialName("created_at") val createdAt: Long = 0L
+)
 @Serializable
 internal data class KeyPackagesForUserEnvelope(
     @SerialName("key_packages") val keyPackages: List<KeyPackageResponse>
@@ -227,6 +224,8 @@ data class MessageResponse(
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String = "",
     @SerialName("created_at") val createdAt: Long = 0L,
     @SerialName("sender_id") val fallbackSenderId: String? = null,
+    @SerialName("media_id")            val mediaId: String? = null,
+    @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
     val type: String? = null
 ) {
     val effectiveSenderId: String
@@ -237,4 +236,44 @@ data class MessageResponse(
 data class GetMessagesResponse(
     val messages: List<MessageResponse> = emptyList(),
     @SerialName("has_more") val hasMore: Boolean = false
+)
+
+
+@Serializable
+data class InitiateMediaUploadRequest(
+    @SerialName("conversation_id")    val conversationId: String,
+    @SerialName("mime_type")          val mimeType: String,
+    @SerialName("encrypted_size")     val encryptedSize: Long,
+    @SerialName("encryption_metadata") val encryptionMetadata: String
+)
+
+@Serializable
+data class InitiateMediaUploadResponse(
+    @SerialName("media_id")   val mediaId: String,
+    @SerialName("upload_url") val uploadUrl: String,
+    @SerialName("expires_in") val expiresIn: Int
+)
+
+@Serializable
+data class ConfirmMediaUploadResponse(
+    val success: Boolean
+)
+
+@Serializable
+data class GetMediaDownloadUrlResponse(
+    @SerialName("download_url")        val downloadUrl: String,
+    @SerialName("expires_in")          val expiresIn: Int,
+    @SerialName("encryption_metadata") val encryptionMetadata: String
+)
+
+@Serializable
+data class UserDeviceKeyPackage(
+    @SerialName("device_id")        val deviceId: String,
+    @SerialName("key_package_data") val keyPackageData: String,
+    @SerialName("key_package_ref")  val keyPackageRef: String
+)
+
+@Serializable
+internal data class GetKeyPackagesForUserResponse(
+    @SerialName("key_packages") val keyPackages: List<UserDeviceKeyPackage>
 )

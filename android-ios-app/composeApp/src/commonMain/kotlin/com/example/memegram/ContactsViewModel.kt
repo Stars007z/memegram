@@ -109,31 +109,67 @@ class ContactsViewModel(
             _isCreatingChat.value = true
             _error.value = null
             try {
-                val kpResponse = api.getKeyPackage(entry.contactUserId)
-                println("MemegramDebug: Отправитель скачал с сервера ключ, начинается на: ${kpResponse.keyPackageB64.take(20)}...")
+                val recipientPackages = api.getKeyPackagesForUser(entry.contactUserId)
+                val myUserId = mlsManager.getMyUserId()
+                val myDeviceId = mlsManager.getMyDeviceId()
+                val myPackages = if (myUserId.isNotBlank()) {
+                    api.getKeyPackagesForUser(myUserId).filter { it.deviceId != myDeviceId }
+                } else emptyList()
 
-                val mlsGroupId = "${entry.contactUserId.take(16)}_${Clock.System.now().toEpochMilliseconds()}"
+                val allPackagesToAdd = recipientPackages + myPackages
 
-                val mlsResult = mlsManager.createGroup(
-                    mlsGroupId        = mlsGroupId,
-                    peerKeyPackageB64 = kpResponse.keyPackageB64
+                if (allPackagesToAdd.isEmpty()) {
+                    _error.value = "Не найдено устройств для создания чата"
+                    return@launch
+                }
+
+                val mlsGroupId = "${entry.contactUserId.take(16)}_${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+
+                val firstKp = allPackagesToAdd.first()
+                val createResult = mlsManager.createGroup(
+                    mlsGroupId = mlsGroupId,
+                    peerKeyPackageB64 = firstKp.keyPackageData
                 )
 
                 val conv = api.createDirectConversation(
                     CreateDirectConversationRequest(
                         recipientUserId = entry.contactUserId,
                         welcomeMessages = listOf(
-                            WelcomeMessagePayload(
-                                deviceId       = kpResponse.deviceId,
-                                welcomeDataB64 = mlsResult.welcomeB64
+                            DeviceWelcome(
+                                deviceId = firstKp.deviceId,
+                                welcomeData = createResult.welcomeB64
                             )
-                        ),
-                        initialCommitData = mlsResult.commitB64
+                        )
                     )
                 )
 
                 mlsManager.bindConversation(conv.id, mlsGroupId)
-                mlsManager.updateGroupEpoch(conv.id, 1L)
+                var currentEpoch = 1L
+                mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+
+                for (kp in allPackagesToAdd.drop(1)) {
+                    try {
+                        val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
+                        mlsManager.flushState()
+
+                        api.commitGroupChange(
+                            conv.id,
+                            CommitGroupChangeRequest(
+                                commitData = addResult.commitB64,
+                                newEpoch = (currentEpoch + 1).toInt(),
+                                welcomeMessages = listOf(
+                                    DeviceWelcome(deviceId = kp.deviceId, welcomeData = addResult.welcomeB64)
+                                )
+                            )
+                        )
+                        currentEpoch++
+                        mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+                        println("MemegramDebug: Добавлено дополнительное устройство ${kp.deviceId}, epoch=$currentEpoch")
+                    } catch (e: Exception) {
+                        println("MemegramDebug: Ошибка добавления устройства ${kp.deviceId}: ${e.message}")
+                    }
+                }
+
                 mlsManager.onKeyPackageConsumed()
                 _chatCreated.value = conv.id
 
