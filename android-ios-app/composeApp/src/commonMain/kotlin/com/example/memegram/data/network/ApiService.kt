@@ -4,6 +4,7 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.ContentType
@@ -171,7 +172,6 @@ class ApiService(
             header("Authorization", "Bearer ${sessionManager.getAccessToken()}")
             parameter("limit", limit)
         }.body<GetMessagesResponse>()
-
         return response.messages
     }
 
@@ -205,9 +205,7 @@ class ApiService(
     suspend fun getPendingCommits(conversationId: String, sinceEpoch: Long? = null): List<CommitResponse> =
         client.get("$baseUrl/api/v1/messaging/conversations/$conversationId/mls/commits") {
             bearerAuth(token())
-            if (sinceEpoch != null) {
-                parameter("since_epoch", sinceEpoch)
-            }
+            if (sinceEpoch != null) parameter("since_epoch", sinceEpoch)
         }.body<CommitsEnvelope>().commits
 
     suspend fun getKeyPackagesCount(): Int =
@@ -231,19 +229,50 @@ class ApiService(
         }
     }
 
-    fun subscribeToConversation(conversationId: String): Flow<SseEvent> = flow {
+    fun subscribeToConversation(conversationIds: String): Flow<SseEvent> = flow {
         client.prepareGet("$baseUrl/api/v1/messaging/events") {
             bearerAuth(token())
-            parameter("conversation_ids", conversationId)
+            parameter("conversation_ids", conversationIds)
             accept(ContentType.Text.EventStream)
+
+            timeout {
+                socketTimeoutMillis  = Long.MAX_VALUE
+                requestTimeoutMillis = Long.MAX_VALUE
+            }
         }.execute { response ->
             val channel = response.bodyAsChannel()
+            val eventBuffer = StringBuilder()
+
             while (!channel.isClosedForRead) {
                 val line = channel.readUTF8Line() ?: break
-                if (line.startsWith("data:")) {
-                    val data = line.removePrefix("data:").trim()
-                    try { emit(Json.decodeFromString<SseEvent>(data)) }
-                    catch (_: Exception) {}
+
+                when {
+                    line.isEmpty() -> {
+                        val buffered = eventBuffer.toString().trim()
+                        eventBuffer.clear()
+                        if (buffered.isNotEmpty()) {
+                            val dataLine = buffered.lines()
+                                .firstOrNull { it.startsWith("data:") }
+                                ?: continue
+                            val data = dataLine.removePrefix("data:").trim()
+                            if (data.isNotEmpty()) {
+                                try { emit(Json.decodeFromString<SseEvent>(data)) }
+                                catch (_: Exception) {}
+                            }
+                        }
+                    }
+
+                    line.startsWith("data:") && eventBuffer.isEmpty() -> {
+                        val data = line.removePrefix("data:").trim()
+                        if (data.isNotEmpty()) {
+                            try { emit(Json.decodeFromString<SseEvent>(data)) }
+                            catch (_: Exception) { eventBuffer.appendLine(line) }
+                        }
+                    }
+
+                    line.startsWith(":") -> { /* keep-alive, ignore */ }
+
+                    else -> eventBuffer.appendLine(line)
                 }
             }
         }
@@ -289,4 +318,98 @@ class ApiService(
             setBody(request)
         }
     }
+
+// ── Media ─────────────────────────────────────────────────────────────────
+
+    suspend fun initiateMediaUpload(
+        request: InitiateMediaUploadRequest
+    ): InitiateMediaUploadResponse {
+        val response = client.post("$baseUrl/api/v1/messaging/media/upload") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("initiateMediaUpload: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body<InitiateMediaUploadResponse>()
+    }
+
+    suspend fun uploadEncryptedBytesToUrl(
+        uploadUrl: String,
+        encryptedBytes: ByteArray,
+        mimeType: String
+    ) {
+        val response = client.put(uploadUrl) {
+            header("Content-Type", mimeType)
+            setBody(encryptedBytes)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("upload failed: ${response.status.value}")
+    }
+
+    suspend fun confirmMediaUpload(mediaId: String): ConfirmMediaUploadResponse {
+        val response = client.post("$baseUrl/api/v1/messaging/media/$mediaId/confirm") {
+            bearerAuth(token())
+        }
+        if (!response.status.isSuccess())
+            throw Exception("confirmMediaUpload: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
+
+    suspend fun downloadBytesFromUrl(url: String): ByteArray {
+        val response = client.get(url)
+        if (!response.status.isSuccess())
+            throw Exception("downloadBytes: ${response.status.value}")
+        return response.body()
+    }
+
+    suspend fun getMediaDownloadUrl(mediaId: String): GetMediaDownloadUrlResponse =
+        client.get("$baseUrl/api/v1/messaging/media/$mediaId/download") {
+            bearerAuth(token())
+        }.body<GetMediaDownloadUrlResponse>()
+
+    // ── Устройства ────────────────────────────────────────────────────
+
+    suspend fun submitDeviceData(
+        registrationId: String,
+        request: SubmitDeviceDataRequest
+    ): SubmitDeviceDataResponse =
+        client.post("$baseUrl/api/v1/devices/$registrationId/submit") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun getDevices(): List<DeviceInfoResponse> =
+        client.get("$baseUrl/api/v1/devices") { bearerAuth(token()) }.body()
+
+    suspend fun initDeviceAddition(): InitDeviceAdditionResponse =
+        client.post("$baseUrl/api/v1/devices/init-addition") { bearerAuth(token()) }.body()
+
+    suspend fun getPendingDeviceAdditions(): List<PendingDeviceRegistration> =
+        client.get("$baseUrl/api/v1/devices/addition/pending") { bearerAuth(token()) }.body()
+
+    suspend fun confirmDeviceAddition(registrationId: String, request: ConfirmDeviceAdditionRequest): ConfirmDeviceAdditionResponse =
+        client.post("$baseUrl/api/v1/devices/addition/$registrationId/confirm") {
+            bearerAuth(token()); contentType(ContentType.Application.Json); setBody(request)
+        }.body()
+
+    suspend fun revokeDevice(deviceId: String, request: RevokeDeviceRequest): RevokeDeviceResponse =
+        client.delete("$baseUrl/api/v1/devices/$deviceId") {
+            bearerAuth(token()); contentType(ContentType.Application.Json); setBody(request)
+        }.body()
+
+    suspend fun getDeviceAdditionStatus(registrationId: String): DeviceAdditionStatusResponse =
+        client.get("$baseUrl/api/v1/devices/addition/$registrationId/status") { bearerAuth(token()) }.body()
+
+    suspend fun getKeyPackagesForUser(userId: String): List<UserDeviceKeyPackage> =
+        client.get("$baseUrl/api/v1/messaging/key-packages/by-user/$userId") {
+            bearerAuth(token())
+        }.body<GetKeyPackagesForUserResponse>().keyPackages
+
+    suspend fun updateDeviceKeys(deviceId: String, request: UpdateDeviceKeysRequest): UpdateDeviceKeysResponse =
+        client.put("$baseUrl/api/v1/devices/$deviceId/update-keys") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
 }

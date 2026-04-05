@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun AuthScreen(onLoginSuccess: () -> Unit, viewModel: AuthViewModel) {
+fun AuthScreen(onLoginSuccess: () -> Unit, viewModel: AuthViewModel, onAddDevice: () -> Unit,) {
     val state by viewModel.uiState.collectAsState()
     var isLoginMode by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
@@ -178,6 +178,18 @@ fun AuthScreen(onLoginSuccess: () -> Unit, viewModel: AuthViewModel) {
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center
                 )
+            }
+            TextButton(
+                onClick = onAddDevice,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCode,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Войти с другого устройства")
             }
         }
     }

@@ -65,23 +65,29 @@ fun ChatScreen(
     val chatBgColor    by viewModel.chatBgColor.collectAsState()
     val myBubbleColor  by viewModel.myBubbleColor.collectAsState()
     val theirBubbleColor by viewModel.theirBubbleColor.collectAsState()
+    val mediaCache by viewModel.mediaCache.collectAsState()
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
     val listState = rememberLazyListState()
     val scope     = rememberCoroutineScope()
 
-    val lastVisibleServerId by remember {
+    val lastVisibleIncomingServerId by remember {
         derivedStateOf {
             val visible = listState.layoutInfo.visibleItemsInfo
             if (visible.isEmpty()) return@derivedStateOf null
-            messages.getOrNull(visible.last().index)?.serverId
+            visible
+                .asReversed()
+                .mapNotNull { info -> messages.getOrNull(info.index) }
+                .firstOrNull { !it.isOutgoing && it.serverId.isNotBlank() }
+                ?.serverId
         }
     }
 
-    LaunchedEffect(lastVisibleServerId) {
-        lastVisibleServerId
-            ?.takeIf { it.isNotBlank() }
-            ?.let { viewModel.markMessagesRead(it) }
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(lastVisibleIncomingServerId, isLoading) {
+        if (isLoading) return@LaunchedEffect
+        lastVisibleIncomingServerId?.let(viewModel::markMessagesRead)
     }
 
     LaunchedEffect(messages.size) {
@@ -474,7 +480,13 @@ fun ChatScreen(
                             }
                             val isEmpty = inputText.trim().isEmpty() && attachments.isEmpty()
                             IconButton(
-                                onClick  = { if (!isEmpty) { viewModel.sendMessage(); attachments = emptyList() } },
+                                onClick = {
+                                    if (!isEmpty) {
+                                        val toSend = attachments
+                                        attachments = emptyList()
+                                        viewModel.sendMessage(toSend)
+                                    }
+                                },
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
@@ -502,13 +514,17 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    if (message.text.isBlank()) return@items
+                    if (message.text.isBlank() && message.mediaId == null && message.localPreviewBytes == null) return@items
                     MessageBubble(
                         message          = message,
                         myBubbleColor    = myBubbleColor,
                         theirBubbleColor = theirBubbleColor,
                         searchQuery      = searchQuery,
-                        isCurrentMatch   = message.id == currentMatchMsgId
+                        isCurrentMatch   = message.id == currentMatchMsgId,
+                        mediaCache       = mediaCache,
+                        onLoadMedia      = { id, meta ->
+                            viewModel.loadMedia(id, meta)
+                        }
                     )
                 }
             }
@@ -655,7 +671,9 @@ fun MessageBubble(
     myBubbleColor: Color,
     theirBubbleColor: Color,
     searchQuery: String = "",
-    isCurrentMatch: Boolean = false
+    isCurrentMatch: Boolean = false,
+    mediaCache: Map<String, ByteArray> = emptyMap(),
+    onLoadMedia: (String, String?) -> Unit = { _, _ -> }
 ) {
     val isOut       = message.isOutgoing
     val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
@@ -664,66 +682,129 @@ fun MessageBubble(
     val timeText    = remember(message.timestamp) { formatMessageTime(message.timestamp) }
     val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
+    val cachedBytes = message.mediaId?.let { mediaCache[it] }
+    val localBitmap = remember(message.localPreviewBytes, cachedBytes) {
+        (cachedBytes ?: message.localPreviewBytes)?.let {
+            runCatching { it.decodeToImageBitmap() }.getOrNull()
+        }
+    }
+    val mediaId = message.mediaId
+    val encMeta = message.encryptionMetadata
+    LaunchedEffect(mediaId) {
+        if (mediaId != null && cachedBytes == null && message.localPreviewBytes == null) {
+            onLoadMedia(mediaId, encMeta)
+        }
+    }
+    val isImageMsg = message.type == "image" || localBitmap != null
+    val hasText    = message.text.isNotBlank()
+
     Row(
         modifier              = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment     = Alignment.Bottom
     ) {
         if (isOut && timeText.isNotEmpty()) {
-            Text(
-                text     = timeText,
-                color    = timeColor,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp)
-            )
+            Text(timeText, color = timeColor, fontSize = 11.sp,
+                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp))
         }
 
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart    = 16.dp,
-                        topEnd      = 16.dp,
-                        bottomStart = if (isOut) 16.dp else 4.dp,
-                        bottomEnd   = if (isOut) 4.dp else 16.dp
-                    )
-                )
+                .clip(RoundedCornerShape(
+                    topStart    = 16.dp, topEnd = 16.dp,
+                    bottomStart = if (isOut) 16.dp else 4.dp,
+                    bottomEnd   = if (isOut) 4.dp else 16.dp
+                ))
                 .background(bubbleColor)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(
+                    horizontal = if (isImageMsg && !hasText) 0.dp else 12.dp,
+                    vertical   = if (isImageMsg && !hasText) 0.dp else 8.dp
+                )
         ) {
-            val annotated = buildAnnotatedString {
-                if (searchQuery.isBlank()) {
-                    append(message.text)
-                } else {
-                    val lower  = message.text.lowercase()
-                    val lowerQ = searchQuery.lowercase()
-                    var pos    = 0
-                    while (pos < message.text.length) {
-                        val idx = lower.indexOf(lowerQ, pos)
-                        if (idx == -1) { append(message.text.substring(pos)); break }
-                        append(message.text.substring(pos, idx))
-                        withStyle(SpanStyle(background = Color(0xFFFFD60A))) {
-                            append(message.text.substring(idx, idx + searchQuery.length))
+            Column {
+                if (isImageMsg) {
+                    if (localBitmap != null) {
+                        Image(
+                            bitmap             = localBitmap,
+                            contentDescription = null,
+                            contentScale       = ContentScale.Crop,
+                            modifier           = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .clip(RoundedCornerShape(
+                                    topStart    = 16.dp, topEnd = 16.dp,
+                                    bottomStart = if (!hasText && isOut) 16.dp else if (!hasText) 4.dp else 0.dp,
+                                    bottomEnd   = if (!hasText && isOut) 4.dp else if (!hasText) 16.dp else 0.dp
+                                ))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .background(bubbleColor.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (message.status == MessageStatus.SENDING) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    color = textColor
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Image,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = textColor.copy(alpha = 0.5f)
+                                )
+                            }
                         }
-                        pos = idx + searchQuery.length
                     }
+                    if (hasText) Spacer(Modifier.height(6.dp))
+                }
+
+                if (hasText) {
+                    val textMod = if (isImageMsg) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+                    val annotated = buildAnnotatedString {
+                        if (searchQuery.isBlank()) {
+                            append(message.text)
+                        } else {
+                            val lower = message.text.lowercase()
+                            val lowerQ = searchQuery.lowercase()
+                            var pos = 0
+                            while (pos < message.text.length) {
+                                val idx = lower.indexOf(lowerQ, pos)
+                                if (idx == -1) { append(message.text.substring(pos)); break }
+                                append(message.text.substring(pos, idx))
+                                withStyle(SpanStyle(background = Color(0xFFFFD60A))) {
+                                    append(message.text.substring(idx, idx + searchQuery.length))
+                                }
+                                pos = idx + searchQuery.length
+                            }
+                        }
+                    }
+                    Text(text = annotated, color = textColor,
+                        style = MaterialTheme.typography.bodyLarge, modifier = textMod)
+                }
+
+                if (isOut && message.status != MessageStatus.SENT) {
+                    val iconMod = if (isImageMsg)
+                        Modifier.padding(end = 8.dp, bottom = 4.dp).align(Alignment.End)
+                    else Modifier.align(Alignment.End)
+                    Text(
+                        text     = if (message.status == MessageStatus.SENDING) "⏳" else "❌",
+                        fontSize = 11.sp,
+                        color    = textColor.copy(alpha = 0.6f),
+                        modifier = iconMod
+                    )
                 }
             }
-            Text(
-                text  = annotated,
-                color = textColor,
-                style = MaterialTheme.typography.bodyLarge
-            )
         }
 
         if (!isOut && timeText.isNotEmpty()) {
-            Text(
-                text     = timeText,
-                color    = timeColor,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-            )
+            Text(timeText, color = timeColor, fontSize = 11.sp,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
         }
     }
 }

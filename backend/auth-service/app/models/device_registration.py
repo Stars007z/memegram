@@ -15,7 +15,7 @@ class DeviceRegistration(Base):
     initiated_by_device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String(20),
+    status: Mapped[str] = mapped_column(String(30),
                                         default='pending')  # pending, awaiting_confirmation, confirmed, rejected
 
     # Данные нового устройства (заполняются после ввода кода)

@@ -276,4 +276,21 @@ impl MlsClientHandle {
             .ok_or_else(|| MlsError::General("group not found".into()))?;
         Ok(group.members().count() as u64)
     }
+
+    pub fn export_identity_key_pub(&self) -> Result<Vec<u8>, MlsError> {
+        let g = self.inner.lock().unwrap();
+        Ok(g.keys.signer.to_public_vec())
+    }
+
+    pub fn export_init_key_pub(&self) -> Result<Vec<u8>, MlsError> {
+        self.generate_key_package()
+    }
+
+    pub fn export_credential_data(&self) -> Result<Vec<u8>, MlsError> {
+        let g = self.inner.lock().unwrap();
+        g.keys.credential_with_key
+            .credential
+            .tls_serialize_detached()
+            .map_err(to_err)
+    }
 }

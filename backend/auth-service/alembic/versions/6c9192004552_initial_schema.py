@@ -28,7 +28,7 @@ def upgrade() -> None:
     sa.Column('initiated_by_device_id', sa.UUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('expires_at', sa.DateTime(), nullable=False),
-    sa.Column('status', sa.String(length=20), nullable=False),
+    sa.Column('status', sa.String(length=30), nullable=False),
     sa.Column('device_id', sa.String(length=255), nullable=True),
     sa.Column('device_name', sa.String(length=255), nullable=True),
     sa.Column('device_type', sa.String(length=50), nullable=True),

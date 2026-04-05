@@ -106,17 +106,20 @@ class ChatRepositoryImpl(
             .map { entities ->
                 entities.map { entity ->
                     Message(
-                        id = entity.serverId.hashCode(),
-                        serverId = entity.serverId,
-                        text = entity.text,
-                        isOutgoing = entity.isOutgoing == 1L,
-                        timestamp = entity.timestamp,
-                        status = try {
-                            MessageStatus.valueOf(entity.status)
-                        } catch (e: Exception) {
-                            MessageStatus.SENT
-                        }
+                        id                 = entity.serverId.hashCode(),
+                        serverId           = entity.serverId,
+                        text               = entity.text,
+                        isOutgoing         = entity.isOutgoing == 1L,
+                        timestamp          = entity.timestamp,
+                        status             = try { MessageStatus.valueOf(entity.status) }
+                        catch (_: Exception) { MessageStatus.SENT },
+                        type               = entity.type,
+                        mediaId            = entity.mediaId,
+                        encryptionMetadata = entity.encryptionMetadata,
+                        localPreviewBytes  = entity.localPreviewBytes,
+                        mediaUrl           = entity.mediaUrl
                     )
+
                 }
             }
     }
@@ -127,13 +130,26 @@ class ChatRepositoryImpl(
             val now = Clock.System.now().toEpochMilliseconds()
 
             chatQueries.transaction {
-                chatQueries.insertOrIgnoreMessage(realId, conversationId, message.text,
-                    if (message.isOutgoing) 1L else 0L, message.timestamp, message.status.name, now)
-                chatQueries.updateExistingMessage(message.text, message.status.name, now, message.timestamp, realId)
+                if (message.serverId.isNotBlank()) {
+                    chatQueries.deleteMessageByServerId("temp_${message.id}")
+                }
+
+                chatQueries.insertOrIgnoreMessage(
+                    realId, conversationId, message.text,
+                    if (message.isOutgoing) 1L else 0L, message.timestamp, message.status.name,
+                    message.type, message.mediaId, message.encryptionMetadata,
+                    message.localPreviewBytes, message.mediaUrl, now
+                )
+                chatQueries.updateExistingMessage(
+                    message.text, message.status.name,
+                    message.type, message.mediaId, message.encryptionMetadata,
+                    message.localPreviewBytes, message.mediaUrl, now, message.timestamp, realId
+                )
                 runGarbageCollector(conversationId)
             }
         }
     }
+
 
     override suspend fun saveMessages(messages: List<Message>, conversationId: String) {
         withContext(ioDispatcher) {
@@ -143,15 +159,21 @@ class ChatRepositoryImpl(
                 messages.forEach { message ->
                     val realId = message.serverId.takeIf { it.isNotBlank() } ?: "temp_${message.id}"
                     chatQueries.insertMessage(
-                        serverId = realId,
-                        conversationId = conversationId,
-                        text = message.text,
-                        isOutgoing = if (message.isOutgoing) 1L else 0L,
-                        timestamp = message.timestamp,
-                        status = message.status.name,
-                        lastAccessedAt = now,
-                        accessCount = 1L
+                        serverId           = realId,
+                        conversationId     = conversationId,
+                        text               = message.text,
+                        isOutgoing         = if (message.isOutgoing) 1L else 0L,
+                        timestamp          = message.timestamp,
+                        status             = message.status.name,
+                        type               = message.type,
+                        mediaId            = message.mediaId,
+                        encryptionMetadata = message.encryptionMetadata,
+                        localPreviewBytes  = message.localPreviewBytes,
+                        mediaUrl           = message.mediaUrl,
+                        lastAccessedAt     = now,
+                        accessCount        = 1L
                     )
+
                 }
                 runGarbageCollector(conversationId)
             }
@@ -180,17 +202,20 @@ class ChatRepositoryImpl(
                 .executeAsList()
                 .map { entity ->
                     Message(
-                        id         = entity.serverId.hashCode(),
-                        serverId   = entity.serverId,
-                        text       = entity.text,
-                        isOutgoing = entity.isOutgoing == 1L,
-                        timestamp  = entity.timestamp,
-                        status     = try {
-                            MessageStatus.valueOf(entity.status)
-                        } catch (e: Exception) {
-                            MessageStatus.SENT
-                        }
+                        id                 = entity.serverId.hashCode(),
+                        serverId           = entity.serverId,
+                        text               = entity.text,
+                        isOutgoing         = entity.isOutgoing == 1L,
+                        timestamp          = entity.timestamp,
+                        status             = try { MessageStatus.valueOf(entity.status) }
+                        catch (_: Exception) { MessageStatus.SENT },
+                        type               = entity.type,
+                        mediaId            = entity.mediaId,
+                        encryptionMetadata = entity.encryptionMetadata,
+                        localPreviewBytes  = entity.localPreviewBytes,
+                        mediaUrl           = entity.mediaUrl
                     )
+
                 }
         }
     }

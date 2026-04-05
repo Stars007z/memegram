@@ -2,6 +2,7 @@ package com.example.memegram.data.local
 
 import com.russhwolf.settings.Settings
 import com.example.memegram.data.models.AuthResponse
+import com.example.memegram.data.models.ConfirmDeviceAdditionResponse
 
 class SessionManager(private val settings: Settings) {
 
@@ -52,5 +53,14 @@ class SessionManager(private val settings: Settings) {
     fun clearDeviceId() {
         settings.remove("device_id")
         settings.remove("user_id")
+    }
+
+    fun saveSession(response: ConfirmDeviceAdditionResponse) {
+        settings.putString("access_token", response.accessToken)
+        settings.putString("refresh_token", response.refreshToken)
+        settings.putString("user_id",       response.userId)
+        settings.putString("device_id",     response.newDeviceId)
+        settings.putBoolean("is_primary",   false)
+        settings.putLong("expires_at",      response.expiresAt)
     }
 }

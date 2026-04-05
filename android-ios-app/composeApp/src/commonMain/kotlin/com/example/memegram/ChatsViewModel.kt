@@ -9,6 +9,7 @@ import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.mls.MlsManager.Companion.BATCH_KEY_PACKAGES
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -46,6 +47,7 @@ class ChatsViewModel(
     private var pollingJob: Job? = null
     private val profileCache = mutableMapOf<String, com.example.memegram.data.models.UserProfileResponse>()
 
+    private val peerCache = mutableMapOf<String, String>()
     init {
         viewModelScope.launch {
             initMls()
@@ -95,13 +97,15 @@ class ChatsViewModel(
 
                 if (conv.type == "direct") {
                     try {
-                        val details = api.getConversation(conv.id)
-                        val peer = details.members.find { it.userId != currentUserId }
-                        if (peer != null) {
-                            val profile = profileCache[peer.userId]
-                                ?: api.getUserById(peer.userId).also { profileCache[peer.userId] = it }
-
-                            chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peer.userId.take(4)}"
+                        val peerId = peerCache[conv.id] ?: run {
+                            val details = api.getConversation(conv.id)
+                            val peer = details.members.find { it.userId != currentUserId }
+                            peer?.userId?.also { peerCache[conv.id] = it }
+                        }
+                        if (peerId != null) {
+                            val profile = profileCache[peerId]
+                                ?: api.getUserById(peerId).also { profileCache[peerId] = it }
+                            chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
                         }
                     } catch (_: Exception) {}
                 }
@@ -110,19 +114,19 @@ class ChatsViewModel(
 
                 val displayLastMessage = when {
                     localLastMessageText != null -> localLastMessageText
-                    conv.lastMessageType == "text" -> "Сообщение"
+                    conv.lastMessageType == "text"  -> "Сообщение"
                     conv.lastMessageType == "image" -> "📸 Фото"
                     conv.lastMessageType == null || conv.lastMessageType == "" -> "Новый чат"
                     else -> conv.lastMessageType
                 }
 
                 ChatModel(
-                    id = conv.id.hashCode(),
+                    id             = conv.id.hashCode(),
                     conversationId = conv.id,
-                    name = chatName,
-                    lastMessage = displayLastMessage,
-                    timestamp = conv.lastActivityAt * 1000,
-                    unreadCount = conv.unreadCount
+                    name           = chatName,
+                    lastMessage    = displayLastMessage,
+                    timestamp      = conv.lastActivityAt * 1000,
+                    unreadCount    = conv.unreadCount
                 )
             }
 
@@ -153,17 +157,36 @@ class ChatsViewModel(
     }
 
     private fun subscribeToGlobalEvents(conversationIds: List<String>) {
+        val newIdsKey = conversationIds.sorted().joinToString(",")
+        if (_lastSubscribedKey == newIdsKey && sseJob?.isActive == true) return
+        _lastSubscribedKey = newIdsKey
+
         sseJob?.cancel()
         if (conversationIds.isEmpty()) return
 
+        val idsParam = conversationIds.joinToString(",")
         sseJob = viewModelScope.launch {
-            try {
-                api.subscribeToConversation(conversationIds.joinToString(",")).collect { event ->
-                    handleGlobalEvent(event)
+            var backoffMs = 1_000L
+            while (isActive) {
+                try {
+                    println("MemegramDebug [ChatsVM]: SSE global подключаемся")
+                    api.subscribeToConversation(idsParam).collect { event ->
+                        handleGlobalEvent(event)
+                        backoffMs = 1_000L
+                    }
+                    println("MemegramDebug [ChatsVM]: SSE global стрим завершён, retry через ${backoffMs}мс")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    println("MemegramDebug [ChatsVM]: SSE global ошибка (${e.message}), retry через ${backoffMs}мс")
                 }
-            } catch (_: Exception) {}
+                delay(backoffMs)
+                backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
+            }
         }
     }
+
+    private var _lastSubscribedKey: String = ""
 
     private suspend fun handleGlobalEvent(event: SseEvent) {
         val convId = event.conversationId
@@ -174,17 +197,34 @@ class ChatsViewModel(
                 val currentUserId = sessionManager.getUserId()
                 val isMine = event.data?.senderUserId == currentUserId
 
-                val decryptedText = mlsManager.decrypt(convId, event.data?.mlsCiphertextB64 ?: "")
+                if (convId == ActiveChatCoordinator.conversationId) {
+                    val chat = chatRepository.getChatById(convId)
+                    if (chat != null) {
+                        chatRepository.saveChat(
+                            chat.copy(
+                                timestamp   = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
+                                unreadCount = if (isMine) chat.unreadCount else 0
+                            )
+                        )
+                    }
+                    return
+                }
+
+                val decryptedText = try {
+                    mlsManager.decrypt(convId, event.data?.mlsCiphertextB64 ?: "")
+                } catch (_: Exception) { null }
+
                 if (decryptedText != null) {
                     mlsManager.flushState()
                     chatRepository.saveMessage(
                         Message(
-                            id = event.data?.id.hashCode(),
-                            serverId = event.data?.id ?: "",
-                            text = decryptedText,
+                            id         = event.data?.id.hashCode(),
+                            serverId   = event.data?.id ?: "",
+                            text       = decryptedText,
                             isOutgoing = isMine,
-                            timestamp = (event.data?.createdAt?.let { it * 1000L }) ?: Clock.System.now().toEpochMilliseconds(),
-                            status = MessageStatus.SENT
+                            timestamp  = (event.data?.createdAt?.let { it * 1000L })
+                                ?: Clock.System.now().toEpochMilliseconds(),
+                            status     = MessageStatus.SENT
                         ),
                         convId
                     )
@@ -195,7 +235,7 @@ class ChatsViewModel(
                     chatRepository.saveChat(
                         chat.copy(
                             lastMessage = decryptedText ?: if (isMine) "📨" else "🔒",
-                            timestamp = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
+                            timestamp   = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
                             unreadCount = if (isMine) chat.unreadCount else chat.unreadCount + 1
                         )
                     )
