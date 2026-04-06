@@ -40,6 +40,7 @@ import org.koin.dsl.koinConfiguration
 @Serializable object StorageRoute
 @Serializable object LinkedDevicesRoute
 @Serializable object AddDeviceRoute
+@Serializable object CreateGroupRoute
 
 @Composable
 fun App() {
@@ -88,6 +89,17 @@ fun App() {
                                         conversationId = chat.conversationId
                                     )
                                 )
+                            },
+                            onNavigateToChat = { convId ->
+                                navController.navigate(
+                                    ChatDetailRoute(
+                                        chatName = "Новый чат",
+                                        conversationId = convId
+                                    )
+                                )
+                            },
+                            onNavigateToCreateGroup = {
+                                navController.navigate(CreateGroupRoute)
                             },
                             onAppearanceClick = { navController.navigate(AppearanceRoute) },
                             onProfileClick = { navController.navigate(ProfileRoute) },
@@ -240,6 +252,16 @@ fun App() {
                             onSuccess = {
                                 navController.navigate(ChatsRoute) {
                                     popUpTo(AuthRoute) { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+                    composable<CreateGroupRoute> {
+                        CreateGroupScreen(
+                            onBack = { navController.popBackStack() },
+                            onGroupCreated = { chatId ->
+                                navController.navigate(ChatDetailRoute("Группа", chatId)) {
+                                    popUpTo(ChatsRoute)
                                 }
                             }
                         )

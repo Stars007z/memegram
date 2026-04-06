@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -150,6 +151,10 @@ fun ChatScreen(
     var showMuteDialog  by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+
+    val isGroupChat by viewModel.isGroupChat.collectAsState()
+    val messageSenders by viewModel.messageSenders.collectAsState()
+    val memberProfiles by viewModel.memberProfiles.collectAsState()
 
     if (showAttachSheet) {
         ModalBottomSheet(
@@ -515,17 +520,61 @@ fun ChatScreen(
             ) {
                 items(messages, key = { it.id }) { message ->
                     if (message.text.isBlank() && message.mediaId == null && message.localPreviewBytes == null) return@items
-                    MessageBubble(
-                        message          = message,
-                        myBubbleColor    = myBubbleColor,
-                        theirBubbleColor = theirBubbleColor,
-                        searchQuery      = searchQuery,
-                        isCurrentMatch   = message.id == currentMatchMsgId,
-                        mediaCache       = mediaCache,
-                        onLoadMedia      = { id, meta ->
-                            viewModel.loadMedia(id, meta)
+                    val senderId = messageSenders[message.serverId]
+                    val profile = memberProfiles[senderId]
+                    if (isGroupChat && !message.isOutgoing) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = profile?.username?.take(1)?.uppercase() ?: "?",
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text(
+                                    text = profile?.username ?: "Участник",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                                )
+
+                                MessageBubble(
+                                    message          = message,
+                                    myBubbleColor    = myBubbleColor,
+                                    theirBubbleColor = theirBubbleColor,
+                                    searchQuery      = searchQuery,
+                                    isCurrentMatch   = message.id == currentMatchMsgId,
+                                    mediaCache       = mediaCache,
+                                    onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) }
+                                )
+                            }
                         }
-                    )
+                    } else {
+                        MessageBubble(
+                            message          = message,
+                            myBubbleColor    = myBubbleColor,
+                            theirBubbleColor = theirBubbleColor,
+                            searchQuery      = searchQuery,
+                            isCurrentMatch   = message.id == currentMatchMsgId,
+                            mediaCache       = mediaCache,
+                            onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) }
+                        )
+                    }
                 }
             }
         }

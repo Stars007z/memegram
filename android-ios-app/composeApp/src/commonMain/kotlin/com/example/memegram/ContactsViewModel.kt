@@ -6,6 +6,7 @@ import com.example.memegram.data.models.*
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ContactsRepository
 import com.example.memegram.mls.MlsManager
+import com.example.memegram.utils.generateUuid
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
@@ -123,7 +124,7 @@ class ContactsViewModel(
                     return@launch
                 }
 
-                val mlsGroupId = "${entry.contactUserId.take(16)}_${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+                val mlsGroupId = "${entry.contactUserId.take(16)}_${Clock.System.now().toEpochMilliseconds()}"
 
                 val firstKp = allPackagesToAdd.first()
                 val createResult = mlsManager.createGroup(
@@ -183,4 +184,138 @@ class ContactsViewModel(
 
     fun getPendingChatName(): String? = _pendingChatContact.value
     fun clearPendingChatName() { _pendingChatContact.value = null }
+
+    fun createGroupChat(groupName: String, selectedUserIds: List<String>) {
+        if (groupName.isBlank() || selectedUserIds.isEmpty()) {
+            _error.value = "Введите название группы и выберите участников"
+            return
+        }
+
+        viewModelScope.launch {
+            _isCreatingChat.value = true
+            _error.value = null
+            try {
+                val allDevicesToInvite = mutableListOf<Pair<String, UserDeviceKeyPackage>>()
+
+                for (userId in selectedUserIds) {
+                    try {
+                        val packages = api.getKeyPackagesForUser(userId)
+                        packages.forEach { allDevicesToInvite.add(userId to it) }
+                    } catch (e: Exception) {
+                        println("MemegramDebug: Не удалось получить ключи для юзера $userId")
+                    }
+                }
+
+                val myUserId = mlsManager.getMyUserId()
+                val myDeviceId = mlsManager.getMyDeviceId()
+                if (myUserId.isNotBlank()) {
+                    val myPackages = api.getKeyPackagesForUser(myUserId).filter { it.deviceId != myDeviceId }
+                    myPackages.forEach { allDevicesToInvite.add(myUserId to it) }
+                }
+
+                if (allDevicesToInvite.isEmpty()) {
+                    _error.value = "Не найдено устройств для добавления в группу"
+                    return@launch
+                }
+
+                val mlsGroupId = "group_${generateUuid()}"
+
+                val firstDevice = allDevicesToInvite.first()
+                val createResult = mlsManager.createGroup(
+                    mlsGroupId = mlsGroupId,
+                    peerKeyPackageB64 = firstDevice.second.keyPackageData
+                )
+
+                val uniqueUserIds = allDevicesToInvite.map { it.first }.distinct()
+                val membersList = uniqueUserIds.map { uid ->
+                    if (uid == firstDevice.first) {
+                        MemberWelcomes(
+                            userId = uid,
+                            welcomes = listOf(
+                                DeviceWelcome(
+                                    deviceId = firstDevice.second.deviceId,
+                                    welcomeData = createResult.welcomeB64
+                                )
+                            )
+                        )
+                    } else {
+                        MemberWelcomes(userId = uid, welcomes = emptyList())
+                    }
+                }
+
+                val conv = api.createGroupConversation(
+                    CreateGroupConversationRequest(
+                        name = groupName,
+                        members = membersList
+                    )
+                )
+
+                mlsManager.bindConversation(conv.id, mlsGroupId)
+                var currentEpoch = 1L
+                mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+
+                for (device in allDevicesToInvite.drop(1)) {
+                    try {
+                        val addResult = mlsManager.addMemberToGroup(conv.id, device.second.keyPackageData)
+                        mlsManager.flushState()
+
+                        try {
+                            mlsManager.processCommit(conv.id, addResult.commitB64)
+                            mlsManager.flushState()
+                        } catch (e: Exception) {
+                            println("MemegramDebug: Локальный коммит пропущен (уже применен)")
+                        }
+
+                        api.commitGroupChange(
+                            conv.id,
+                            CommitGroupChangeRequest(
+                                commitData = addResult.commitB64,
+                                newEpoch = currentEpoch.toInt(),
+                                welcomeMessages = listOf(
+                                    DeviceWelcome(
+                                        deviceId = device.second.deviceId,
+                                        welcomeData = addResult.welcomeB64
+                                    )
+                                )
+                            )
+                        )
+
+                        currentEpoch++
+                        mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+                        println("MemegramDebug: В группу добавлен девайс ${device.second.deviceId}")
+                    } catch (e: Exception) {
+                        println("MemegramDebug: 🚨 Ошибка добавления девайса ${device.second.deviceId}: ${e.message}")
+                        break
+                    }
+                }
+
+                mlsManager.onKeyPackageConsumed()
+                _chatCreated.value = conv.id
+
+            } catch (e: Exception) {
+                _error.value = "Ошибка создания группы: ${e.message}"
+            } finally {
+                _isCreatingChat.value = false
+            }
+        }
+    }
+    fun addAndStartChat(publicKey: String) {
+        if (publicKey.isBlank()) return
+
+        viewModelScope.launch {
+            _isCreatingChat.value = true
+            _error.value = null
+
+            contactsRepository.addContact(publicKey)
+                .onSuccess { newContactEntry ->
+                    _contacts.value = (_contacts.value + newContactEntry).sortedByDescending { it.isFavorite }
+                    _addSuccess.value = true
+                    startDirectChatWith(newContactEntry)
+                }
+                .onFailure {
+                    _error.value = "Не удалось добавить пользователя: ${it.message}"
+                    _isCreatingChat.value = false
+                }
+        }
+    }
 }

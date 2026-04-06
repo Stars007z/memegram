@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
+import org.koin.compose.viewmodel.koinViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -47,6 +48,8 @@ fun ChatsScreen(
     topBarColor: Color,
     onStorageClick: () -> Unit,
     onChatClick: (ChatModel) -> Unit,
+    onNavigateToChat: (String) -> Unit,
+    onNavigateToCreateGroup: () -> Unit,
     onAppearanceClick: () -> Unit,
     onProfileClick: () -> Unit,
     onNotificationsClick: () -> Unit,
@@ -71,10 +74,20 @@ fun ChatsScreen(
     var isSearchMode by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    val contactsVm: ContactsViewModel = koinViewModel()
+    val createdChatId by contactsVm.chatCreated.collectAsState()
+    var showAddKeyDialog by remember { mutableStateOf(false) }
+    var newKeyInput by remember { mutableStateOf("") }
 
     LaunchedEffect(isSearchMode) {
         if (isSearchMode) focusRequester.requestFocus()
         else viewModel.setSearchQuery("")
+    }
+    LaunchedEffect(createdChatId) {
+        createdChatId?.let { id ->
+            contactsVm.clearChatCreated()
+            onNavigateToChat(id)
+        }
     }
 
     ModalNavigationDrawer(
@@ -247,12 +260,18 @@ fun ChatsScreen(
                                 ) {
                                     DropdownMenuItem(
                                         text = { Text("Создать группу") },
-                                        onClick = { showAddMenu = false },
+                                        onClick = {
+                                            showAddMenu = false
+                                            onNavigateToCreateGroup()
+                                        },
                                         leadingIcon = { Icon(Icons.Default.Group, null) }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Добавить по ключу") },
-                                        onClick = { showAddMenu = false },
+                                        onClick = {
+                                            showAddMenu = false
+                                            showAddKeyDialog = true
+                                        },
                                         leadingIcon = { Icon(Icons.Default.Key, null) }
                                     )
                                     DropdownMenuItem(
@@ -274,6 +293,42 @@ fun ChatsScreen(
                         titleContentColor = topBarTextColor
                     )
                 )
+                if (showAddKeyDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showAddKeyDialog = false },
+                        title = { Text("Новый чат") },
+                        text = {
+                            Column {
+                                Text("Введите публичный ключ пользователя, чтобы добавить его в контакты и сразу начать чат.", style = MaterialTheme.typography.bodySmall)
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = newKeyInput,
+                                    onValueChange = { newKeyInput = it },
+                                    label = { Text("Публичный ключ") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showAddKeyDialog = false
+                                    if (newKeyInput.isNotBlank()) {
+                                        contactsVm.addAndStartChat(newKeyInput.trim())
+                                    }
+                                    newKeyInput = ""
+                                }
+                            ) {
+                                Text("Начать")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showAddKeyDialog = false }) {
+                                Text("Отмена")
+                            }
+                        }
+                    )
+                }
             }
         ) { paddingValues ->
             Box(
