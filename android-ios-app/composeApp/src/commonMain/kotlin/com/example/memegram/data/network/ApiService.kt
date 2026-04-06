@@ -312,10 +312,34 @@ class ApiService(
         conversationId: String,
         request: CommitGroupChangeRequest
     ) {
-        client.post("$baseUrl/api/v1/messaging/conversations/$conversationId/mls/commit") {
+        val response = client.post("$baseUrl/api/v1/messaging/conversations/$conversationId/mls/commit") {
             bearerAuth(token())
             contentType(ContentType.Application.Json)
             setBody(request)
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = response.bodyAsText()
+            println("MemegramDebug 🚨 Backend вернул ошибку ${response.status.value} в commitGroupChange: $errorBody")
+            throw Exception("Ошибка commitGroupChange: $errorBody")
+        }
+    }
+
+    suspend fun createGroupConversation(
+        request: CreateGroupConversationRequest
+    ): ConversationResponse {
+        val response = client.post("$baseUrl/api/v1/messaging/conversations/group") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            throw Exception("createGroup failed ${response.status.value}: ${response.bodyAsText()}")
+        }
+        return try {
+            response.body<ConversationEnvelope>().conversation
+        } catch (_: Exception) {
+            response.body()
         }
     }
 

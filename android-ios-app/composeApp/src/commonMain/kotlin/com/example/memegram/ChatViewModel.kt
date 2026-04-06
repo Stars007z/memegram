@@ -30,6 +30,15 @@ class ChatViewModel(
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
 
+    private val _isGroupChat = MutableStateFlow(false)
+    val isGroupChat: StateFlow<Boolean> = _isGroupChat.asStateFlow()
+
+    private val _messageSenders = MutableStateFlow<Map<String, String>>(emptyMap())
+    val messageSenders: StateFlow<Map<String, String>> = _messageSenders.asStateFlow()
+
+    private val _memberProfiles = MutableStateFlow<Map<String, UserProfileResponse>>(emptyMap())
+    val memberProfiles: StateFlow<Map<String, UserProfileResponse>> = _memberProfiles.asStateFlow()
+
     private val _inputText        = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
@@ -62,11 +71,6 @@ class ChatViewModel(
     private var dbObserveJob: Job? = null
     private var pollingJob: Job? = null
 
-    /**
-     * Mutex защищает MLS-рэтчет от гонки между SSE и polling:
-     * оба могут получить одно и то же сообщение одновременно,
-     * но decrypt должен произойти ровно один раз и строго по порядку.
-     */
     private val decryptMutex = Mutex()
 
     fun loadConversation(conversationId: String) {
@@ -89,15 +93,28 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 val conv = api.getConversation(conversationId)
-                if (conv.type == "direct") {
+                val isGroup = conv.type != "direct"
+                _isGroupChat.value = isGroup
+
+                if (isGroup) {
+                    _chatTitle.value = conv.name ?: "Группа"
+                    conv.members.forEach { member ->
+                        if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
+                            launch {
+                                try {
+                                    val profile = api.getUserById(member.userId)
+                                    _memberProfiles.update { it + (member.userId to profile) }
+                                } catch (e: Exception) {}
+                            }
+                        }
+                    }
+                } else {
                     val peer = conv.members.find { it.userId != myUserId }
                     if (peer != null) {
                         val profile = api.getUserById(peer.userId)
                         _chatTitle.value = profile.username?.takeIf { it.isNotBlank() } ?: "Собеседник"
                         _chatAvatarId.value = profile.avatarMediaId
                     }
-                } else {
-                    _chatTitle.value = conv.name ?: "Группа"
                 }
             } catch (e: Exception) {
                 _chatTitle.value = "Собеседник"
@@ -126,14 +143,15 @@ class ChatViewModel(
             val sortedMessages = rawMessages.sortedBy { it.createdAt }
             val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
 
+            val newSenders = mutableMapOf<String, String>()
             val uiMessages = sortedMessages.map { msg ->
                 val existing = existingLocalMessages.find { it.serverId == msg.id }
 
                 val isSentByMe = msg.effectiveSenderId == myId
+                newSenders[msg.id] = msg.effectiveSenderId
 
                 val text = when {
                     existing != null && existing.text.isNotBlank() && existing.text != "🔒" && !existing.text.startsWith("🔒") -> existing.text
-
                     else -> try {
                         mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: "🔒 [Зашифровано]"
                     } catch (e: Exception) {
@@ -156,6 +174,7 @@ class ChatViewModel(
                 )
             }
 
+            _messageSenders.update { it + newSenders }
             println("MemegramDebug: Сохраняю ${uiMessages.size} сообщений в БД...")
             chatRepository.saveMessages(uiMessages, conversationId)
             mlsManager.flushState()
@@ -209,6 +228,9 @@ class ChatViewModel(
                 val msgId = data.id ?: return
                 println("MemegramDebug [SSE]: new_message msgId=$msgId sender=${data.senderUserId}")
 
+                data.senderUserId?.let { senderId ->
+                    _messageSenders.update { it + (msgId to senderId) }
+                }
                 decryptAndSave(
                     convId        = convId,
                     msgId         = msgId,
@@ -270,7 +292,9 @@ class ChatViewModel(
 
             println("MemegramDebug [Poll]: найдено ${newMessages.size} новых сообщений")
 
+            val newSenders = mutableMapOf<String, String>()
             for (msg in newMessages) {
+                newSenders[msg.id] = msg.effectiveSenderId
                 decryptAndSave(
                     convId        = conversationId,
                     msgId         = msg.id,
@@ -280,6 +304,7 @@ class ChatViewModel(
                     isOutgoing    = msg.effectiveSenderId == myId
                 )
             }
+            _messageSenders.update { it + newSenders }
         } catch (e: Exception) {
             println("MemegramDebug [Poll]: ошибка: ${e.message}")
         }
@@ -355,15 +380,29 @@ class ChatViewModel(
         }
 
         try {
-            val sinceEpoch = mlsManager.getGroupEpoch(conversationId)
-            val commits = api.getPendingCommits(conversationId, sinceEpoch)
+            val localEpoch = mlsManager.getGroupEpoch(conversationId)
+            val serverQueryEpoch = if (localEpoch > 0) localEpoch - 1 else 0
+
+            println("MemegramDebug: Запрашиваем Commits начиная с serverEpoch=$serverQueryEpoch...")
+            val commits = api.getPendingCommits(conversationId, serverQueryEpoch)
+
             if (commits.isNotEmpty()) {
-                println("MemegramDebug: Применяем ${commits.size} commits...")
+                println("MemegramDebug: Найдено ${commits.size} новых commits...")
                 commits.sortedBy { it.epoch }.forEach { commit ->
-                    mlsManager.processCommit(conversationId, commit.commitDataB64)
-                    mlsManager.updateGroupEpoch(conversationId, commit.epoch)
+                    try {
+                        mlsManager.processCommit(conversationId, commit.commitDataB64)
+                        println("MemegramDebug: ✅ Успешно применен Commit от сервера (epoch=${commit.epoch})")
+                    } catch (e: Exception) {
+                        println("MemegramDebug: ⚠️ Пропущен Commit (epoch=${commit.epoch}): ${e.message}")
+                    }
+                    val newTargetEpoch = commit.epoch + 1
+                    if (newTargetEpoch > mlsManager.getGroupEpoch(conversationId)) {
+                        mlsManager.updateGroupEpoch(conversationId, newTargetEpoch)
+                    }
                 }
                 mlsManager.flushState()
+            } else {
+                println("MemegramDebug: Новых Commits не найдено.")
             }
         } catch (e: Exception) {
             println("MemegramDebug: Ошибка обработки Commits: ${e.message}")

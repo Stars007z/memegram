@@ -143,6 +143,7 @@ data class SseEventData(
     val id: String? = null,
     @SerialName("message_id") val messageId: String? = null,
     @SerialName("sender_user_id") val senderUserId: String? = null,
+    @SerialName("sender_device_id") val senderDeviceId: String? = null,
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String? = null,
     @SerialName("new_mls_ciphertext") val newMlsCiphertextB64: String? = null,
     @SerialName("created_at") val createdAt: Long = 0L
@@ -221,6 +222,7 @@ data class ConversationMember(
 data class MessageResponse(
     val id: String,
     @SerialName("sender_user_id") val senderId: String = "",
+    @SerialName("sender_device_id") val senderDeviceId: String? = null,
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String = "",
     @SerialName("created_at") val createdAt: Long = 0L,
     @SerialName("sender_id") val fallbackSenderId: String? = null,
@@ -276,4 +278,15 @@ data class UserDeviceKeyPackage(
 @Serializable
 internal data class GetKeyPackagesForUserResponse(
     @SerialName("key_packages") val keyPackages: List<UserDeviceKeyPackage>
+)
+@Serializable
+data class MemberWelcomes(
+    @SerialName("user_id") val userId: String,
+    @SerialName("welcomes") val welcomes: List<DeviceWelcome>
+)
+
+@Serializable
+data class CreateGroupConversationRequest(
+    @SerialName("name") val name: String,
+    @SerialName("members") val members: List<MemberWelcomes>
 )
