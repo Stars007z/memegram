@@ -218,6 +218,13 @@ class ApiService(
         }
     }
 
+    suspend fun deleteMessage(messageId: String, deleteForEveryone: Boolean = true): DeleteMessageResponse =
+        client.delete("$baseUrl/api/v1/messaging/messages/$messageId") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(DeleteMessageRequest(deleteForEveryone))
+        }.body()
+
     suspend fun getPendingWelcomes(): List<WelcomeResponse> =
         client.get("$baseUrl/api/v1/messaging/welcomes") {
             bearerAuth(token())
@@ -378,6 +385,28 @@ class ApiService(
             contentType(ContentType.Application.Json)
             setBody(request)
         }
+    }
+
+    suspend fun kickMember(conversationId: String, targetUserId: String): SuccessResponse {
+        val response = client.post("$baseUrl/api/v1/messaging/conversations/$conversationId/members/$targetUserId/kick") {
+            bearerAuth(token())
+        }
+        if (!response.status.isSuccess()) {
+            throw Exception("kickMember failed ${response.status.value}: ${response.bodyAsText()}")
+        }
+        return response.body()
+    }
+
+    suspend fun updateMemberRole(conversationId: String, targetUserId: String, newRole: String): SuccessResponse {
+        val response = client.patch("$baseUrl/api/v1/messaging/conversations/$conversationId/members/$targetUserId/role") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(UpdateMemberRoleRequest(newRole = newRole))
+        }
+        if (!response.status.isSuccess()) {
+            throw Exception("updateMemberRole failed ${response.status.value}: ${response.bodyAsText()}")
+        }
+        return response.body()
     }
 
 // ── Media ─────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.CommitGroupChangeRequest
 import com.example.memegram.data.models.DeviceWelcome
 import com.example.memegram.data.models.LeaveConversationRequest
@@ -20,10 +21,18 @@ data class GroupMemberUI(
 class GroupProfileViewModel(
     private val api: ApiService,
     private val mlsManager: MlsManager,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
 
     private val _members = MutableStateFlow<List<GroupMemberUI>>(emptyList())
+
+    /** The current user's role in this group (owner/admin/member). */
+    private val _myRole = MutableStateFlow("member")
+    val myRole: StateFlow<String> = _myRole.asStateFlow()
+
+    val currentUserId: String
+        get() = sessionManager.getUserId() ?: ""
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -55,6 +64,9 @@ class GroupProfileViewModel(
                     }
                 }
                 _members.value = loadedMembers
+                val myId = currentUserId
+                val myMember = conv.members.find { it.userId == myId }
+                _myRole.value = myMember?.role ?: "member"
             } catch (e: Exception) {
                 _error.value = "Ошибка загрузки группы: ${e.message}"
             } finally {
@@ -145,6 +157,66 @@ class GroupProfileViewModel(
                 val errorMsg = e.message ?: "Неизвестная ошибка"
                 println("MemegramDebug [AddMember]: ❌ ОШИБКА: $errorMsg")
                 _error.value = "Не удалось добавить: $errorMsg"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun kickMember(conversationId: String, targetUserId: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                api.kickMember(conversationId, targetUserId)
+
+                if (mlsManager.hasGroup(conversationId)) {
+                    try {
+                        val serverEpochCounter = syncGroupState(conversationId)
+
+                        val commitB64 = mlsManager.removeMember(conversationId, targetUserId)
+                        mlsManager.flushState()
+
+                        val nextServerEpoch = (serverEpochCounter + 1).toInt()
+
+                        api.commitGroupChange(
+                            conversationId,
+                            CommitGroupChangeRequest(
+                                commitData = commitB64,
+                                newEpoch = nextServerEpoch,
+                                removedDeviceIds = emptyList()
+                            )
+                        )
+
+                        mlsManager.mergePendingCommit(conversationId)
+                        mlsManager.updateGroupEpoch(conversationId, nextServerEpoch.toLong())
+                        mlsManager.flushState()
+
+                        println("MemegramDebug [Kick]: ✅ MLS Remove Commit sent, epoch=$nextServerEpoch")
+                    } catch (mlsError: Exception) {
+                        println("MemegramDebug [Kick]: ⚠️ MLS Remove Commit failed (kick still valid): ${mlsError.message}")
+                        try { mlsManager.clearPendingCommit(conversationId) } catch (_: Exception) {}
+                    }
+                }
+
+                loadGroup(conversationId)
+            } catch (e: Exception) {
+                _error.value = "Ошибка при удалении участника: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun updateMemberRole(conversationId: String, targetUserId: String, newRole: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                api.updateMemberRole(conversationId, targetUserId, newRole)
+                loadGroup(conversationId)
+            } catch (e: Exception) {
+                _error.value = "Ошибка при изменении роли: ${e.message}"
             } finally {
                 _isLoading.value = false
             }

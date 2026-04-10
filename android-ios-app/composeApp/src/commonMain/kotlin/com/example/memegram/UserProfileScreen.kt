@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +30,7 @@ fun UserProfileScreen(
     viewModel: UserProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val s = LocalStrings.current
     val profile by viewModel.userProfile.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val message by viewModel.actionMessage.collectAsState()
@@ -46,7 +48,7 @@ fun UserProfileScreen(
     }
 
     val displayUsername = profile?.username ?: initialUsername
-    val displayBio = profile?.bio ?: "Загрузка..."
+    val displayBio = profile?.bio ?: s.loading
 
     Scaffold(
         topBar = {
@@ -99,7 +101,7 @@ fun UserProfileScreen(
                         Icon(Icons.AutoMirrored.Filled.Message, null)
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("Написать", style = MaterialTheme.typography.bodySmall)
+                    Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -110,7 +112,7 @@ fun UserProfileScreen(
                         Icon(Icons.Default.PersonAdd, null)
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("В контакты", style = MaterialTheme.typography.bodySmall)
+                    Text(s.addToContactsButton, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

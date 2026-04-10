@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +29,7 @@ fun StorageScreen(
     onBack: () -> Unit,
     viewModel: StorageViewModel
 ) {
+    val s = LocalStrings.current
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
     val cleanupStrategy by viewModel.cleanupStrategy.collectAsState()
 
@@ -40,7 +42,7 @@ fun StorageScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Данные и память") },
+                title = { Text(s.dataAndStorageTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -61,24 +63,24 @@ fun StorageScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
-                "Автоматическая очистка кэша",
+                s.autoClearCache,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(16.dp)
             )
 
             val options = listOf(
-                "TTL" to "Удалять старые по времени (1 месяц)",
-                "LRU" to "Удалять наименее недавно использованные",
-                "LFU" to "Удалять реже всего запрашиваемые",
-                "FIFO" to "Удалять самые старые (FIFO)"
+                "TTL"  to s.deleteOldByTime,
+                "LRU"  to s.deleteLeastRecent,
+                "LFU"  to s.deleteLeastRequested,
+                "FIFO" to s.deleteOldestFifo
             )
 
             AnimatedVisibility(visible = true) {
                 when (selectedStrategy) {
                     "FIFO" -> StrategyParamSlider(
-                        label       = "Сообщений в чате (последних)",
-                        description = "Старые сообщения сверх лимита будут удалены из этого чата",
+                        label       = s.messagesInChat,
+                        description = s.fifoDescription,
                         value       = fifoLimit,
                         min         = 100L,
                         max         = 10_000L,
@@ -86,8 +88,8 @@ fun StorageScreen(
                         onChanged   = viewModel::updateFifoLimit
                     )
                     "TTL"  -> StrategyParamSlider(
-                        label       = "Хранить сообщения (дней)",
-                        description = "Сообщения старше указанного периода удаляются автоматически",
+                        label       = s.storeMessagesDays,
+                        description = s.ttlDescription,
                         value       = ttlDays,
                         min         = 1L,
                         max         = 365L,
@@ -95,8 +97,8 @@ fun StorageScreen(
                         onChanged   = viewModel::updateTtlDays
                     )
                     "LRU"  -> StrategyParamSlider(
-                        label       = "Глобальный лимит (сообщений)",
-                        description = "Удаляются сообщения из чатов, которые давно не открывались",
+                        label       = s.globalLimit,
+                        description = s.lruDescription,
                         value       = lruLimit,
                         min         = 500L,
                         max         = 50_000L,
@@ -104,8 +106,8 @@ fun StorageScreen(
                         onChanged   = viewModel::updateLruLimit
                     )
                     "LFU"  -> StrategyParamSlider(
-                        label       = "Глобальный лимит (сообщений)",
-                        description = "Удаляются сообщения из чатов, в которые реже всего заходят",
+                        label       = s.globalLimit,
+                        description = s.lfuDescription,
                         value       = lfuLimit,
                         min         = 500L,
                         max         = 50_000L,
@@ -146,7 +148,7 @@ fun StorageScreen(
             ) {
                 Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Очистить локальный кэш сейчас")
+                Text(s.clearLocalCache)
             }
         }
     }

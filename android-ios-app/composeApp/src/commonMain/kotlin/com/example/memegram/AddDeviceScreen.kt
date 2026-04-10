@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +25,7 @@ fun AddDeviceScreen(
     onSuccess: () -> Unit,
     vm: AddDeviceViewModel = koinViewModel()
 ) {
+    val s = LocalStrings.current
     val step  by vm.step.collectAsState()
     val error by vm.error.collectAsState()
 
@@ -37,10 +39,10 @@ fun AddDeviceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Добавить устройство") },
+                title = { Text(s.addDevice) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = s.back)
                     }
                 }
             )
@@ -57,7 +59,7 @@ fun AddDeviceScreen(
                 AddDeviceStep.SCANNING -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "Отсканируй QR-код\nс основного устройства",
+                            s.scanQrHint,
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
                         )
@@ -79,7 +81,7 @@ fun AddDeviceScreen(
 
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Или вставьте код с другого устройства",
+                            s.pasteCodeHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -93,7 +95,7 @@ fun AddDeviceScreen(
                             OutlinedTextField(
                                 value = manualInput,
                                 onValueChange = { manualInput = it },
-                                label = { Text("Код или QR-ссылка") },
+                                label = { Text(s.codeOrQrLink) },
                                 placeholder = { Text("regId/regCode") },
                                 modifier = Modifier.weight(1f),
                                 singleLine = false,
@@ -109,7 +111,7 @@ fun AddDeviceScreen(
                             ) {
                                 Icon(
                                     Icons.Default.ContentPaste,
-                                    contentDescription = "Вставить",
+                                    contentDescription = s.paste,
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
@@ -121,7 +123,7 @@ fun AddDeviceScreen(
                             enabled = manualInput.isNotBlank(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Подключить")
+                            Text(s.connect)
                         }
                     }
                 }
@@ -132,7 +134,7 @@ fun AddDeviceScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         CircularProgressIndicator()
-                        Text("Отправка данных устройства...")
+                        Text(s.sendingDeviceData)
                     }
                 }
 
@@ -143,12 +145,12 @@ fun AddDeviceScreen(
                     ) {
                         CircularProgressIndicator()
                         Text(
-                            "Ожидаем подтверждения\nот основного устройства",
+                            s.awaitingConfirmation,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            "Зайди на основном телефоне в\nНастройки → Связанные устройства\nи нажми «Разрешить»",
+                            s.confirmOnMainDevice,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -167,7 +169,7 @@ fun AddDeviceScreen(
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(64.dp)
                         )
-                        Text("Устройство добавлено!", style = MaterialTheme.typography.titleMedium)
+                        Text(s.deviceAdded, style = MaterialTheme.typography.titleMedium)
                     }
                 }
 
@@ -183,11 +185,11 @@ fun AddDeviceScreen(
                             modifier = Modifier.size(64.dp)
                         )
                         Text(
-                            error ?: "Произошла ошибка",
+                            error ?: s.errorOccurred,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.error
                         )
-                        Button(onClick = vm::retryScanning) { Text("Попробовать снова") }
+                        Button(onClick = vm::retryScanning) { Text(s.tryAgain) }
                     }
                 }
             }

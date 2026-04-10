@@ -127,6 +127,43 @@ class ConversationHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.LeaveConversationResponse()
 
+    async def kick_member(self, request, context):
+        if not request.user_id or not request.conversation_id or not request.target_user_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id, conversation_id, and target_user_id are required")
+            return messaging_pb2.KickMemberResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.kick_member(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    target_user_id=uuid.UUID(request.target_user_id),
+                )
+                return messaging_pb2.KickMemberResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.KickMemberResponse()
+
+    async def update_member_role(self, request, context):
+        if not request.user_id or not request.conversation_id or not request.target_user_id or not request.new_role:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id, conversation_id, target_user_id, and new_role are required")
+            return messaging_pb2.UpdateMemberRoleResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.update_member_role(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    target_user_id=uuid.UUID(request.target_user_id),
+                    new_role=request.new_role,
+                )
+                return messaging_pb2.UpdateMemberRoleResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.UpdateMemberRoleResponse()
+
     @staticmethod
     def _to_response(result) -> messaging_pb2.ConversationResponse:
         return messaging_pb2.ConversationResponse(

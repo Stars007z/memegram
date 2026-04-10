@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.example.memegram.localization.LocalStrings
 import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,6 +29,7 @@ fun CreateGroupScreen(
     val isCreating by vm.isCreatingChat.collectAsState()
     val error by vm.error.collectAsState()
     val createdChatId by vm.chatCreated.collectAsState()
+    val s = LocalStrings.current
 
     var groupName by remember { mutableStateOf("") }
     val selectedUserIds = remember { mutableStateListOf<String>() }
@@ -42,10 +44,10 @@ fun CreateGroupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Создать группу") },
+                title = { Text(s.createGroup) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = s.back)
                     }
                 },
                 actions = {
@@ -53,7 +55,7 @@ fun CreateGroupScreen(
                         onClick = { vm.createGroupChat(groupName, selectedUserIds) },
                         enabled = groupName.isNotBlank() && selectedUserIds.isNotEmpty() && !isCreating
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = "Создать", tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Check, contentDescription = s.create, tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             )
@@ -75,7 +77,7 @@ fun CreateGroupScreen(
             OutlinedTextField(
                 value = groupName,
                 onValueChange = { groupName = it },
-                label = { Text("Название группы") },
+                label = { Text(s.groupName) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -84,7 +86,7 @@ fun CreateGroupScreen(
             )
 
             Text(
-                text = "Участники (${selectedUserIds.size} выбрано)",
+                text = s.membersSelected(selectedUserIds.size),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
@@ -96,7 +98,7 @@ fun CreateGroupScreen(
                 }
             } else if (contacts.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("У вас пока нет контактов", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(s.noContactsYet, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn {

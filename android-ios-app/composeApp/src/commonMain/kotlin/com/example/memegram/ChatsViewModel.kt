@@ -277,6 +277,22 @@ class ChatsViewModel(
                     handleMemberLeftRemoval(convId, leftUserId)
                 }
             }
+            "member_kicked" -> {
+                val kickedUserId = event.data?.userId
+                val myUserId = sessionManager.getUserId()
+                if (kickedUserId == null) return
+
+                if (kickedUserId == myUserId) {
+                    handleSelfKicked(convId)
+                } else if (mlsManager.hasGroup(convId)) {
+                    handleMemberLeftRemoval(convId, kickedUserId)
+                }
+            }
+            "role_changed" -> {
+                val userId = event.data?.userId
+                val newRole = event.data?.newRole
+                println("MemegramDebug [ChatsVM]: role_changed: user=$userId, newRole=$newRole in conv=$convId")
+            }
         }
     }
 
@@ -338,6 +354,23 @@ class ChatsViewModel(
                 }
             } catch (e: Exception) {
                 println("MemegramDebug [ChatsVM]: handleMemberLeftRemoval error: ${e.message}")
+            }
+        }
+    }
+
+    private fun handleSelfKicked(conversationId: String) {
+        viewModelScope.launch {
+            try {
+                println("MemegramDebug [ChatsVM]: I was kicked from conv=$conversationId — cleaning up")
+
+                try { mlsManager.deleteLocalGroup(conversationId) } catch (_: Exception) {}
+
+                chatRepository.deleteChat(conversationId)
+                mlsManager.flushState()
+
+                println("MemegramDebug [ChatsVM]: ✅ Self-kick cleanup done for conv=$conversationId")
+            } catch (e: Exception) {
+                println("MemegramDebug [ChatsVM]: handleSelfKicked error: ${e.message}")
             }
         }
     }

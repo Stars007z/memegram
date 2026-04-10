@@ -127,6 +127,24 @@ def _event_to_proto(event: dict) -> messaging_pb2.ConversationEvent | None:
             member_left=messaging_pb2.MemberEvent(user_id=event["user_id"]),
         )
 
+    if event_type == "member_kicked":
+        return messaging_pb2.ConversationEvent(
+            conversation_id=conv_id,
+            member_kicked=messaging_pb2.MemberKickedEvent(
+                user_id=event["user_id"],
+                kicked_by=event.get("kicked_by", ""),
+            ),
+        )
+
+    if event_type == "role_changed":
+        return messaging_pb2.ConversationEvent(
+            conversation_id=conv_id,
+            role_changed=messaging_pb2.RoleChangedEvent(
+                user_id=event["user_id"],
+                new_role=event.get("new_role", ""),
+            ),
+        )
+
     if event_type == "epoch_changed":
         return messaging_pb2.ConversationEvent(
             conversation_id=conv_id,

@@ -147,7 +147,10 @@ data class SseEventData(
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String? = null,
     @SerialName("new_mls_ciphertext") val newMlsCiphertextB64: String? = null,
     @SerialName("created_at") val createdAt: Long = 0L,
-    @SerialName("user_id") val userId: String? = null
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("kicked_by") val kickedBy: String? = null,
+    @SerialName("new_role") val newRole: String? = null,
+    @SerialName("reply_to_message_id") val replyToMessageId: String? = null
 )
 
 @Serializable
@@ -295,4 +298,24 @@ data class CreateGroupConversationRequest(
 @Serializable
 data class LeaveConversationRequest(
     @SerialName("commit_data") val commitData: String = ""
+)
+
+@Serializable
+data class UpdateMemberRoleRequest(
+    @SerialName("new_role") val newRole: String
+)
+
+@Serializable
+data class SuccessResponse(
+    val success: Boolean
+)
+
+@Serializable
+data class DeleteMessageRequest(
+    @SerialName("delete_for_everyone") val deleteForEveryone: Boolean = true
+)
+
+@Serializable
+data class DeleteMessageResponse(
+    val success: Boolean
 )

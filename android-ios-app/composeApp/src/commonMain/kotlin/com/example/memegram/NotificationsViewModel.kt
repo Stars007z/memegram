@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.models.UpdateSettingsRequest
 import com.example.memegram.data.repository.UserRepository
+import com.example.memegram.localization.AppStrings
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,50 +16,68 @@ class NotificationsViewModel(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
-    private val _vibrate  = MutableStateFlow(settings.getString("notif_vibrate",  "Средняя"))
-    val vibrate:  StateFlow<String> = _vibrate.asStateFlow()
-    private val _ringtone = MutableStateFlow(settings.getString("notif_ringtone", "Default"))
-    val ringtone: StateFlow<String> = _ringtone.asStateFlow()
+    private val _vibrateStrength = MutableStateFlow(settings.getInt("notif_vibrate_strength", 2))
+    val vibrateStrength: StateFlow<Int> = _vibrateStrength.asStateFlow()
+
+    private val _ringtoneKey = MutableStateFlow(settings.getString("notif_ringtone_key", "default"))
+    val ringtoneKey: StateFlow<String> = _ringtoneKey.asStateFlow()
 
     init {
         viewModelScope.launch {
             userRepository.loadSettings().onSuccess { s ->
-                val label = strengthToLabel(s.notificationVibrationStrength ?: 2)
-                _vibrate.value = label
-                settings.putString("notif_vibrate", label)
+                val strength = s.notificationVibrationStrength ?: 2
+                _vibrateStrength.value = strength
+                settings.putInt("notif_vibrate_strength", strength)
             }
         }
     }
 
-    fun setVibrate(label: String) {
-        _vibrate.value = label
-        settings.putString("notif_vibrate", label)
+    fun setVibrateStrength(strength: Int) {
+        _vibrateStrength.value = strength
+        settings.putInt("notif_vibrate_strength", strength)
         viewModelScope.launch {
             userRepository.updateSettings(
-                UpdateSettingsRequest(notificationVibrationStrength = labelToStrength(label))
+                UpdateSettingsRequest(notificationVibrationStrength = strength)
             )
         }
     }
 
-    fun setRingtone(label: String) {
-        _ringtone.value = label
-        settings.putString("notif_ringtone", label)
+    fun setRingtoneKey(key: String) {
+        _ringtoneKey.value = key
+        settings.putString("notif_ringtone_key", key)
     }
 
     companion object {
-        fun strengthToLabel(v: Int) = when (v) {
-            0    -> "Нет"
-            1    -> "Слабая"
-            3    -> "Сильная"
-            else -> "Средняя"
+        val ringtoneKeys = listOf("default", "classic", "simple", "none")
+
+        fun strengthToLabel(v: Int, s: AppStrings) = when (v) {
+            0    -> s.vibrateNone
+            1    -> s.vibrateWeak
+            3    -> s.vibrateStrong
+            else -> s.vibrateMedium
         }
-        fun labelToStrength(label: String) = when (label) {
-            "Нет"     -> 0
-            "Слабая"  -> 1
-            "Сильная" -> 3
-            else      -> 2
+        fun labelToStrength(label: String, s: AppStrings) = when (label) {
+            s.vibrateNone   -> 0
+            s.vibrateWeak   -> 1
+            s.vibrateStrong -> 3
+            else            -> 2
         }
-        val vibrateOptions  = listOf("Нет", "Слабая", "Средняя", "Сильная")
-        val ringtoneOptions = listOf("Default", "Классический", "Простой", "Нет")
+        fun vibrateOptions(s: AppStrings) =
+            listOf(s.vibrateNone, s.vibrateWeak, s.vibrateMedium, s.vibrateStrong)
+
+        fun ringtoneKeyToLabel(key: String, s: AppStrings) = when (key) {
+            "classic" -> s.ringtoneClassic
+            "simple"  -> s.ringtoneSimple
+            "none"    -> s.ringtoneNone
+            else      -> s.ringtoneDefault
+        }
+        fun ringtoneLabelToKey(label: String, s: AppStrings) = when (label) {
+            s.ringtoneClassic -> "classic"
+            s.ringtoneSimple  -> "simple"
+            s.ringtoneNone    -> "none"
+            else              -> "default"
+        }
+        fun ringtoneOptions(s: AppStrings) =
+            ringtoneKeys.map { ringtoneKeyToLabel(it, s) }
     }
 }

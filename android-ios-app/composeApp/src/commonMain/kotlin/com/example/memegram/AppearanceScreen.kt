@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +30,7 @@ fun AppearanceScreen(
     onTopBarColorChanged: () -> Unit,
     viewModel: AppearanceViewModel
 ) {
+    val s = LocalStrings.current
     val chatBgColor by viewModel.chatBgColor.collectAsState()
     val myBubbleColor by viewModel.myBubbleColor.collectAsState()
     val theirBubbleColor by viewModel.theirBubbleColor.collectAsState()
@@ -39,7 +41,7 @@ fun AppearanceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Appearance") },
+                title = { Text(s.appearanceTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -63,7 +65,7 @@ fun AppearanceScreen(
                 .padding(paddingValues)
         ) {
             Text(
-                text = "Предпросмотр",
+                text = s.preview,
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
@@ -85,7 +87,7 @@ fun AppearanceScreen(
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) {
                         Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.padding(horizontal = 16.dp)) {
-                            Text("Чат", color = previewTopBarTextColor, fontWeight = FontWeight.Bold)
+                            Text(s.chatPreview, color = previewTopBarTextColor, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -94,7 +96,7 @@ fun AppearanceScreen(
                     val theirTextColor = if (theirBubbleColor.luminance() > 0.5f) Color.Black else Color.White
                     Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
                         Box(modifier = Modifier.clip(RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)).background(theirBubbleColor).padding(12.dp)) {
-                            Text("Привет! Как дела?", color = theirTextColor)
+                            Text(s.previewMessage1, color = theirTextColor)
                         }
                     }
 
@@ -103,7 +105,7 @@ fun AppearanceScreen(
                     val myTextColor = if (myBubbleColor.luminance() > 0.5f) Color.Black else Color.White
                     Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.CenterEnd) {
                         Box(modifier = Modifier.clip(RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)).background(myBubbleColor).padding(12.dp)) {
-                            Text("Всё супер, тестирую Compose!", color = myTextColor)
+                            Text(s.previewMessage2, color = myTextColor)
                         }
                     }
                 }
@@ -111,13 +113,15 @@ fun AppearanceScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
-            SettingItem("Цвет верхней панели", topBarColor) { showColorPickerForKey = "topbar" }
-            SettingItem("Цвет фона чата", chatBgColor) { showColorPickerForKey = "chatbg" }
-            SettingItem("Цвет моих сообщений", myBubbleColor) { showColorPickerForKey = "mybubble" }
-            SettingItem("Цвет чужих сообщений", theirBubbleColor) { showColorPickerForKey = "theirbubble" }
+            SettingItem(s.topBarColor, topBarColor) { showColorPickerForKey = "topbar" }
+            SettingItem(s.chatBgColor, chatBgColor) { showColorPickerForKey = "chatbg" }
+            SettingItem(s.myMessageColor, myBubbleColor) { showColorPickerForKey = "mybubble" }
+            SettingItem(s.otherMessageColor, theirBubbleColor) { showColorPickerForKey = "theirbubble" }
 
             if (showColorPickerForKey != null) {
                 ColorPickerDialog(
+                    title = s.chooseColor,
+                    cancelLabel = s.cancel,
                     onColorSelected = { color ->
                         viewModel.updateColor(showColorPickerForKey!!, color)
                         if (showColorPickerForKey == "topbar") {
@@ -154,7 +158,12 @@ fun SettingItem(title: String, currentColor: Color, onClick: () -> Unit) {
 }
 
 @Composable
-fun ColorPickerDialog(onColorSelected: (Color) -> Unit, onDismiss: () -> Unit) {
+fun ColorPickerDialog(
+    title: String,
+    cancelLabel: String,
+    onColorSelected: (Color) -> Unit,
+    onDismiss: () -> Unit
+) {
     val colors = listOf(
         Color(0xFF6075F2), Color(0xFFF5F5F5), Color(0xFFD1C4E9), Color(0xFFFFFFFF),
         Color(0xFFFF5252), Color(0xFFFF4081), Color(0xFFE040FB), Color(0xFF7C4DFF),
@@ -165,7 +174,7 @@ fun ColorPickerDialog(onColorSelected: (Color) -> Unit, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Выберите цвет") },
+        title = { Text(title) },
         text = {
             LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.height(250.dp)) {
                 items(colors) { color ->
@@ -182,7 +191,7 @@ fun ColorPickerDialog(onColorSelected: (Color) -> Unit, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(cancelLabel) }
         }
     )
 }

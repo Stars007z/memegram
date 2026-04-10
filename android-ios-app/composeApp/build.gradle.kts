@@ -85,7 +85,6 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.native.driver)
-            implementation(libs.multiplatform.settings.keychain)
         }
 
         commonTest.dependencies {

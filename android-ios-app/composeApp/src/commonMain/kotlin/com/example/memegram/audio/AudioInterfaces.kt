@@ -22,6 +22,8 @@ interface AudioPlayer {
     fun isPlaying(): Boolean
     fun isPaused(): Boolean
     fun getProgress(): Float
+    fun getDurationMs(): Long
+    fun seekTo(fraction: Float)
 }
 
 expect fun createAudioRecorder(): AudioRecorder

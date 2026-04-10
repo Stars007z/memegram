@@ -101,7 +101,6 @@ class AudioPlayerIOS : AudioPlayer {
     }
 
     override fun stop() {
-        onCompletionCallback?.invoke()
         onCompletionCallback = null
 
         player?.stop()
@@ -117,5 +116,15 @@ class AudioPlayerIOS : AudioPlayer {
         val p = player ?: return 0f
         if (p.duration == 0.0) return 0f
         return (p.currentTime / p.duration).toFloat().coerceIn(0f, 1f)
+    }
+
+    override fun getDurationMs(): Long {
+        val p = player ?: return 0L
+        return (p.duration * 1000.0).toLong()
+    }
+
+    override fun seekTo(fraction: Float) {
+        val p = player ?: return
+        p.currentTime = (fraction.coerceIn(0f, 1f).toDouble() * p.duration)
     }
 }

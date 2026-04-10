@@ -62,7 +62,6 @@ qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "runtime" }
 ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 multiplatform-crypto-libsodium = { module = "com.ionspin.kotlin:multiplatform-crypto-libsodium-bindings", version.ref = "libsodium" }
-multiplatform-settings-keychain = { module = "com.russhwolf:multiplatform-settings-keychain", version.ref = "multiplatform-settings" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "coroutinesExtensions" }
 sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "sqlcipher" }
 

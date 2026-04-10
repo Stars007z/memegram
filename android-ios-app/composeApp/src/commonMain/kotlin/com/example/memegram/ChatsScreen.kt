@@ -38,7 +38,11 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import com.example.memegram.audio.GlobalAudioPlayer
+import com.example.memegram.audio.VoicePlaybackBar
+import com.example.memegram.localization.LocalStrings
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -61,8 +65,12 @@ fun ChatsScreen(
     profileViewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val s = LocalStrings.current
     val chats by viewModel.chats.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+
+    val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
+    val audioPlaybackState by globalAudioPlayer.state.collectAsState()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -142,49 +150,49 @@ fun ChatsScreen(
                 Spacer(Modifier.height(8.dp))
 
                 NavigationDrawerItem(
-                    label = { Text("Внешний вид") },
+                    label = { Text(s.settingsAppearance) },
                     icon = { Icon(Icons.Default.Palette, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onAppearanceClick() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Уведомления") },
+                    label = { Text(s.settingsNotifications) },
                     icon = { Icon(Icons.Default.Notifications, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onNotificationsClick() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Конфиденциальность") },
+                    label = { Text(s.settingsPrivacy) },
                     icon = { Icon(Icons.Default.Lock, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onPrivacyClick() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Данные и память") },
+                    label = { Text(s.settingsDataAndStorage) },
                     icon = { Icon(Icons.Default.Storage, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onStorageClick() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Контакты") },
+                    label = { Text(s.settingsContacts) },
                     icon = { Icon(Icons.Default.People, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close() }; onContactsClick() },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label   = { Text("Связанные устройства") },
+                    label   = { Text(s.settingsLinkedDevices) },
                     icon    = { Icon(Icons.Default.Devices, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close() }; onLinkedDevicesClick() },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Язык") },
+                    label = { Text(s.settingsLanguage) },
                     icon = { Icon(Icons.Default.Language, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close(); onLanguageClick() } },
@@ -224,7 +232,7 @@ fun ChatsScreen(
                                         .focusRequester(focusRequester),
                                     decorationBox = { inner ->
                                         if (searchQuery.isEmpty()) {
-                                            Text("Поиск...", color = topBarTextColor.copy(alpha = 0.6f), fontSize = 16.sp)
+                                            Text(s.searchPlaceholder, color = topBarTextColor.copy(alpha = 0.6f), fontSize = 16.sp)
                                         }
                                         inner()
                                     }
@@ -259,7 +267,7 @@ fun ChatsScreen(
                                     onDismissRequest = { showAddMenu = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Создать группу") },
+                                        text = { Text(s.createGroup) },
                                         onClick = {
                                             showAddMenu = false
                                             onNavigateToCreateGroup()
@@ -267,7 +275,7 @@ fun ChatsScreen(
                                         leadingIcon = { Icon(Icons.Default.Group, null) }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Добавить по ключу") },
+                                        text = { Text(s.addByKey) },
                                         onClick = {
                                             showAddMenu = false
                                             showAddKeyDialog = true
@@ -275,12 +283,12 @@ fun ChatsScreen(
                                         leadingIcon = { Icon(Icons.Default.Key, null) }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Добавить по QR") },
+                                        text = { Text(s.addByQr) },
                                         onClick = { showAddMenu = false },
                                         leadingIcon = { Icon(Icons.Default.QrCodeScanner, null) }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Создать канал") },
+                                        text = { Text(s.createChannel) },
                                         onClick = { showAddMenu = false },
                                         leadingIcon = { Icon(Icons.Default.Campaign, null) }
                                     )
@@ -296,15 +304,15 @@ fun ChatsScreen(
                 if (showAddKeyDialog) {
                     AlertDialog(
                         onDismissRequest = { showAddKeyDialog = false },
-                        title = { Text("Новый чат") },
+                        title = { Text(s.newChat) },
                         text = {
                             Column {
-                                Text("Введите публичный ключ пользователя, чтобы добавить его в контакты и сразу начать чат.", style = MaterialTheme.typography.bodySmall)
+                                Text(s.enterPublicKeyToChat, style = MaterialTheme.typography.bodySmall)
                                 Spacer(Modifier.height(8.dp))
                                 OutlinedTextField(
                                     value = newKeyInput,
                                     onValueChange = { newKeyInput = it },
-                                    label = { Text("Публичный ключ") },
+                                    label = { Text(s.publicKey) },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -319,36 +327,50 @@ fun ChatsScreen(
                                     newKeyInput = ""
                                 }
                             ) {
-                                Text("Начать")
+                                Text(s.start)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showAddKeyDialog = false }) {
-                                Text("Отмена")
+                                Text(s.cancel)
                             }
                         }
                     )
                 }
             }
         ) { paddingValues ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
                     .padding(paddingValues)
             ) {
-                if (chats.isEmpty() && searchQuery.isNotBlank()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Ничего не найдено", color = Color.Gray)
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(chats, key = { it.id }) { chat ->
-                            ChatItem(chat = chat, onClick = { onChatClick(chat) })
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 76.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            )
+                VoicePlaybackBar(
+                    state = audioPlaybackState,
+                    onTogglePlayPause = { globalAudioPlayer.togglePlayPause() },
+                    onSeek = { globalAudioPlayer.seekTo(it) },
+                    onClose = { globalAudioPlayer.stop() },
+                    accentColor = topBarColor
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    if (chats.isEmpty() && searchQuery.isNotBlank()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(s.nothingFound, color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(chats, key = { it.id }) { chat ->
+                                ChatItem(chat = chat, onClick = { onChatClick(chat) })
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 76.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -373,6 +395,7 @@ fun formatChatTime(timestampMs: Long): String {
 
 @Composable
 fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,7 +449,7 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
                     Spacer(modifier = Modifier.width(6.dp))
                 } else if (chat.isLastMessageMine) {
                     Text(
-                        text = "Вы: ",
+                        text = s.youPrefix,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
