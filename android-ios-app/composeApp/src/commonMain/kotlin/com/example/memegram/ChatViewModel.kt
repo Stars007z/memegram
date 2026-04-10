@@ -3,6 +3,9 @@ package com.example.memegram
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.audio.AudioRecordResult
+import com.example.memegram.audio.createAudioPlayer
+import com.example.memegram.audio.createAudioRecorder
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
 import com.example.memegram.data.network.ApiService
@@ -57,13 +60,13 @@ class ChatViewModel(
     private val _error            = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _chatTitle = MutableStateFlow("Загрузка...")
-    val chatTitle: StateFlow<String> = _chatTitle.asStateFlow()
+    var currentConversationId: String? = null
+        private set
+    var peerUserId: String? = null
+        private set
 
-    private val _chatAvatarId = MutableStateFlow<String?>(null)
-    val chatAvatarId: StateFlow<String?> = _chatAvatarId.asStateFlow()
-
-    private var currentConversationId: String? = null
+    val audioRecorder = createAudioRecorder()
+    val audioPlayer = createAudioPlayer()
     private var myUserId: String? = null
     private var myDeviceId: String? = null
     private var typingJob: Job? = null
@@ -72,6 +75,19 @@ class ChatViewModel(
     private var pollingJob: Job? = null
 
     private val decryptMutex = Mutex()
+
+    enum class RecordState { IDLE, HOLDING, LOCKED, PAUSED }
+    private val _recordState = MutableStateFlow(RecordState.IDLE)
+    val recordState: StateFlow<RecordState> = _recordState.asStateFlow()
+
+    private val _voiceAmplitudes = MutableStateFlow<List<Int>>(emptyList())
+    val voiceAmplitudes: StateFlow<List<Int>> = _voiceAmplitudes.asStateFlow()
+
+    private val _voiceDurationMs = MutableStateFlow(0L)
+    val voiceDurationMs: StateFlow<Long> = _voiceDurationMs.asStateFlow()
+
+    private var recordTimerJob: Job? = null
+    private var rawAmplitudes = mutableListOf<Int>()
 
     fun loadConversation(conversationId: String) {
         if (currentConversationId == conversationId) return
@@ -97,28 +113,21 @@ class ChatViewModel(
                 _isGroupChat.value = isGroup
 
                 if (isGroup) {
-                    _chatTitle.value = conv.name ?: "Группа"
                     conv.members.forEach { member ->
                         if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
                             launch {
                                 try {
                                     val profile = api.getUserById(member.userId)
                                     _memberProfiles.update { it + (member.userId to profile) }
-                                } catch (e: Exception) {}
+                                } catch (_: Exception) {}
                             }
                         }
                     }
                 } else {
                     val peer = conv.members.find { it.userId != myUserId }
-                    if (peer != null) {
-                        val profile = api.getUserById(peer.userId)
-                        _chatTitle.value = profile.username?.takeIf { it.isNotBlank() } ?: "Собеседник"
-                        _chatAvatarId.value = profile.avatarMediaId
-                    }
+                    peerUserId = peer?.userId
                 }
-            } catch (e: Exception) {
-                _chatTitle.value = "Собеседник"
-            }
+            } catch (_: Exception) { }
 
             val mlsReady = syncMlsPending(conversationId)
             if (!mlsReady) {
@@ -134,51 +143,46 @@ class ChatViewModel(
 
     private suspend fun loadMessages(conversationId: String) {
         _isLoading.value = true
-        println("MemegramDebug: loadMessages вызван для чата $conversationId")
         try {
             val rawMessages = api.getMessages(conversationId)
-            println("MemegramDebug: Получено ${rawMessages.size} сообщений с сервера")
-
             val myId = myUserId ?: ""
             val sortedMessages = rawMessages.sortedBy { it.createdAt }
-            val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
+            decryptMutex.withLock {
+                val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
+                val newSenders = mutableMapOf<String, String>()
 
-            val newSenders = mutableMapOf<String, String>()
-            val uiMessages = sortedMessages.map { msg ->
-                val existing = existingLocalMessages.find { it.serverId == msg.id }
+                val uiMessages = sortedMessages.map { msg ->
+                    val existing = existingLocalMessages.find { it.serverId == msg.id }
+                    val isSentByMe = msg.effectiveSenderId == myId
+                    newSenders[msg.id] = msg.effectiveSenderId
 
-                val isSentByMe = msg.effectiveSenderId == myId
-                newSenders[msg.id] = msg.effectiveSenderId
-
-                val text = when {
-                    existing != null && existing.text.isNotBlank() && existing.text != "🔒" && !existing.text.startsWith("🔒") -> existing.text
-                    else -> try {
-                        mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: "🔒 [Зашифровано]"
-                    } catch (e: Exception) {
-                        if (isSentByMe) "🔒 [Отправлено с другого устройства]" else "🔒 [История]"
+                    val text = when {
+                        existing != null && !existing.text.startsWith("🔒") && (existing.text.isNotBlank() || existing.type != "text") -> existing.text
+                        else -> try {
+                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: "🔒 [Зашифровано]"
+                        } catch (_: Exception) {
+                            if (isSentByMe) "🔒 [Отправлено с другого устройства]" else "🔒 [Ошибка расшифровки]"
+                        }
                     }
+
+                    val (parsedType, parsedMediaId, content) = parseMlsPayload(text)
+
+                    Message(
+                        id         = existing?.id ?: msg.id.hashCode(),
+                        serverId   = msg.id,
+                        text       = content,
+                        isOutgoing = isSentByMe,
+                        timestamp  = msg.createdAt * 1000L,
+                        status     = MessageStatus.SENT,
+                        type       = if (parsedType != "text") parsedType else (existing?.type ?: "text"),
+                        mediaId    = parsedMediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId
+                    )
                 }
 
-                val isImageMsg = text.startsWith("[image:")
-                val (parsedMediaId, imageCaption) = if (isImageMsg) parseImagePayload(text) else Pair("", text)
-
-                Message(
-                    id         = existing?.id ?: msg.id.hashCode(),
-                    serverId   = msg.id,
-                    text       = if (isImageMsg) imageCaption else text,
-                    isOutgoing = isSentByMe,
-                    timestamp  = msg.createdAt * 1000L,
-                    status     = MessageStatus.SENT,
-                    type       = if (isImageMsg) "image" else (existing?.type ?: "text"),
-                    mediaId    = parsedMediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId
-                )
+                _messageSenders.update { it + newSenders }
+                chatRepository.saveMessages(uiMessages, conversationId)
+                mlsManager.flushState()
             }
-
-            _messageSenders.update { it + newSenders }
-            println("MemegramDebug: Сохраняю ${uiMessages.size} сообщений в БД...")
-            chatRepository.saveMessages(uiMessages, conversationId)
-            mlsManager.flushState()
-            println("MemegramDebug: loadMessages завершен")
         } catch (e: Exception) {
             println("MemegramDebug: Ошибка в loadMessages: ${e.message}")
             _error.value = "Ошибка загрузки: ${e.message}"
@@ -194,13 +198,10 @@ class ChatViewModel(
             var backoffMs = 1_000L
             while (isActive) {
                 try {
-                    println("MemegramDebug [SSE]: подключаемся к $conversationId")
                     api.subscribeToConversation(conversationId).collect { event ->
-                        println("MemegramDebug [SSE]: получено событие type=${event.type} convId=${event.conversationId}")
                         handleEvent(conversationId, event)
                         backoffMs = 1_000L
                     }
-                    println("MemegramDebug [SSE]: стрим завершился сервером, retry через ${backoffMs}мс")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -208,9 +209,6 @@ class ChatViewModel(
                             || e.message?.contains("ClosedByteChannelException") == true
                     if (isExpectedClose) {
                         backoffMs = 1_000L
-                        println("MemegramDebug [SSE]: таймаут (штатно), переподключаемся через 1с")
-                    } else {
-                        println("MemegramDebug [SSE]: ошибка (${e.message}), retry через ${backoffMs}мс")
                     }
                 }
                 delay(backoffMs)
@@ -226,8 +224,6 @@ class ChatViewModel(
         when (event.type) {
             "new_message" -> {
                 val msgId = data.id ?: return
-                println("MemegramDebug [SSE]: new_message msgId=$msgId sender=${data.senderUserId}")
-
                 data.senderUserId?.let { senderId ->
                     _messageSenders.update { it + (msgId to senderId) }
                 }
@@ -236,7 +232,6 @@ class ChatViewModel(
                     msgId         = msgId,
                     ciphertextB64 = data.mlsCiphertextB64 ?: "",
                     createdAt     = data.createdAt,
-                    source        = "SSE",
                     isOutgoing    = data.senderUserId == myId
                 )
             }
@@ -282,7 +277,7 @@ class ChatViewModel(
             val myId = myUserId ?: return
             val serverMessages = api.getMessages(conversationId)
             val localMessages  = chatRepository.getMessagesOnce(conversationId)
-            val localServerIds = localMessages.mapNotNull { it.serverId }.toSet()
+            val localServerIds = localMessages.map { it.serverId }.toSet()
 
             val newMessages = serverMessages
                 .filter { it.id !in localServerIds }
@@ -300,114 +295,93 @@ class ChatViewModel(
                     msgId         = msg.id,
                     ciphertextB64 = msg.mlsCiphertextB64,
                     createdAt     = msg.createdAt,
-                    source        = "Poll",
                     isOutgoing    = msg.effectiveSenderId == myId
                 )
             }
             _messageSenders.update { it + newSenders }
-        } catch (e: Exception) {
-            println("MemegramDebug [Poll]: ошибка: ${e.message}")
-        }
+        } catch (_: Exception) { }
     }
 
-    // ───────────────────────── Общая логика расшифровки ─────────────────────────
+    // ───────────────────────── General logic of decryption ─────────────────────────
 
     private suspend fun decryptAndSave(
         convId: String,
         msgId: String,
         ciphertextB64: String,
         createdAt: Long,
-        source: String,
         isOutgoing: Boolean
     ) {
         decryptMutex.withLock {
             val alreadyExists = chatRepository.getMessagesOnce(convId)
                 .any { it.serverId == msgId && it.text.isNotBlank() && it.text != "🔒" }
-            if (alreadyExists) {
-                println("MemegramDebug [$source]: $msgId уже в БД, пропускаем")
-                return@withLock
-            }
+            if (alreadyExists) return@withLock
 
             val plaintext = try {
-                mlsManager.decrypt(convId, ciphertextB64) ?: run {
-                    println("MemegramDebug [$source]: decrypt вернул null для $msgId")
-                    return@withLock
-                }
-            } catch (e: Exception) {
-                println("MemegramDebug [$source]: decrypt FAILED для $msgId: ${e.message}")
-                return@withLock
-            }
-            mlsManager.flushState()
-            println("MemegramDebug [$source]: расшифровано '$plaintext' для $msgId")
+                mlsManager.decrypt(convId, ciphertextB64) ?: return@withLock
+            } catch (_: Exception) { return@withLock }
 
-            val isImage = plaintext.startsWith("[image:")
-            val (mediaId, caption) = if (isImage) parseImagePayload(plaintext) else Pair("", plaintext)
+            mlsManager.flushState()
+
+            val (parsedType, parsedMediaId, content) = parseMlsPayload(plaintext)
 
             val msg = Message(
                 id         = msgId.hashCode(),
                 serverId   = msgId,
-                text       = if (isImage) caption else plaintext,
+                text       = content,
                 isOutgoing = isOutgoing,
                 timestamp  = createdAt * 1000L,
                 status     = MessageStatus.SENT,
-                type       = if (isImage) "image" else "text",
-                mediaId    = mediaId.ifBlank { null }
+                type       = if (parsedType != "text") parsedType else "text",
+                mediaId    = parsedMediaId.takeIf { it.isNotBlank() }
             )
             chatRepository.saveMessage(msg, convId)
-            println("MemegramDebug [$source]: сохранено в БД ✅")
         }
     }
 
     // ───────────────────────── MLS sync ─────────────────────────
 
     private suspend fun syncMlsPending(conversationId: String): Boolean {
+        var justProcessedWelcome = false
+
         if (!mlsManager.hasGroup(conversationId)) {
             try {
                 val welcomes = api.getPendingWelcomes()
                 val welcome = welcomes.find { it.conversationId == conversationId }
                 if (welcome != null) {
-                    println("MemegramDebug: Применяем Welcome для $conversationId")
                     mlsManager.processWelcome(conversationId, welcome.welcomeDataB64)
                     api.ackWelcome(welcome.id)
+                    justProcessedWelcome = true
                 } else {
-                    println("MemegramDebug: Welcome не найден!")
                     return false
                 }
-            } catch (e: Exception) {
-                println("MemegramDebug: Ошибка обработки Welcome: ${e.message}")
-                return false
-            }
+            } catch (_: Exception) { return false }
         }
 
         try {
+            if (justProcessedWelcome) {
+                val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                println("MemegramDebug [Welcome]: Синхронизирована metadata-эпоха с реальной MLS = $realEpoch")
+                return true
+            }
+
             val localEpoch = mlsManager.getGroupEpoch(conversationId)
-            val serverQueryEpoch = if (localEpoch > 0) localEpoch - 1 else 0
+            val commits = api.getPendingCommits(conversationId, localEpoch)
+            val newCommits = commits.filter { it.epoch > localEpoch }
 
-            println("MemegramDebug: Запрашиваем Commits начиная с serverEpoch=$serverQueryEpoch...")
-            val commits = api.getPendingCommits(conversationId, serverQueryEpoch)
-
-            if (commits.isNotEmpty()) {
-                println("MemegramDebug: Найдено ${commits.size} новых commits...")
-                commits.sortedBy { it.epoch }.forEach { commit ->
-                    try {
+            if (newCommits.isNotEmpty()) {
+                newCommits.sortedBy { it.epoch }.forEach { commit ->
+                    val success = try {
                         mlsManager.processCommit(conversationId, commit.commitDataB64)
-                        println("MemegramDebug: ✅ Успешно применен Commit от сервера (epoch=${commit.epoch})")
-                    } catch (e: Exception) {
-                        println("MemegramDebug: ⚠️ Пропущен Commit (epoch=${commit.epoch}): ${e.message}")
-                    }
-                    val newTargetEpoch = commit.epoch + 1
-                    if (newTargetEpoch > mlsManager.getGroupEpoch(conversationId)) {
-                        mlsManager.updateGroupEpoch(conversationId, newTargetEpoch)
+                    } catch (e: Exception) { false }
+
+                    if (success) {
+                        mlsManager.updateGroupEpoch(conversationId, commit.epoch)
                     }
                 }
                 mlsManager.flushState()
-            } else {
-                println("MemegramDebug: Новых Commits не найдено.")
             }
-        } catch (e: Exception) {
-            println("MemegramDebug: Ошибка обработки Commits: ${e.message}")
-            return false
-        }
+        } catch (_: Exception) { return false }
 
         return true
     }
@@ -541,7 +515,164 @@ class ChatViewModel(
         }
     }
 
-    // ───────────────────────── Media ─────────────────────────
+    fun sendVoiceMessageInternal(convId: String, recordResult: AudioRecordResult) {
+        println("MemegramDebug [Voice]: Старт sendVoiceMessageInternal для $convId")
+        val now = Clock.System.now().toEpochMilliseconds()
+
+        val tempMsg = Message(
+            id = now.hashCode(),
+            text = recordResult.durationMs.toString(),
+            isOutgoing = true,
+            timestamp = now,
+            status = MessageStatus.SENDING,
+            type = "voice"
+        )
+        viewModelScope.launch {
+            chatRepository.saveMessage(tempMsg, convId)
+
+            try {
+                if (!mlsManager.hasGroup(convId)) {
+                    chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = "⚠️ Шифрование не готово"), convId)
+                    return@launch
+                }
+
+                val encrypted = encryptMediaBytes(recordResult.bytes)
+                println("MemegramDebug [Voice]: Данные зашифрованы. Размер: ${encrypted.encryptedBytes.size} байт")
+
+                val initResp = api.initiateMediaUpload(
+                    InitiateMediaUploadRequest(
+                        conversationId     = convId,
+                        mimeType           = "audio/mp4",
+                        encryptedSize      = encrypted.encryptedBytes.size.toLong(),
+                        encryptionMetadata = encrypted.encryptionMetadataB64
+                    )
+                )
+                println("MemegramDebug [Voice]: Получен URL для загрузки: ${initResp.mediaId}")
+                api.uploadEncryptedBytesToUrl(initResp.uploadUrl, encrypted.encryptedBytes, "audio/mp4")
+                println("MemegramDebug [Voice]: Байты улетели на 'S3'")
+                api.confirmMediaUpload(initResp.mediaId)
+                println("MemegramDebug [Voice]: ✅ Голосовое сообщение успешно отправлено!")
+
+                val mlsPayload = "[voice:${initResp.mediaId}:${recordResult.waveform}]${recordResult.durationMs}"
+                val ciphertextB64 = mlsManager.encrypt(convId, mlsPayload)
+                mlsManager.flushState()
+
+                val response = api.sendMessage(
+                    conversationId = convId,
+                    request = SendMessageRequest(
+                        mlsCiphertextB64 = ciphertextB64,
+                        type             = "voice",
+                        clientMessageId  = generateUuid(),
+                        mediaId          = initResp.mediaId
+                    )
+                )
+
+                chatRepository.saveMessage(
+                    tempMsg.copy(
+                        serverId           = response.messageId,
+                        status             = MessageStatus.SENT,
+                        mediaId            = initResp.mediaId,
+                        encryptionMetadata = encrypted.encryptionMetadataB64,
+                        text               = "${recordResult.durationMs}|${recordResult.waveform}"
+                    ),
+                    convId
+                )
+            } catch (e: Exception) {
+                println("MemegramDebug [Voice]: 🚨 КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ: ${e.message}")
+                chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
+                _error.value = "Ошибка отправки голосового: ${e.message}"
+            }
+        }
+    }
+
+    fun startVoiceRecording() {
+        if (_recordState.value != RecordState.IDLE) return
+        _recordState.value = RecordState.HOLDING
+        rawAmplitudes.clear()
+        _voiceAmplitudes.value = emptyList()
+        _voiceDurationMs.value = 0L
+
+        audioRecorder.startRecording()
+
+        recordTimerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(50)
+                if (_recordState.value == RecordState.PAUSED) continue
+
+                val amp = audioRecorder.getMaxAmplitude()
+                val normalized = ((amp / 32767f) * 9).toInt().coerceIn(0, 9)
+                rawAmplitudes.add(normalized)
+
+                _voiceAmplitudes.value = rawAmplitudes.toList()
+                _voiceDurationMs.value += 50L
+            }
+        }
+    }
+
+    fun lockVoiceRecording() { _recordState.value = RecordState.LOCKED }
+
+    fun pauseVoiceRecording() {
+        if (_recordState.value == RecordState.LOCKED) {
+            audioRecorder.pauseRecording()
+            _recordState.value = RecordState.PAUSED
+        }
+    }
+
+    fun resumeVoiceRecording() {
+        if (_recordState.value == RecordState.PAUSED) {
+            audioRecorder.resumeRecording()
+            _recordState.value = RecordState.LOCKED
+        }
+    }
+
+    fun cancelVoiceRecording() {
+        recordTimerJob?.cancel()
+        audioRecorder.cancelRecording()
+        _recordState.value = RecordState.IDLE
+        rawAmplitudes.clear()
+        _voiceAmplitudes.value = emptyList()
+        _voiceDurationMs.value = 0L
+    }
+
+    fun stopAndSendVoiceMessage() {
+        println("MemegramDebug [Voice]: Начинаем остановку записи...")
+        recordTimerJob?.cancel()
+        val finalDurationMs = _voiceDurationMs.value
+        _recordState.value = RecordState.IDLE
+
+        println("MemegramDebug [Voice]: Собранных амплитуд: ${rawAmplitudes.size}, длительность: ${finalDurationMs}мс")
+
+        val waveformStr = downsampleWaveform(rawAmplitudes, 40)
+        println("MemegramDebug [Voice]: Waveform сжат: $waveformStr")
+
+        val result = audioRecorder.stopRecording(waveformStr)
+
+        if (result == null) {
+            println("MemegramDebug [Voice]: 🚨 ОШИБКА: Рекордер вернул null. Возможно, файл не создался или MediaRecorder упал.")
+        }
+
+        if (result != null && finalDurationMs > 1000) {
+            println("MemegramDebug [Voice]: Подготовка к шифрованию и отправке. Байт: ${result.bytes.size}")
+            val adjustedResult = result.copy(durationMs = finalDurationMs)
+            currentConversationId?.let { sendVoiceMessageInternal(it, adjustedResult) }
+        } else if (result != null) {
+            println("MemegramDebug [Voice]: Запись слишком короткая, отмена.")
+        }
+    }
+
+    private fun downsampleWaveform(amps: List<Int>, targetSize: Int): String {
+        if (amps.isEmpty()) return ""
+        val result = StringBuilder()
+        val chunkSize = maxOf(1, amps.size / targetSize)
+        for (i in 0 until targetSize) {
+            val start = i * chunkSize
+            if (start >= amps.size) break
+            val end = minOf(start + chunkSize, amps.size)
+            val avg = amps.subList(start, end).average().toInt().coerceIn(0, 9)
+            result.append(avg)
+        }
+        return result.toString()
+    }
 
     private val _mediaCache = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaCache: StateFlow<Map<String, ByteArray>> = _mediaCache.asStateFlow()
@@ -555,13 +686,9 @@ class ChatViewModel(
                 val meta           = resp.encryptionMetadata.takeIf { it.isNotBlank() } ?: encryptionMetadata
                 val decryptedBytes = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
                 _mediaCache.value += (mediaId to decryptedBytes)
-            } catch (e: Exception) {
-                println("MemegramDebug [Media] loadMedia $mediaId FAILED: ${e.message}")
-            }
+            } catch (_: Exception) { }
         }
     }
-
-    // ───────────────────────── Read ─────────────────────────
 
     fun markMessagesRead(lastVisibleServerId: String) {
         val convId = currentConversationId ?: return
@@ -582,15 +709,26 @@ class ChatViewModel(
         viewModelScope.launch { chatRepository.deleteMessages(convId) }
     }
 
-    // ───────────────────────── Helpers ─────────────────────────
+    private fun parseMlsPayload(payload: String): Triple<String, String, String> {
+        if (payload.startsWith("[image:")) {
+            val closeIdx = payload.indexOf(']')
+            if (closeIdx == -1) return Triple("text", "", payload)
+            val mediaId = payload.substring(7, closeIdx)
+            val caption = payload.substring(closeIdx + 1).trim()
+            return Triple("image", mediaId, caption)
+        }
+        if (payload.startsWith("[voice:")) {
+            val closeIdx = payload.indexOf(']')
+            if (closeIdx == -1) return Triple("text", "", payload)
 
-    private fun parseImagePayload(payload: String): Pair<String, String> {
-        if (!payload.startsWith("[image:")) return Pair("", payload)
-        val closeIdx = payload.indexOf(']')
-        if (closeIdx == -1) return Pair("", payload)
-        val mediaId = payload.substring(7, closeIdx)
-        val caption = payload.substring(closeIdx + 1).trim()
-        return Pair(mediaId, caption)
+            val metaInfo = payload.substring(7, closeIdx).split(":")
+            val mediaId = metaInfo[0]
+            val waveform = if (metaInfo.size > 1) metaInfo[1] else ""
+            val durationMs = payload.substring(closeIdx + 1).trim()
+
+            return Triple("voice", mediaId, "$durationMs|$waveform")
+        }
+        return Triple("text", "", payload)
     }
 
     override fun onCleared() {

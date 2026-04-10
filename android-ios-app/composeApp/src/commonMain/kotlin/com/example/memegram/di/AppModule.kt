@@ -5,6 +5,7 @@ import com.example.memegram.*
 import com.example.memegram.data.local.KeyManager
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.local.createPlatformKeyManager
+import com.example.memegram.data.local.createSecureSettings
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.network.createHttpClient
 import com.example.memegram.data.repository.ChatRepository
@@ -17,12 +18,14 @@ import com.example.memegram.database.AppDatabase
 import com.example.memegram.mls.MlsManager
 import com.russhwolf.settings.Settings
 import org.koin.core.module.dsl.viewModelOf
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 val appModule = module {
-    single { Settings() }
+    single<Settings> { Settings() }
+    single<Settings>(named("secure")) { createSecureSettings() }
+    single { SessionManager(get(named("secure"))) }
     single { createHttpClient() }
-    single { SessionManager(get()) }
     single<KeyManager> { createPlatformKeyManager(get()) }
     single { ApiService(get(), get(), baseUrl = "http://10.0.2.2:8000") }
     single { ThemePreferences(get()) }
@@ -52,4 +55,6 @@ val appModule = module {
     viewModelOf(::StorageViewModel)
     viewModelOf(::LinkedDevicesViewModel)
     viewModelOf(::AddDeviceViewModel)
+    viewModelOf(::GroupProfileViewModel)
+    viewModelOf(::UserProfileViewModel)
 }

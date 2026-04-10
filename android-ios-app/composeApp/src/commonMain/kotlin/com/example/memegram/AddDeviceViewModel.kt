@@ -2,6 +2,7 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.local.KeyManager
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
 import com.example.memegram.data.network.ApiService
@@ -16,7 +17,8 @@ enum class AddDeviceStep { SCANNING, SUBMITTING, WAITING_APPROVAL, CONFIRMED, RE
 class AddDeviceViewModel(
     private val api: ApiService,
     private val sessionManager: SessionManager,
-    private val mlsManager: MlsManager
+    private val mlsManager: MlsManager,
+    private val keyManager: KeyManager
 ) : ViewModel() {
 
     private val _step  = MutableStateFlow(AddDeviceStep.SCANNING)
@@ -50,16 +52,18 @@ class AddDeviceViewModel(
         viewModelScope.launch {
             _step.value = AddDeviceStep.SUBMITTING
             try {
+                keyManager.getOrCreateKeyPair()
+                val authPubKey = keyManager.getPublicKeyBase64()
+                val localDeviceId = generateUuid()
                 mlsManager.initialize()
                 val creds = mlsManager.exportCredentials()
-                val localDeviceId = generateUuid()
 
                 api.submitDeviceData(
                     registrationId = registrationId,
                     request = SubmitDeviceDataRequest(
                         deviceId       = localDeviceId,
                         deviceName     = getDeviceName(),
-                        identityKeyPub = creds.identityKeyPub,
+                        identityKeyPub = authPubKey,
                         initKeyPub     = creds.initKeyPub,
                         credentialData = creds.credentialData,
                         registrationCode = registrationCode

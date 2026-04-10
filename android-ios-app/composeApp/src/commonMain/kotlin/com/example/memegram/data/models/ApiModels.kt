@@ -146,7 +146,8 @@ data class SseEventData(
     @SerialName("sender_device_id") val senderDeviceId: String? = null,
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String? = null,
     @SerialName("new_mls_ciphertext") val newMlsCiphertextB64: String? = null,
-    @SerialName("created_at") val createdAt: Long = 0L
+    @SerialName("created_at") val createdAt: Long = 0L,
+    @SerialName("user_id") val userId: String? = null
 )
 
 @Serializable
@@ -176,7 +177,8 @@ data class CommitGroupChangeRequest(
     @SerialName("new_epoch") val newEpoch: Int,
     @SerialName("welcome_messages") val welcomeMessages: List<DeviceWelcome> = emptyList(),
     @SerialName("ratchet_tree") val ratchetTree: String? = null,
-    @SerialName("removed_device_ids") val removedDeviceIds: List<String> = emptyList()
+    @SerialName("removed_device_ids") val removedDeviceIds: List<String> = emptyList(),
+    @SerialName("added_user_ids") val addedUserIds: List<String>? = null
 )
 
 @Serializable
@@ -289,4 +291,8 @@ data class MemberWelcomes(
 data class CreateGroupConversationRequest(
     @SerialName("name") val name: String,
     @SerialName("members") val members: List<MemberWelcomes>
+)
+@Serializable
+data class LeaveConversationRequest(
+    @SerialName("commit_data") val commitData: String = ""
 )

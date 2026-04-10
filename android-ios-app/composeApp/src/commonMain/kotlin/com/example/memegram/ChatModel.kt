@@ -6,7 +6,9 @@ data class ChatModel(
     val name: String,
     val lastMessage: String,
     val timestamp: Long,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val isLastMessageMine: Boolean = false,
+    val lastSenderName: String? = null
 )
 
 data class Message(

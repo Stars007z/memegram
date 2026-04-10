@@ -14,6 +14,20 @@ private class IosMlsClient : MlsPlatformClient {
     override fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray = notImplemented()
     override fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray = notImplemented()
     override fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt = notImplemented()
+    override fun leaveGroup(groupId: ByteArray): ByteArray = notImplemented()
+    override fun getGroupEpoch(groupId: ByteArray): ULong = notImplemented()
+    override fun memberCount(groupId: ByteArray): ULong = notImplemented()
+    override fun mergePendingCommit(groupId: ByteArray) {
+        notImplemented()
+    }
+
+    override fun clearPendingCommit(groupId: ByteArray) {
+        notImplemented()
+    }
+
+    override fun clearPendingProposals(groupId: ByteArray) {
+        notImplemented()
+    }
 }
 
 actual fun createMlsClient(identity: String): MlsPlatformClient = IosMlsClient()

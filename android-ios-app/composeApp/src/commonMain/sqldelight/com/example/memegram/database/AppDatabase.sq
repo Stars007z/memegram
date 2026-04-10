@@ -4,7 +4,9 @@ CREATE TABLE chatEntity (
     lastMessage TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
     unreadCount INTEGER NOT NULL DEFAULT 0,
-    avatarMediaId TEXT
+    avatarMediaId TEXT,
+    isLastMessageMine INTEGER NOT NULL DEFAULT 0,
+    lastSenderName TEXT
 );
 
 CREATE TABLE messageEntity (
@@ -29,8 +31,8 @@ selectAllChats:
 SELECT * FROM chatEntity ORDER BY timestamp DESC;
 
 insertOrUpdateChat:
-INSERT OR REPLACE INTO chatEntity(conversationId, name, lastMessage, timestamp, unreadCount, avatarMediaId)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO chatEntity(conversationId, name, lastMessage, timestamp, unreadCount, avatarMediaId, isLastMessageMine, lastSenderName)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteChat:
 DELETE FROM chatEntity WHERE conversationId = ?;

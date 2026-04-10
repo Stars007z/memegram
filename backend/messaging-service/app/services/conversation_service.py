@@ -31,6 +31,7 @@ class ConversationServiceImpl(IConversationService):
         member_repo: MemberRepository,
         mls_group_repo: MlsGroupRepository,
         mls_welcome_repo: MlsWelcomeRepository,
+        commit_repo: MlsCommitRepository,
         message_repo: MessageRepository,
         contacts_client: IContactsClient,
         redis: aioredis.Redis,
@@ -40,6 +41,7 @@ class ConversationServiceImpl(IConversationService):
         self._members = member_repo
         self._mls_groups = mls_group_repo
         self._welcomes = mls_welcome_repo
+        self._commits = commit_repo
         self._messages = message_repo
         self._contacts = contacts_client
         self._redis = redis
@@ -226,6 +228,8 @@ class ConversationServiceImpl(IConversationService):
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
 
+        # Mark the member as left (no MLS epoch change here —
+        # a remaining member will create the Remove Commit per RFC 9420 §12.2).
         await self._members.update(member, {"left_at": datetime.utcnow()})
 
         await self._stream.publish_event(conversation_id, {

@@ -14,6 +14,7 @@ import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
+import kotlin.time.Clock
 
 class ApiService(
     private val client: HttpClient,
@@ -22,6 +23,11 @@ class ApiService(
 ) {
     private fun token() = sessionManager.getAccessToken() ?: ""
 
+    private fun HttpRequestBuilder.noCache() {
+        header("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+        header("Pragma", "no-cache")
+        header("Expires", "0")
+    }
 // ── Auth ──────────────────────────────────────────────────────────────────
 
     suspend fun register(body: RegisterRequest): AuthResponse {
@@ -67,7 +73,10 @@ class ApiService(
 // ── User ──────────────────────────────────────────────────────────────────
 
     suspend fun getMe(): UserProfileResponse =
-        client.get("$baseUrl/api/v1/user/me") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/user/me") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun updateMe(request: UpdateProfileRequest): UserProfileResponse =
         client.patch("$baseUrl/api/v1/user/me") {
@@ -77,7 +86,10 @@ class ApiService(
         }.body()
 
     suspend fun getMySettings(): UserSettingsResponse =
-        client.get("$baseUrl/api/v1/user/me/settings") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/user/me/settings") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun updateMySettings(request: UpdateSettingsRequest): UserSettingsResponse =
         client.patch("$baseUrl/api/v1/user/me/settings") {
@@ -93,16 +105,23 @@ class ApiService(
     }
 
     suspend fun getUserById(userId: String): UserProfileResponse =
-        client.get("$baseUrl/api/v1/user/$userId") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/user/$userId") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun getUserByPublicKey(key: String): UserProfileResponse =
-        client.get("$baseUrl/api/v1/user/by-key/$key") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/user/by-key/$key") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
 // ── Contacts ──────────────────────────────────────────────────────────────
 
     suspend fun getContacts(limit: Int = 50, offset: Int = 0): ContactsListResponse =
         client.get("$baseUrl/api/v1/contacts") {
             bearerAuth(token())
+            noCache()
             parameter("limit", limit)
             parameter("offset", offset)
         }.body()
@@ -137,6 +156,7 @@ class ApiService(
     suspend fun getBlockedUsers(limit: Int = 50, offset: Int = 0): BlockedUsersListResponse =
         client.get("$baseUrl/api/v1/contacts/blocked") {
             bearerAuth(token())
+            noCache()
             parameter("limit", limit)
             parameter("offset", offset)
         }.body()
@@ -160,16 +180,21 @@ class ApiService(
     suspend fun getConversations(limit: Int = 50, cursor: String = ""): GetConversationsResponse =
         client.get("$baseUrl/api/v1/messaging/conversations") {
             bearerAuth(token())
+            noCache()
             parameter("limit", limit)
             parameter("cursor", cursor)
         }.body()
 
     suspend fun getConversation(id: String): ConversationResponse =
-        client.get("$baseUrl/api/v1/messaging/conversations/$id") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/messaging/conversations/$id") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun getMessages(conversationId: String, limit: Int = 50): List<MessageResponse> {
         val response = client.get("$baseUrl/api/v1/messaging/conversations/$conversationId/messages") {
             header("Authorization", "Bearer ${sessionManager.getAccessToken()}")
+            noCache()
             parameter("limit", limit)
         }.body<GetMessagesResponse>()
         return response.messages
@@ -196,6 +221,7 @@ class ApiService(
     suspend fun getPendingWelcomes(): List<WelcomeResponse> =
         client.get("$baseUrl/api/v1/messaging/welcomes") {
             bearerAuth(token())
+            noCache()
         }.body<WelcomesEnvelope>().items
 
     suspend fun ackWelcome(welcomeId: String) {
@@ -205,12 +231,14 @@ class ApiService(
     suspend fun getPendingCommits(conversationId: String, sinceEpoch: Long? = null): List<CommitResponse> =
         client.get("$baseUrl/api/v1/messaging/conversations/$conversationId/mls/commits") {
             bearerAuth(token())
+            noCache()
             if (sinceEpoch != null) parameter("since_epoch", sinceEpoch)
         }.body<CommitsEnvelope>().commits
 
     suspend fun getKeyPackagesCount(): Int =
         client.get("$baseUrl/api/v1/messaging/key-packages/count") {
             bearerAuth(token())
+            noCache()
         }.body<Map<String, Int>>()["count"] ?: 0
 
     suspend fun uploadKeyPackages(packagesB64: List<String>) {
@@ -232,6 +260,7 @@ class ApiService(
     fun subscribeToConversation(conversationIds: String): Flow<SseEvent> = flow {
         client.prepareGet("$baseUrl/api/v1/messaging/events") {
             bearerAuth(token())
+            noCache()
             parameter("conversation_ids", conversationIds)
             accept(ContentType.Text.EventStream)
 
@@ -299,6 +328,7 @@ class ApiService(
     suspend fun getKeyPackage(userId: String): KeyPackageResponse {
         val response = client.get("$baseUrl/api/v1/messaging/key-packages/by-user/$userId") {
             bearerAuth(token())
+            noCache()
         }
         if (!response.status.isSuccess()) {
             throw Exception("getKeyPackage failed ${response.status.value}: ${response.bodyAsText()}")
@@ -342,6 +372,13 @@ class ApiService(
             response.body()
         }
     }
+    suspend fun leaveConversation(conversationId: String, request: LeaveConversationRequest) {
+        client.post("$baseUrl/api/v1/messaging/conversations/$conversationId/leave") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+    }
 
 // ── Media ─────────────────────────────────────────────────────────────────
 
@@ -381,7 +418,9 @@ class ApiService(
     }
 
     suspend fun downloadBytesFromUrl(url: String): ByteArray {
-        val response = client.get(url)
+        val response = client.get(url) {
+            noCache()
+        }
         if (!response.status.isSuccess())
             throw Exception("downloadBytes: ${response.status.value}")
         return response.body()
@@ -390,9 +429,10 @@ class ApiService(
     suspend fun getMediaDownloadUrl(mediaId: String): GetMediaDownloadUrlResponse =
         client.get("$baseUrl/api/v1/messaging/media/$mediaId/download") {
             bearerAuth(token())
+            noCache()
         }.body<GetMediaDownloadUrlResponse>()
 
-    // ── Устройства ────────────────────────────────────────────────────
+// ── Devices ────────────────────────────────────────────────────
 
     suspend fun submitDeviceData(
         registrationId: String,
@@ -404,13 +444,19 @@ class ApiService(
         }.body()
 
     suspend fun getDevices(): List<DeviceInfoResponse> =
-        client.get("$baseUrl/api/v1/devices") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/devices") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun initDeviceAddition(): InitDeviceAdditionResponse =
         client.post("$baseUrl/api/v1/devices/init-addition") { bearerAuth(token()) }.body()
 
     suspend fun getPendingDeviceAdditions(): List<PendingDeviceRegistration> =
-        client.get("$baseUrl/api/v1/devices/addition/pending") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/devices/addition/pending") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun confirmDeviceAddition(registrationId: String, request: ConfirmDeviceAdditionRequest): ConfirmDeviceAdditionResponse =
         client.post("$baseUrl/api/v1/devices/addition/$registrationId/confirm") {
@@ -423,11 +469,15 @@ class ApiService(
         }.body()
 
     suspend fun getDeviceAdditionStatus(registrationId: String): DeviceAdditionStatusResponse =
-        client.get("$baseUrl/api/v1/devices/addition/$registrationId/status") { bearerAuth(token()) }.body()
+        client.get("$baseUrl/api/v1/devices/addition/$registrationId/status") {
+            bearerAuth(token())
+            noCache()
+        }.body()
 
     suspend fun getKeyPackagesForUser(userId: String): List<UserDeviceKeyPackage> =
         client.get("$baseUrl/api/v1/messaging/key-packages/by-user/$userId") {
             bearerAuth(token())
+            noCache()
         }.body<GetKeyPackagesForUserResponse>().keyPackages
 
     suspend fun updateDeviceKeys(deviceId: String, request: UpdateDeviceKeysRequest): UpdateDeviceKeysResponse =

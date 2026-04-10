@@ -46,8 +46,8 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
-            implementation("app.cash.sqldelight:android-driver:2.3.2")
-            implementation("net.zetetic:sqlcipher-android:4.14.0")
+            implementation(libs.sqldelight.android.driver)
+            implementation(libs.sqlcipher.android)
             implementation(libs.androidx.security.crypto.ktx)
         }
 
@@ -85,6 +85,7 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.native.driver)
+            implementation(libs.multiplatform.settings.keychain)
         }
 
         commonTest.dependencies {

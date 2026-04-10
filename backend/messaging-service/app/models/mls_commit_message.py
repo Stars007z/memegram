@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Index, LargeBinary
+from sqlalchemy import BigInteger, DateTime, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,5 +21,5 @@ class MlsCommitMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        Index("ix_commits_conv_epoch", "conversation_id", "epoch"),
+        UniqueConstraint("conversation_id", "epoch", name="uq_commits_conv_epoch"),
     )

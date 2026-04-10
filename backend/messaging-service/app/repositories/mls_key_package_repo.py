@@ -24,6 +24,7 @@ class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
                 MlsKeyPackage.device_id == device_id,
                 MlsKeyPackage.consumed_at.is_(None),
             )
+            .order_by(MlsKeyPackage.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True)
         )
@@ -31,7 +32,7 @@ class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
         package = result.scalar_one_or_none()
         if package:
             package.consumed_at = datetime.utcnow()
-            await self.session.flush()
+            await self.session.commit()
         return package
 
     async def count_available(

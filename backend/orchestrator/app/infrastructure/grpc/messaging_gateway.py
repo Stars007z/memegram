@@ -367,6 +367,7 @@ class GrpcMessagingGateway(IMessagingGateway):
         welcome_messages: list[DeviceWelcome],
         ratchet_tree: bytes,
         removed_device_ids: list[str],
+        added_user_ids: list[str] = None,
     ) -> CommitGroupChangeResult:
         try:
             resp = await self._stub().CommitGroupChange(
@@ -379,6 +380,7 @@ class GrpcMessagingGateway(IMessagingGateway):
                     welcome_messages=_device_welcomes_to_proto(welcome_messages),
                     ratchet_tree=ratchet_tree,
                     removed_device_ids=removed_device_ids,
+                    added_user_ids=added_user_ids or [],
                 ),
                 timeout=self._timeout,
             )

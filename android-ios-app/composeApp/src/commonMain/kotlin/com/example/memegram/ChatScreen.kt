@@ -1,9 +1,17 @@
 package com.example.memegram
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -28,20 +35,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.audio.AudioPlayer
 import com.example.memegram.data.gallery.AttachItem
 import com.example.memegram.data.gallery.GalleryThumb
 import com.example.memegram.data.gallery.buildGallerySections
@@ -49,6 +55,7 @@ import com.example.memegram.data.gallery.rememberGalleryLoader
 import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
+import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -59,6 +66,7 @@ fun ChatScreen(
     topBarColor: Color,
     chatName: String,
     onBack: () -> Unit,
+    onProfileClick: () -> Unit,
     viewModel: ChatViewModel
 ) {
     val messages       by viewModel.messages.collectAsState()
@@ -70,7 +78,6 @@ fun ChatScreen(
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
     val listState = rememberLazyListState()
-    val scope     = rememberCoroutineScope()
 
     val lastVisibleIncomingServerId by remember {
         derivedStateOf {
@@ -156,6 +163,13 @@ fun ChatScreen(
     val messageSenders by viewModel.messageSenders.collectAsState()
     val memberProfiles by viewModel.memberProfiles.collectAsState()
 
+    val recordState     by viewModel.recordState.collectAsState()
+    val recordAmps      by viewModel.voiceAmplitudes.collectAsState()
+    val recordDuration  by viewModel.voiceDurationMs.collectAsState()
+
+    var isRecordingVoice by remember { mutableStateOf(false) }
+
+    var showFullScreenAvatar by remember { mutableStateOf(false) }
     if (showAttachSheet) {
         ModalBottomSheet(
             onDismissRequest = { showAttachSheet = false; pendingGallery = emptySet() },
@@ -349,6 +363,32 @@ fun ChatScreen(
             }
         )
     }
+    if (showFullScreenAvatar) {
+        AlertDialog(
+            onDismissRequest = { showFullScreenAvatar = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            title = null,
+            text = {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier.size(240.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(chatName.take(1).uppercase(), color = Color.White, fontSize = 100.sp)
+                    }
+
+                    IconButton(
+                        onClick = { showFullScreenAvatar = false },
+                        modifier = Modifier.align(Alignment.TopStart).padding(16.dp).statusBarsPadding()
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -359,12 +399,19 @@ fun ChatScreen(
                     }
                 },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onProfileClick() }
+                            .padding(end = 16.dp)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(topBarTextColor.copy(alpha = 0.2f)),
+                                .background(topBarTextColor.copy(alpha = 0.2f))
+                                .clickable { showFullScreenAvatar = true },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(chatName.take(1).uppercase(), color = topBarTextColor, fontSize = 16.sp)
@@ -403,102 +450,152 @@ fun ChatScreen(
                 Column {
                     if (attachments.isNotEmpty()) {
                         LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(attachments) { item ->
-                                AttachmentThumbnail(
-                                    item     = item,
-                                    onRemove = { attachments = attachments - item }
-                                )
-                            }
+                            items(attachments) { item -> AttachmentThumbnail(item) { attachments = attachments - item } }
                         }
                         HorizontalDivider()
                     }
 
-                    if (isSearchMode) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 10.dp)
-                                .navigationBarsPadding(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            BasicTextField(
-                                value    = searchQuery,
-                                onValueChange = { searchQuery = it; currentMatchIdx = 0 },
-                                singleLine = true,
-                                textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                modifier = Modifier.weight(1f).focusRequester(searchFocus),
-                                decorationBox = { inner ->
-                                    Box(
-                                        modifier = Modifier
-                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
-                                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                            .navigationBarsPadding(),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        if (recordState != ChatViewModel.RecordState.IDLE) {
+                            Row(
+                                modifier = Modifier.weight(1f).height(48.dp).padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val alpha by animateFloatAsState(
+                                    targetValue = if (recordState == ChatViewModel.RecordState.PAUSED) 0.3f else 1f,
+                                    animationSpec = infiniteRepeatable(animation = tween(800), repeatMode = RepeatMode.Reverse)
+                                )
+                                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color.Red.copy(alpha = alpha)))
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                val sec = (recordDuration / 1000).toInt()
+                                Text("${sec / 60}:${(sec % 60).toString().padStart(2, '0')}", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                if (recordState == ChatViewModel.RecordState.HOLDING) {
+                                    Text("< Свайп для отмены", color = Color.Gray, fontSize = 14.sp)
+                                } else {
+                                    VoiceWaveform(
+                                        amplitudes = recordAmps,
+                                        progress = 1f,
+                                        modifier = Modifier.weight(1f).height(30.dp),
+                                        playedColor = MaterialTheme.colorScheme.primary,
+                                        unplayedColor = Color.Gray.copy(alpha = 0.3f)
+                                    )
+
+                                    IconButton(onClick = { viewModel.cancelVoiceRecording() }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Delete, null, tint = Color.Gray)
+                                    }
+                                    IconButton(
+                                        onClick = { if (recordState == ChatViewModel.RecordState.PAUSED) viewModel.resumeVoiceRecording() else viewModel.pauseVoiceRecording() },
+                                        modifier = Modifier.size(32.dp)
                                     ) {
-                                        if (searchQuery.isEmpty()) Text("Поиск в чате...", color = Color.Gray, fontSize = 16.sp)
-                                        inner()
+                                        Icon(if (recordState == ChatViewModel.RecordState.PAUSED) Icons.Default.Mic else Icons.Default.Pause, null, tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        } else {
+                            IconButton(onClick = { }) { Icon(Icons.Default.SentimentSatisfied, null, tint = Color.Gray) }
+                            OutlinedTextField(
+                                value = inputText, onValueChange = { viewModel.updateInput(it) },
+                                modifier = Modifier.weight(1f), placeholder = { Text("Сообщение...") },
+                                shape = RoundedCornerShape(24.dp), maxLines = 5
+                            )
+                            IconButton(onClick = { galleryLoader.requestPermission(); showAttachSheet = true }) {
+                                Icon(Icons.Default.AttachFile, null, tint = Color.Gray, modifier = Modifier.rotate(45f))
+                            }
+                        }
+
+                        val isEmpty = inputText.trim().isEmpty() && attachments.isEmpty()
+
+                        val sendButtonBg = when {
+                            recordState != ChatViewModel.RecordState.IDLE -> Color.Red
+                            !isEmpty -> MaterialTheme.colorScheme.primary
+                            else -> Color.Transparent
+                        }
+
+                        val buttonModifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(sendButtonBg)
+                            .then(
+                                when {
+                                    recordState == ChatViewModel.RecordState.LOCKED || recordState == ChatViewModel.RecordState.PAUSED -> {
+                                        Modifier.clickable { viewModel.stopAndSendVoiceMessage() }
+                                    }
+                                    !isEmpty -> {
+                                        Modifier.clickable {
+                                            val toSend = attachments
+                                            attachments = emptyList()
+                                            viewModel.sendMessage(toSend)
+                                        }
+                                    }
+                                    else -> {
+                                        Modifier.pointerInput(Unit) {
+                                            awaitEachGesture {
+                                                val down = awaitFirstDown()
+
+                                                if (!viewModel.audioRecorder.hasPermission()) {
+                                                    viewModel.audioRecorder.requestPermission()
+                                                    var event = awaitPointerEvent()
+                                                    while (event.changes.any { it.pressed }) { event = awaitPointerEvent() }
+                                                    return@awaitEachGesture
+                                                }
+
+                                                if (viewModel.recordState.value == ChatViewModel.RecordState.IDLE) {
+                                                    viewModel.startVoiceRecording()
+                                                }
+
+                                                var offsetX = 0f
+                                                var offsetY = 0f
+                                                var lockedOrCanceled = false
+
+                                                do {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes.firstOrNull()
+                                                    if (change != null && change.pressed) {
+                                                        val drag = change.position - change.previousPosition
+                                                        offsetX += drag.x
+                                                        offsetY += drag.y
+
+                                                        if (offsetY < -200f && viewModel.recordState.value == ChatViewModel.RecordState.HOLDING) {
+                                                            viewModel.lockVoiceRecording()
+                                                            lockedOrCanceled = true
+                                                        } else if (offsetX < -200f && viewModel.recordState.value == ChatViewModel.RecordState.HOLDING) {
+                                                            viewModel.cancelVoiceRecording()
+                                                            lockedOrCanceled = true
+                                                        }
+                                                    }
+                                                } while (event.changes.any { it.pressed } && !lockedOrCanceled)
+
+                                                if (!lockedOrCanceled && viewModel.recordState.value == ChatViewModel.RecordState.HOLDING) {
+                                                    viewModel.stopAndSendVoiceMessage()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             )
-                            Text(
-                                if (searchMatches.isNotEmpty()) "${searchMatches.size - currentMatchIdx}/${searchMatches.size}" else if (searchQuery.isNotBlank()) "0/0" else "",
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                                color = Color.Gray, fontSize = 13.sp
-                            )
-                            IconButton(
-                                onClick  = { if (searchMatches.isNotEmpty()) currentMatchIdx = (currentMatchIdx - 1 + searchMatches.size) % searchMatches.size },
-                                enabled  = searchMatches.size > 1
-                            ) { Icon(Icons.Default.KeyboardArrowUp, null) }
-                            IconButton(
-                                onClick  = { if (searchMatches.isNotEmpty()) currentMatchIdx = (currentMatchIdx + 1) % searchMatches.size },
-                                enabled  = searchMatches.size > 1
-                            ) { Icon(Icons.Default.KeyboardArrowDown, null) }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
-                                .navigationBarsPadding(),
-                            verticalAlignment = Alignment.Bottom
+
+                        Box(
+                            modifier = buttonModifier,
+                            contentAlignment = Alignment.Center
                         ) {
-                            IconButton(onClick = { }) {
-                                Icon(Icons.Default.SentimentSatisfied, null, tint = Color.Gray, modifier = Modifier.size(26.dp))
-                            }
-                            OutlinedTextField(
-                                value         = inputText,
-                                onValueChange = { viewModel.updateInput(it) },
-                                modifier      = Modifier.weight(1f),
-                                placeholder   = { Text("Сообщение...") },
-                                shape         = RoundedCornerShape(24.dp),
-                                maxLines      = 5
-                            )
-                            IconButton(onClick = {
-                                galleryLoader.requestPermission()
-                                showAttachSheet = true
-                            }) {
-                                Icon(Icons.Default.AttachFile, null, tint = Color.Gray, modifier = Modifier.size(26.dp).rotate(45f))
-                            }
-                            val isEmpty = inputText.trim().isEmpty() && attachments.isEmpty()
-                            IconButton(
-                                onClick = {
-                                    if (!isEmpty) {
-                                        val toSend = attachments
-                                        attachments = emptyList()
-                                        viewModel.sendMessage(toSend)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isEmpty) Color.Transparent else MaterialTheme.colorScheme.primary)
-                            ) {
-                                if (isEmpty) Icon(Icons.Default.Mic, null, tint = Color.Gray, modifier = Modifier.size(26.dp))
-                                else Icon(Icons.AutoMirrored.Filled.Send, null, tint = Color.White)
+                            if (recordState == ChatViewModel.RecordState.LOCKED || recordState == ChatViewModel.RecordState.PAUSED) {
+                                Icon(Icons.AutoMirrored.Filled.Send, null, tint = Color.White)
+                            } else if (isEmpty) {
+                                Icon(Icons.Default.Mic, null, tint = if (recordState == ChatViewModel.RecordState.HOLDING) Color.White else Color.Gray)
+                            } else {
+                                Icon(Icons.AutoMirrored.Filled.Send, null, tint = Color.White)
                             }
                         }
                     }
@@ -560,7 +657,8 @@ fun ChatScreen(
                                     searchQuery      = searchQuery,
                                     isCurrentMatch   = message.id == currentMatchMsgId,
                                     mediaCache       = mediaCache,
-                                    onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) }
+                                    onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
+                                    audioPlayer      = viewModel.audioPlayer
                                 )
                             }
                         }
@@ -572,7 +670,8 @@ fun ChatScreen(
                             searchQuery      = searchQuery,
                             isCurrentMatch   = message.id == currentMatchMsgId,
                             mediaCache       = mediaCache,
-                            onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) }
+                            onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
+                            audioPlayer      = viewModel.audioPlayer
                         )
                     }
                 }
@@ -628,27 +727,6 @@ fun GalleryGridItem(
         ) {
             if (isSelected) {
                 Text(selNumber.toString(), color = Color.White, fontSize = 11.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun AnimatedConfirmBar(count: Int, onConfirm: () -> Unit) {
-    if (count > 0) {
-        HorizontalDivider()
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            Button(
-                onClick  = onConfirm,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Прикрепить $count ${if (count == 1) "фото" else "фото"}")
             }
         }
     }
@@ -711,7 +789,7 @@ fun formatMessageTime(timestamp: Long): String {
         val instant = Instant.fromEpochMilliseconds(timestamp)
         val local   = instant.toLocalDateTime(TimeZone.currentSystemDefault())
         "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
-    } catch (e: Exception) { "" }
+    } catch (_: Exception) { "" }
 }
 
 @Composable
@@ -722,7 +800,8 @@ fun MessageBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     mediaCache: Map<String, ByteArray> = emptyMap(),
-    onLoadMedia: (String, String?) -> Unit = { _, _ -> }
+    onLoadMedia: (String, String?) -> Unit = { _, _ -> },
+    audioPlayer: AudioPlayer? = null
 ) {
     val isOut       = message.isOutgoing
     val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
@@ -745,7 +824,7 @@ fun MessageBubble(
         }
     }
     val isImageMsg = message.type == "image" || localBitmap != null
-    val hasText    = message.text.isNotBlank()
+    val hasText    = message.text.isNotBlank() && message.type != "voice"
 
     Row(
         modifier              = Modifier.fillMaxWidth(),
@@ -772,7 +851,92 @@ fun MessageBubble(
                 )
         ) {
             Column {
-                if (isImageMsg) {
+                if (message.type == "voice") {
+                    val parts = message.text.split("|")
+                    val durationMs = parts[0].toLongOrNull() ?: 0L
+                    val waveformStr = if (parts.size > 1) parts[1] else ""
+                    val parsedAmps = waveformStr.map { it.digitToIntOrNull() ?: 0 }
+
+                    var isPlaying by remember { mutableStateOf(false) }
+                    var isPausedLocal by remember { mutableStateOf(false) }
+                    var currentProgress by remember { mutableFloatStateOf(0f) }
+
+                    LaunchedEffect(isPlaying, isPausedLocal) {
+                        if (isPlaying) {
+                            while (isPlaying) {
+                                delay(50)
+                                currentProgress = audioPlayer?.getProgress() ?: 0f
+                            }
+                        } else if (!isPausedLocal) {
+                            currentProgress = 0f
+                        }
+                    }
+
+                    val totalSeconds = (durationMs / 1000).toInt()
+                    val totalText = "${totalSeconds / 60}:${(totalSeconds % 60).toString().padStart(2, '0')}"
+
+                    val currentSeconds = ((durationMs * currentProgress) / 1000).toInt()
+                    val currentText = "${currentSeconds / 60}:${(currentSeconds % 60).toString().padStart(2, '0')}"
+
+                    val displayTime = if (currentProgress > 0f && (isPlaying || isPausedLocal)) {
+                        "$currentText / $totalText"
+                    } else {
+                        totalText
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).width(200.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(textColor.copy(alpha = 0.15f))
+                                .clickable {
+                                    if (isPlaying) {
+                                        audioPlayer?.pause()
+                                        isPlaying = false
+                                        isPausedLocal = true
+                                    } else {
+                                        if (cachedBytes != null) {
+                                            isPlaying = true
+                                            if (isPausedLocal) {
+                                                audioPlayer?.resume()
+                                                isPausedLocal = false
+                                            } else {
+                                                audioPlayer?.play(cachedBytes) {
+                                                    isPlaying = false
+                                                    isPausedLocal = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (cachedBytes == null) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = textColor, strokeWidth = 2.dp)
+                            } else {
+                                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            VoiceWaveform(
+                                amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
+                                progress = currentProgress,
+                                modifier = Modifier.fillMaxWidth().height(24.dp),
+                                playedColor = textColor,
+                                unplayedColor = textColor.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                        }
+                    }
+                } else if (isImageMsg) {
                     if (localBitmap != null) {
                         Image(
                             bitmap             = localBitmap,
@@ -854,6 +1018,37 @@ fun MessageBubble(
         if (!isOut && timeText.isNotEmpty()) {
             Text(timeText, color = timeColor, fontSize = 11.sp,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        }
+    }
+}
+
+@Composable
+fun VoiceWaveform(
+    amplitudes: List<Int>,
+    progress: Float,
+    modifier: Modifier,
+    playedColor: Color,
+    unplayedColor: Color
+) {
+    Canvas(modifier = modifier) {
+        val barWidth = 3.dp.toPx()
+        val spacing = 2.dp.toPx()
+        val maxBars = (size.width / (barWidth + spacing)).toInt()
+
+        val displayAmps = if (amplitudes.size > maxBars) amplitudes.takeLast(maxBars) else amplitudes
+        val startX = 0f
+
+        displayAmps.forEachIndexed { index, amp ->
+            val barHeight = maxOf(4.dp.toPx(), (amp / 9f) * size.height)
+            val x = startX + index * (barWidth + spacing)
+            val isPlayed = (index.toFloat() / displayAmps.size) <= progress
+
+            drawRoundRect(
+                color = if (isPlayed) playedColor else unplayedColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x, (size.height - barHeight) / 2f),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2, barWidth / 2)
+            )
         }
     }
 }

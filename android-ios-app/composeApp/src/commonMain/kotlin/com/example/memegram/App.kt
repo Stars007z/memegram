@@ -41,6 +41,8 @@ import org.koin.dsl.koinConfiguration
 @Serializable object LinkedDevicesRoute
 @Serializable object AddDeviceRoute
 @Serializable object CreateGroupRoute
+@Serializable data class UserProfileRoute(val userId: String, val username: String)
+@Serializable data class GroupProfileRoute(val conversationId: String, val groupName: String)
 
 @Composable
 fun App() {
@@ -131,6 +133,17 @@ fun App() {
                             onBack = {
                                 if (navController.previousBackStackEntry != null)
                                     navController.popBackStack()
+                            },
+                            onProfileClick = {
+                                val isGroup = viewModel.isGroupChat.value
+                                if (isGroup) {
+                                    navController.navigate(GroupProfileRoute(route.conversationId, route.chatName))
+                                } else {
+                                    val peerId = viewModel.peerUserId
+                                    if (peerId != null) {
+                                        navController.navigate(UserProfileRoute(peerId, route.chatName))
+                                    }
+                                }
                             },
                             viewModel = viewModel
                         )
@@ -264,6 +277,52 @@ fun App() {
                                     popUpTo(ChatsRoute)
                                 }
                             }
+                        )
+                    }
+                    composable<GroupProfileRoute> { backStackEntry ->
+                        val route = backStackEntry.toRoute<GroupProfileRoute>()
+                        val viewModel = koinViewModel<GroupProfileViewModel>()
+                        val contactsVm = koinViewModel<ContactsViewModel>()
+
+                        GroupProfileScreen(
+                            topBarColor = topBarColor,
+                            conversationId = route.conversationId,
+                            groupName = route.groupName,
+                            onBack = { navController.popBackStack() },
+                            onLeaveSuccess = {
+                                navController.navigate(ChatsRoute) {
+                                    popUpTo(ChatsRoute) { inclusive = true }
+                                }
+                            },
+                            viewModel = viewModel,
+                            contactsViewModel = contactsVm
+                        )
+                    }
+
+                    composable<UserProfileRoute> { backStackEntry ->
+                        val route = backStackEntry.toRoute<UserProfileRoute>()
+                        val viewModel = koinViewModel<UserProfileViewModel>()
+                        val contactsVm = koinViewModel<ContactsViewModel>()
+
+                        val createdChatId by contactsVm.chatCreated.collectAsState()
+                        LaunchedEffect(createdChatId) {
+                            createdChatId?.let { id ->
+                                contactsVm.clearChatCreated()
+                                navController.navigate(ChatDetailRoute(route.username, id)) {
+                                    popUpTo(ChatsRoute)
+                                }
+                            }
+                        }
+
+                        UserProfileScreen(
+                            topBarColor = topBarColor,
+                            userId = route.userId,
+                            initialUsername = route.username,
+                            onBack = { navController.popBackStack() },
+                            onStartChat = { _ ->
+                                contactsVm.startDirectChatByUserId(route.userId)
+                            },
+                            viewModel = viewModel
                         )
                     }
                 }
