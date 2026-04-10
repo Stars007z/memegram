@@ -72,7 +72,7 @@ class ConversationServiceImpl(IConversationService):
         initiator_member = await self._members.create({
             "conversation_id": conv.id,
             "user_id": initiator_user_id,
-            "role": "member",
+            "role": "owner",
         })
         recipient_member = await self._members.create({
             "conversation_id": conv.id,
@@ -235,6 +235,99 @@ class ConversationServiceImpl(IConversationService):
         await self._stream.publish_event(conversation_id, {
             "event_type": "member_left",
             "user_id": str(user_id),
+        })
+
+        return True
+
+    # ── KickMember ──────────────────────────────────
+
+    async def kick_member(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+    ) -> bool:
+        # Verify caller is an active admin/owner
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only admins can kick members")
+
+        # Cannot kick yourself (use leave instead)
+        if caller_user_id == target_user_id:
+            raise ValueError("INVALID_ARGUMENT: Cannot kick yourself — use leave instead")
+
+        # Verify target is an active member
+        target = await self._members.get_active_member(conversation_id, target_user_id)
+        if not target:
+            raise ValueError("NOT_FOUND: Target user is not an active member")
+
+        # Cannot kick the owner
+        if target.role == "owner":
+            raise ValueError("PERMISSION_DENIED: Cannot kick the group owner")
+
+        # Admins cannot kick other admins (only owner can)
+        if target.role == "admin" and caller.role != "owner":
+            raise ValueError("PERMISSION_DENIED: Only the owner can kick admins")
+
+        # Mark as left
+        await self._members.update(target, {"left_at": datetime.utcnow()})
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "member_kicked",
+            "user_id": str(target_user_id),
+            "kicked_by": str(caller_user_id),
+        })
+
+        return True
+
+    # ── UpdateMemberRole ────────────────────────────
+
+    async def update_member_role(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+        new_role: str,
+    ) -> bool:
+        if new_role not in ("admin", "member"):
+            raise ValueError("INVALID_ARGUMENT: Role must be 'admin' or 'member'")
+
+        # Verify caller is an active admin/owner
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only admins can change roles")
+
+        # Cannot change own role
+        if caller_user_id == target_user_id:
+            raise ValueError("INVALID_ARGUMENT: Cannot change your own role")
+
+        # Verify target is an active member
+        target = await self._members.get_active_member(conversation_id, target_user_id)
+        if not target:
+            raise ValueError("NOT_FOUND: Target user is not an active member")
+
+        # Cannot change owner's role
+        if target.role == "owner":
+            raise ValueError("PERMISSION_DENIED: Cannot change the owner's role")
+
+        # Only owner can demote admins
+        if target.role == "admin" and new_role == "member" and caller.role != "owner":
+            raise ValueError("PERMISSION_DENIED: Only the owner can demote admins")
+
+        # No-op if already that role
+        if target.role == new_role:
+            return True
+
+        await self._members.update_role(conversation_id, target_user_id, new_role)
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "role_changed",
+            "user_id": str(target_user_id),
+            "new_role": new_role,
         })
 
         return True

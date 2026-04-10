@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +28,7 @@ fun PrivacyScreen(
     onAccountDeleted: () -> Unit,
     viewModel: PrivacyViewModel
 ) {
+    val s = LocalStrings.current
     val topBarTextColor       = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
     val profileVisibleTo      by viewModel.profileVisibleTo.collectAsState()
     val lastActiveVisibleTo   by viewModel.lastActiveVisibleTo.collectAsState()
@@ -47,65 +49,69 @@ fun PrivacyScreen(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text  = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
     }
 
     if (showProfileVisDialog) {
         PrivacyChoiceDialog(
-            title   = "Кто видит мой профиль",
-            options = PrivacyViewModel.visibilityOptions,
-            current = PrivacyViewModel.visibilityLabel(profileVisibleTo),
-            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it)); showProfileVisDialog = false },
-            onDismiss = { showProfileVisDialog = false }
+            title   = s.whoSeesProfile,
+            options = PrivacyViewModel.visibilityOptions(s),
+            current = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
+            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showProfileVisDialog = false },
+            onDismiss = { showProfileVisDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showLastActiveVisDialog) {
         PrivacyChoiceDialog(
-            title   = "Кто видит время активности",
-            options = PrivacyViewModel.visibilityOptions,
-            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo),
-            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it)); showLastActiveVisDialog = false },
-            onDismiss = { showLastActiveVisDialog = false }
+            title   = s.whoSeesLastSeen,
+            options = PrivacyViewModel.visibilityOptions(s),
+            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
+            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showLastActiveVisDialog = false },
+            onDismiss = { showLastActiveVisDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showAutoDeleteAccDialog) {
         PrivacyChoiceDialog(
-            title   = "Удалить аккаунт через",
-            options = PrivacyViewModel.autoDeleteOptions,
-            current = PrivacyViewModel.daysLabel(autoDeleteDays),
-            onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it)); showAutoDeleteAccDialog = false },
-            onDismiss = { showAutoDeleteAccDialog = false }
+            title   = s.deleteAccountAfter,
+            options = PrivacyViewModel.autoDeleteOptions(s),
+            current = PrivacyViewModel.daysLabel(autoDeleteDays, s),
+            onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it, s)); showAutoDeleteAccDialog = false },
+            onDismiss = { showAutoDeleteAccDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showAutoDeleteMsgDialog) {
         PrivacyChoiceDialog(
-            title   = "Авто-удаление сообщений",
-            options = listOf("Выкл", "1 день", "1 неделя", "1 месяц"),
-            current = autoDeleteMsgOption ?: "Выкл",
+            title   = s.autoDeleteMessages,
+            options = listOf(s.autoDeleteOff, s.autoDelete1Day, s.autoDelete1Week, s.autoDelete1Month),
+            current = autoDeleteMsgOption ?: s.autoDeleteOff,
             onSelect  = { autoDeleteMsgOption = it; showAutoDeleteMsgDialog = false },
-            onDismiss = { showAutoDeleteMsgDialog = false }
+            onDismiss = { showAutoDeleteMsgDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showDeleteAccountDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteAccountDialog = false },
-            title = { Text("Удалить аккаунт?") },
-            text  = { Text("Это действие необратимо. Все данные будут удалены.") },
+            title = { Text(s.deleteAccountTitle) },
+            text  = { Text(s.deleteAccountWarning) },
             confirmButton = {
                 TextButton(
                     onClick = { showDeleteAccountDialog = false; viewModel.deleteAccount() },
                     colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Удалить") }
+                ) { Text(s.delete) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteAccountDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showDeleteAccountDialog = false }) { Text(s.cancel) }
             }
         )
     }
@@ -113,7 +119,7 @@ fun PrivacyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Конфиденциальность") },
+                title = { Text(s.privacyTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -135,42 +141,42 @@ fun PrivacyScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SectionLabel("Контакты")
+            SectionLabel(s.contactsTitle)
             PrivacyItem(
-                title = "Чёрный список",
-                subtitle = "Управление",
+                title = s.blackList,
+                subtitle = s.manage,
                 accentColor = topBarColor, showArrow = true,
                 onClick = onBlackListClick
             )
 
             Spacer(Modifier.height(4.dp))
 
-            SectionLabel("Приватность")
+            SectionLabel(s.privacySection)
             PrivacyItem(
-                title = "Кто видит мой профиль",
-                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo),
+                title = s.whoSeesProfile,
+                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showProfileVisDialog = true }
             )
             PrivacyItem(
-                title = "Кто видит время активности",
-                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo),
+                title = s.whoSeesLastSeen,
+                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showLastActiveVisDialog = true }
             )
 
             Spacer(Modifier.height(4.dp))
 
-            SectionLabel("Авто-удаление")
+            SectionLabel(s.autoDeleteSection)
             PrivacyItem(
-                title = "Авто-удаление сообщений",
-                subtitle = autoDeleteMsgOption ?: "Выкл",
+                title = s.autoDeleteMessages,
+                subtitle = autoDeleteMsgOption ?: s.autoDeleteOff,
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteMsgDialog = true }
             )
             PrivacyItem(
-                title = "Удалить аккаунт через",
-                subtitle = PrivacyViewModel.daysLabel(autoDeleteDays),
+                title = s.deleteAccountAfter,
+                subtitle = PrivacyViewModel.daysLabel(autoDeleteDays, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteAccDialog = true }
             )
@@ -194,7 +200,7 @@ fun PrivacyScreen(
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
                         Text(
-                            "Удалить аккаунт",
+                            s.deleteAccountAction,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Medium,
                             fontSize = 15.sp
@@ -212,7 +218,8 @@ private fun PrivacyChoiceDialog(
     options: List<String>,
     current: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    cancelLabel: String
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -235,7 +242,7 @@ private fun PrivacyChoiceDialog(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(cancelLabel) } }
     )
 }
 

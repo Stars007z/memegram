@@ -43,7 +43,7 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun getUsername(): String {
-        return settings.getString("profile_username", "Влад")
+        return settings.getString("profile_username", "")
     }
 
     fun getBio(): String {

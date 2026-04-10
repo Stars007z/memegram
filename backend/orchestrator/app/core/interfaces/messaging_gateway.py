@@ -209,6 +209,16 @@ class IMessagingGateway(ABC):
         self, user_id: str, device_id: str, conversation_id: str, commit_data: bytes,
     ) -> bool: ...
 
+    @abstractmethod
+    async def kick_member(
+        self, user_id: str, conversation_id: str, target_user_id: str,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def update_member_role(
+        self, user_id: str, conversation_id: str, target_user_id: str, new_role: str,
+    ) -> bool: ...
+
     # Messages
     @abstractmethod
     async def send_message(

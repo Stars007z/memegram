@@ -20,6 +20,9 @@ from app.api.v1.messaging.schemas import (
     ConversationSummarySchema,
     LeaveConversationRequestSchema,
     LeaveConversationResponseSchema,
+    KickMemberResponseSchema,
+    UpdateMemberRoleRequestSchema,
+    UpdateMemberRoleResponseSchema,
     SendMessageRequestSchema,
     SendMessageResponseSchema,
     MessageEntrySchema,
@@ -237,6 +240,44 @@ async def leave_conversation(
         commit_data=b64_to_bytes(body.commit_data),
     )
     return LeaveConversationResponseSchema(success=success)
+
+
+@router.post(
+    "/conversations/{conversation_id}/members/{target_user_id}/kick",
+    response_model=KickMemberResponseSchema,
+)
+async def kick_member(
+    conversation_id: str,
+    target_user_id: str,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.kick_member(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        target_user_id=target_user_id,
+    )
+    return KickMemberResponseSchema(success=success)
+
+
+@router.patch(
+    "/conversations/{conversation_id}/members/{target_user_id}/role",
+    response_model=UpdateMemberRoleResponseSchema,
+)
+async def update_member_role(
+    conversation_id: str,
+    target_user_id: str,
+    body: UpdateMemberRoleRequestSchema,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.update_member_role(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        target_user_id=target_user_id,
+        new_role=body.new_role,
+    )
+    return UpdateMemberRoleResponseSchema(success=success)
 
 
 # ── Messages ──────────────────────────────────────────────────────────

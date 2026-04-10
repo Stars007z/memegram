@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +28,7 @@ fun BlackListScreen(
     onBack: () -> Unit,
     viewModel: BlackListViewModel
 ) {
+    val s = LocalStrings.current
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val blockedUsers by viewModel.blockedUsers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -37,9 +39,9 @@ fun BlackListScreen(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
     }
 
@@ -49,16 +51,16 @@ fun BlackListScreen(
             ?: "@${userId.take(8)}"
         AlertDialog(
             onDismissRequest = { pendingUnblockId = null },
-            title = { Text("Разблокировать?") },
-            text = { Text("Разблокировать $name?") },
+            title = { Text(s.unblockTitle) },
+            text = { Text(s.unblockMessage(name)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.unblockUser(userId)
                     pendingUnblockId = null
-                }) { Text("Разблокировать") }
+                }) { Text(s.unblockAction) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingUnblockId = null }) { Text("Отмена") }
+                TextButton(onClick = { pendingUnblockId = null }) { Text(s.cancel) }
             }
         )
     }
@@ -66,7 +68,7 @@ fun BlackListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Чёрный список") },
+                title = { Text(s.blackListTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -96,14 +98,14 @@ fun BlackListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Чёрный список пуст",
+                            text = s.blackListEmpty,
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color.Gray,
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "Заблокированные пользователи появятся здесь",
+                            text = s.blockedUsersHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
@@ -119,6 +121,7 @@ fun BlackListScreen(
                                 displayName = entry.profile?.username
                                     ?: (entry.blockedUserId.take(8) + "..."),
                                 accentColor = topBarColor,
+                                unblockLabel = s.unblockAction,
                                 onUnblock = { pendingUnblockId = entry.blockedUserId }
                             )
                             HorizontalDivider(
@@ -137,6 +140,7 @@ fun BlackListScreen(
 private fun BlockedUserItem(
     displayName: String,
     accentColor: Color,
+    unblockLabel: String,
     onUnblock: () -> Unit
 ) {
     Row(
@@ -176,7 +180,7 @@ private fun BlockedUserItem(
                 contentColor = MaterialTheme.colorScheme.error
             )
         ) {
-            Text("Разблокировать", fontSize = 13.sp)
+            Text(unblockLabel, fontSize = 13.sp)
         }
     }
 }

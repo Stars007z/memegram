@@ -317,6 +317,51 @@ messaging-service
 
 ---
 
+#### `KickMember(KickMemberRequest) → KickMemberResponse`
+Администратор удаляет участника из группы (серверная часть — пометка + SSE-событие).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID — удаляемый участник
+
+**Логика:**
+1. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+2. Проверка, что `target_user_id != user_id` (для выхода — используй `LeaveConversation`)
+3. Проверка, что target — active member
+4. Нельзя кикнуть `owner`
+5. Admin может кикнуть только `member`; `owner` может кикнуть и `admin`, и `member`
+6. UPDATE `conversation_members.left_at = now()` для target
+7. Redis PUBLISH событие `member_kicked: { user_id, kicked_by }`
+
+**Возврат:** `success: bool`
+
+> **MLS Remove Commit:** После успешного kick серверная часть только помечает участника как ушедшего. Админ-клиент, получив успешный ответ, создаёт MLS Remove Commit через `removeMemberByIdentity()` и отправляет через `CommitGroupChange`. Это аналогично тому, как другие участники создают Remove Commit при `member_left`.
+
+---
+
+#### `UpdateMemberRole(UpdateMemberRoleRequest) → UpdateMemberRoleResponse`
+Изменение роли участника группы (promote/demote).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID
+- `new_role` string — `"admin"` или `"member"`
+
+**Логика:**
+1. Валидация `new_role` ∈ {`admin`, `member`}
+2. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+3. Нельзя менять собственную роль
+4. Нельзя менять роль `owner`
+5. Только `owner` может снять `admin` → `member` (демоушн)
+6. UPDATE `conversation_members.role = new_role`
+7. Redis PUBLISH событие `role_changed: { user_id, new_role }`
+
+**Возврат:** `success: bool`
+
+---
+
 ### Сообщения
 
 #### `SendMessage(SendMessageRequest) → SendMessageResponse`

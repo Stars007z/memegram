@@ -28,6 +28,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
@@ -42,6 +43,7 @@ fun ProfileScreen(
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val s = LocalStrings.current
     val username      by viewModel.username.collectAsState()
     val bio           by viewModel.bio.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
@@ -68,16 +70,16 @@ fun ProfileScreen(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text  = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Профиль") },
+                title = { Text(s.profileTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -190,7 +192,7 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = usernameInput,
                     onValueChange = { usernameInput = it },
-                    label = { Text("Имя пользователя") },
+                    label = { Text(s.username) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -199,7 +201,7 @@ fun ProfileScreen(
                             TextButton(
                                 onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -207,7 +209,7 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = bioInput,
                     onValueChange = { bioInput = it },
-                    label = { Text("О себе") },
+                    label = { Text(s.aboutMe) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 90.dp),
@@ -218,7 +220,7 @@ fun ProfileScreen(
                             TextButton(
                                 onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -238,7 +240,7 @@ fun ProfileScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(if (keyCopied) "Скопировано!" else "Скопировать мой публичный ключ")
+                        Text(if (keyCopied) s.copied else s.copyMyPublicKey)
                     }
                 }
 
@@ -254,7 +256,7 @@ fun ProfileScreen(
                 ) {
                     Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Выйти из аккаунта")
+                    Text(s.logout)
                 }
 
                 if (isLoading) {

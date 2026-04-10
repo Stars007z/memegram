@@ -16,6 +16,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.gallery.GallerySection
+import com.example.memegram.localization.S
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -130,13 +131,13 @@ fun formatChatTimestamp(timestampMs: Long): String {
         }
         msgDay >= today.minus(6, DateTimeUnit.DAY) -> {
             when (msgLocal.dayOfWeek) {
-                DayOfWeek.MONDAY    -> "Пн"
-                DayOfWeek.TUESDAY   -> "Вт"
-                DayOfWeek.WEDNESDAY -> "Ср"
-                DayOfWeek.THURSDAY  -> "Чт"
-                DayOfWeek.FRIDAY    -> "Пт"
-                DayOfWeek.SATURDAY  -> "Сб"
-                DayOfWeek.SUNDAY    -> "Вс"
+                DayOfWeek.MONDAY    -> S.current.mon
+                DayOfWeek.TUESDAY   -> S.current.tue
+                DayOfWeek.WEDNESDAY -> S.current.wed
+                DayOfWeek.THURSDAY  -> S.current.thu
+                DayOfWeek.FRIDAY    -> S.current.fri
+                DayOfWeek.SATURDAY  -> S.current.sat
+                DayOfWeek.SUNDAY    -> S.current.sun
             }
         }
         msgDay.year == today.year -> {

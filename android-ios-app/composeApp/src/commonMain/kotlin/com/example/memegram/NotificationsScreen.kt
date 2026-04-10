@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.memegram.localization.LocalStrings
 
 sealed class NotifItem {
     data class Category(
@@ -48,27 +48,31 @@ fun NotificationsScreen(
     onBack: () -> Unit,
     viewModel: NotificationsViewModel
 ) {
-    val currentVibrate  by viewModel.vibrate.collectAsState()
-    val currentRingtone by viewModel.ringtone.collectAsState()
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val s = LocalStrings.current
+    val vibrateStrength  by viewModel.vibrateStrength.collectAsState()
+    val ringtoneKey      by viewModel.ringtoneKey.collectAsState()
+    val currentVibrate   = NotificationsViewModel.strengthToLabel(vibrateStrength, s)
+    val currentRingtone  = NotificationsViewModel.ringtoneKeyToLabel(ringtoneKey, s)
+    val topBarTextColor  = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+
     val allData = remember {
         mutableStateListOf<NotifItem>().apply {
-            add(NotifItem.Category(1, "Личные чаты"))
+            add(NotifItem.Category(1, s.privateChats))
             add(NotifItem.Chat(1, "Neko", false))
             add(NotifItem.Chat(1, "Denis", true))
             add(NotifItem.Chat(1, "Ivan Kopylov", false))
-            add(NotifItem.Category(2, "Группы"))
+            add(NotifItem.Category(2, s.groups))
             add(NotifItem.Chat(2, "Kotlin Evil", false))
-            add(NotifItem.Category(3, "Каналы"))
+            add(NotifItem.Category(3, s.channels))
             add(NotifItem.Chat(3, "Meme Channel", false))
             add(NotifItem.CallsSettings)
         }
     }
 
     var muteDialogTarget by remember { mutableStateOf<NotifItem.Chat?>(null) }
-    var muteHoursDialog by remember { mutableStateOf<NotifItem.Chat?>(null) }
-    var muteHoursInput by remember { mutableStateOf("") }
-    var showVibrateDialog by remember { mutableStateOf(false) }
+    var muteHoursDialog  by remember { mutableStateOf<NotifItem.Chat?>(null) }
+    var muteHoursInput   by remember { mutableStateOf("") }
+    var showVibrateDialog  by remember { mutableStateOf(false) }
     var showRingtoneDialog by remember { mutableStateOf(false) }
 
     val displayData = remember(allData.toList()) {
@@ -89,12 +93,14 @@ fun NotificationsScreen(
         list
     }
 
-
     muteDialogTarget?.let { chat ->
+        val enableOption  = s.enableNotifications
+        val disableForever = s.disableForever
+        val disableForTime = s.disableForTime
         val options = if (chat.isMuted)
-            listOf("Включить уведомления")
+            listOf(enableOption)
         else
-            listOf("Отключить навсегда", "Отключить на время...")
+            listOf(disableForever, disableForTime)
 
         AlertDialog(
             onDismissRequest = { muteDialogTarget = null },
@@ -124,7 +130,8 @@ fun NotificationsScreen(
                                     muteDialogTarget = null
                                 }
                                 .padding(vertical = 12.dp),
-                            color = if (option.startsWith("Отключить")) MaterialTheme.colorScheme.error
+                            color = if (option == disableForever || option == disableForTime)
+                                MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.primary
                         )
                         if (idx < options.lastIndex) HorizontalDivider()
@@ -133,7 +140,7 @@ fun NotificationsScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { muteDialogTarget = null }) { Text("Отмена") }
+                TextButton(onClick = { muteDialogTarget = null }) { Text(s.cancel) }
             }
         )
     }
@@ -141,12 +148,12 @@ fun NotificationsScreen(
     muteHoursDialog?.let { chat ->
         AlertDialog(
             onDismissRequest = { muteHoursDialog = null },
-            title = { Text("Отключить на сколько часов?") },
+            title = { Text(s.disableForHowLong) },
             text = {
                 OutlinedTextField(
                     value = muteHoursInput,
                     onValueChange = { muteHoursInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Часы") },
+                    label = { Text(s.hours) },
                     singleLine = true
                 )
             },
@@ -163,19 +170,19 @@ fun NotificationsScreen(
                     }
                     muteHoursInput = ""
                     muteHoursDialog = null
-                }) { Text("Отключить") }
+                }) { Text(s.disable) }
             },
             dismissButton = {
-                TextButton(onClick = { muteHoursDialog = null }) { Text("Отмена") }
+                TextButton(onClick = { muteHoursDialog = null }) { Text(s.cancel) }
             }
         )
     }
 
     if (showVibrateDialog) {
-        val options = NotificationsViewModel.vibrateOptions
+        val options = NotificationsViewModel.vibrateOptions(s)
         AlertDialog(
             onDismissRequest = { showVibrateDialog = false },
-            title = { Text("Вибрация для звонков") },
+            title = { Text(s.vibrationForCalls) },
             text = {
                 Column {
                     options.forEach { opt ->
@@ -183,7 +190,9 @@ fun NotificationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    viewModel.setVibrate(opt)
+                                    viewModel.setVibrateStrength(
+                                        NotificationsViewModel.labelToStrength(opt, s)
+                                    )
                                     showVibrateDialog = false
                                 }
                                 .padding(vertical = 10.dp),
@@ -191,7 +200,12 @@ fun NotificationsScreen(
                         ) {
                             RadioButton(
                                 selected = currentVibrate == opt,
-                                onClick = { viewModel.setVibrate(opt); showVibrateDialog = false }
+                                onClick = {
+                                    viewModel.setVibrateStrength(
+                                        NotificationsViewModel.labelToStrength(opt, s)
+                                    )
+                                    showVibrateDialog = false
+                                }
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(opt)
@@ -201,16 +215,16 @@ fun NotificationsScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showVibrateDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showVibrateDialog = false }) { Text(s.cancel) }
             }
         )
     }
 
     if (showRingtoneDialog) {
-        val options = NotificationsViewModel.ringtoneOptions
+        val options = NotificationsViewModel.ringtoneOptions(s)
         AlertDialog(
             onDismissRequest = { showRingtoneDialog = false },
-            title = { Text("Мелодия звонка") },
+            title = { Text(s.ringtone) },
             text = {
                 Column {
                     options.forEach { opt ->
@@ -218,7 +232,9 @@ fun NotificationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    viewModel.setRingtone(opt)
+                                    viewModel.setRingtoneKey(
+                                        NotificationsViewModel.ringtoneLabelToKey(opt, s)
+                                    )
                                     showRingtoneDialog = false
                                 }
                                 .padding(vertical = 10.dp),
@@ -226,7 +242,12 @@ fun NotificationsScreen(
                         ) {
                             RadioButton(
                                 selected = currentRingtone == opt,
-                                onClick = { viewModel.setRingtone(opt); showRingtoneDialog = false }
+                                onClick = {
+                                    viewModel.setRingtoneKey(
+                                        NotificationsViewModel.ringtoneLabelToKey(opt, s)
+                                    )
+                                    showRingtoneDialog = false
+                                }
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(opt)
@@ -236,16 +257,15 @@ fun NotificationsScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showRingtoneDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showRingtoneDialog = false }) { Text(s.cancel) }
             }
         )
     }
 
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Уведомления") },
+                title = { Text(s.notificationsTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -301,6 +321,8 @@ fun NotificationsScreen(
                     is NotifItem.Chat -> ChatNotifItem(
                         chat = item,
                         accentColor = topBarColor,
+                        disabledLabel = s.disabled,
+                        enabledLabel = s.enabled,
                         onClick = { muteDialogTarget = item }
                     )
 
@@ -308,6 +330,9 @@ fun NotificationsScreen(
                         accentColor = topBarColor,
                         vibrate = currentVibrate,
                         ringtone = currentRingtone,
+                        callsSectionLabel = s.callsSection,
+                        vibrationLabel = s.vibration,
+                        ringtoneLabel = s.ringtone,
                         onVibrateClick = { showVibrateDialog = true },
                         onRingtoneClick = { showRingtoneDialog = true }
                     )
@@ -361,10 +386,12 @@ private fun CategoryItem(
 private fun ChatNotifItem(
     chat: NotifItem.Chat,
     accentColor: Color,
+    disabledLabel: String,
+    enabledLabel: String,
     onClick: () -> Unit
 ) {
     val indicatorColor = if (chat.isMuted) Color(0xFFFF3B30) else accentColor
-    val statusText = if (chat.isMuted) "Отключено" else "Включено"
+    val statusText = if (chat.isMuted) disabledLabel else enabledLabel
 
     Surface(
         modifier = Modifier
@@ -407,12 +434,15 @@ private fun CallsSettingsBlock(
     accentColor: Color,
     vibrate: String,
     ringtone: String,
+    callsSectionLabel: String,
+    vibrationLabel: String,
+    ringtoneLabel: String,
     onVibrateClick: () -> Unit,
     onRingtoneClick: () -> Unit
 ) {
     Column(modifier = Modifier.padding(top = 20.dp)) {
         Text(
-            text = "ЗВОНКИ",
+            text = callsSectionLabel,
             fontSize = 12.sp,
             color = Color(0xFF8E8E93),
             fontWeight = FontWeight.Bold,
@@ -432,7 +462,7 @@ private fun CallsSettingsBlock(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Вибрация", fontSize = 15.sp)
+                    Text(vibrationLabel, fontSize = 15.sp)
                     Text(
                         text = vibrate,
                         color = accentColor,
@@ -450,7 +480,7 @@ private fun CallsSettingsBlock(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Мелодия звонка", fontSize = 15.sp)
+                    Text(ringtoneLabel, fontSize = 15.sp)
                     Text(
                         text = ringtone,
                         color = accentColor,

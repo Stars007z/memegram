@@ -109,6 +109,18 @@ class LeaveConversationResponseSchema(BaseModel):
     success: bool
 
 
+class KickMemberResponseSchema(BaseModel):
+    success: bool
+
+
+class UpdateMemberRoleRequestSchema(BaseModel):
+    new_role: str = Field(..., pattern=r"^(admin|member)$", description="'admin' or 'member'")
+
+
+class UpdateMemberRoleResponseSchema(BaseModel):
+    success: bool
+
+
 # ── Messages ──────────────────────────────────────────────────────────
 
 class SendMessageRequestSchema(BaseModel):

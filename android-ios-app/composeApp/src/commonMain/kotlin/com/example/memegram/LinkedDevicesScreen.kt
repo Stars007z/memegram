@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
+import com.example.memegram.localization.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +41,7 @@ fun LinkedDevicesScreen(
     onNavigateToScanQr: () -> Unit,
     vm: LinkedDevicesViewModel = koinViewModel()
 ) {
+    val s = LocalStrings.current
     val devices        by vm.devices.collectAsState()
     val pending        by vm.pendingAdditions.collectAsState()
     val qrPayload      by vm.qrPayload.collectAsState()
@@ -64,15 +66,15 @@ fun LinkedDevicesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Связанные устройства") },
+                title = { Text(s.linkedDevicesTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = s.back)
                     }
                 },
                 actions = {
                     IconButton(onClick = { vm.load() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Обновить")
+                        Icon(Icons.Default.Refresh, contentDescription = s.refresh)
                     }
                 }
             )
@@ -90,7 +92,7 @@ fun LinkedDevicesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ── Добавить устройство ────────────────────────────────
+            // ── Add device ────────────────────────────────────────────
             item {
                 Button(
                     onClick = { vm.initAddDevice() },
@@ -99,15 +101,15 @@ fun LinkedDevicesScreen(
                 ) {
                     Icon(Icons.Default.QrCode, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Добавить устройство по QR")
+                    Text(s.addDeviceByQr)
                 }
             }
 
-            // ── Ожидающие подтверждения ───────────────────────────
+            // ── Pending confirmation ──────────────────────────────────
             if (pending.isNotEmpty()) {
                 item {
                     Text(
-                        "Ожидают подтверждения",
+                        s.pendingConfirmation,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -116,16 +118,18 @@ fun LinkedDevicesScreen(
                 items(pending) { reg ->
                     PendingDeviceCard(
                         registration = reg,
+                        declineLabel = s.decline,
+                        allowLabel = s.allow,
                         onConfirm  = { vm.confirmAddition(reg.registrationId, true) },
                         onReject   = { vm.confirmAddition(reg.registrationId, false) }
                     )
                 }
             }
 
-            // ── Список устройств ──────────────────────────────────
+            // ── Device list ───────────────────────────────────────────
             item {
                 Text(
-                    "Мои устройства",
+                    s.myDevices,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 4.dp)
@@ -134,16 +138,28 @@ fun LinkedDevicesScreen(
             items(devices) { device ->
                 DeviceCard(
                     device   = device,
+                    thisDeviceLabel = s.thisDevice,
+                    revokedLabel = s.revoked,
+                    revokeLabel = s.revoke,
+                    revokeTitle = s.revokeDeviceTitle,
+                    revokeMessage = s.revokeDeviceMessage(device.name),
+                    cancelLabel = s.cancel,
                     onRevoke = { if (!device.isCurrentDevice) vm.revokeDevice(device.serverId) }
                 )
             }
         }
     }
 
-    // ── QR диалог ─────────────────────────────────────────────────
+    // ── QR dialog ─────────────────────────────────────────────────────
     qrPayload?.let { payload ->
         QrDialog(
             payload = payload,
+            addDeviceLabel = s.addDevice,
+            copyCodeHint = s.copyCodeHint,
+            copyCodeLabel = s.copyCode,
+            codeCopiedLabel = s.codeCopied,
+            scanQrInsteadLabel = s.scanQrInstead,
+            closeLabel = s.close,
             onDismiss = { vm.clearQr() },
             onNavigateToScan = {
                 vm.clearQr()
@@ -154,7 +170,16 @@ fun LinkedDevicesScreen(
 }
 
 @Composable
-private fun DeviceCard(device: DeviceUiModel, onRevoke: () -> Unit) {
+private fun DeviceCard(
+    device: DeviceUiModel,
+    thisDeviceLabel: String,
+    revokedLabel: String,
+    revokeLabel: String,
+    revokeTitle: String,
+    revokeMessage: String,
+    cancelLabel: String,
+    onRevoke: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(12.dp),
@@ -183,7 +208,7 @@ private fun DeviceCard(device: DeviceUiModel, onRevoke: () -> Unit) {
                     Text(device.name, fontWeight = FontWeight.SemiBold)
                     if (device.isCurrentDevice) {
                         Spacer(Modifier.width(6.dp))
-                        Badge { Text("это устройство") }
+                        Badge { Text(thisDeviceLabel) }
                     }
                 }
                 Text(
@@ -193,7 +218,7 @@ private fun DeviceCard(device: DeviceUiModel, onRevoke: () -> Unit) {
                 )
                 if (!device.isActive) {
                     Text(
-                        "Отозвано",
+                        revokedLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -204,22 +229,22 @@ private fun DeviceCard(device: DeviceUiModel, onRevoke: () -> Unit) {
                 IconButton(onClick = { showConfirm = true }) {
                     Icon(
                         Icons.Default.DeleteOutline,
-                        contentDescription = "Отозвать",
+                        contentDescription = revokeLabel,
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
                 if (showConfirm) {
                     AlertDialog(
                         onDismissRequest = { showConfirm = false },
-                        title   = { Text("Отозвать устройство?") },
-                        text    = { Text("'${device.name}' будет удалено из вашего аккаунта.") },
+                        title   = { Text(revokeTitle) },
+                        text    = { Text(revokeMessage) },
                         confirmButton = {
                             TextButton(onClick = { showConfirm = false; onRevoke() }) {
-                                Text("Отозвать", color = MaterialTheme.colorScheme.error)
+                                Text(revokeLabel, color = MaterialTheme.colorScheme.error)
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showConfirm = false }) { Text("Отмена") }
+                            TextButton(onClick = { showConfirm = false }) { Text(cancelLabel) }
                         }
                     )
                 }
@@ -231,6 +256,8 @@ private fun DeviceCard(device: DeviceUiModel, onRevoke: () -> Unit) {
 @Composable
 private fun PendingDeviceCard(
     registration: PendingDeviceRegistration,
+    declineLabel: String,
+    allowLabel: String,
     onConfirm: () -> Unit,
     onReject: () -> Unit
 ) {
@@ -264,9 +291,9 @@ private fun PendingDeviceCard(
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
-                ) { Text("Отклонить") }
+                ) { Text(declineLabel) }
                 Button(onClick = onConfirm, modifier = Modifier.weight(1f)) {
-                    Text("Разрешить")
+                    Text(allowLabel)
                 }
             }
         }
@@ -274,7 +301,17 @@ private fun PendingDeviceCard(
 }
 
 @Composable
-private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: () -> Unit) {
+private fun QrDialog(
+    payload: String,
+    addDeviceLabel: String,
+    copyCodeHint: String,
+    copyCodeLabel: String,
+    codeCopiedLabel: String,
+    scanQrInsteadLabel: String,
+    closeLabel: String,
+    onDismiss: () -> Unit,
+    onNavigateToScan: () -> Unit
+) {
     val clipboardManager = LocalClipboardManager.current
     var codeCopied by remember { mutableStateOf(false) }
 
@@ -295,12 +332,12 @@ private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: (
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Добавить устройство", style = MaterialTheme.typography.titleMedium)
+                Text(addDeviceLabel, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(16.dp))
 
                 Image(
                     painter = rememberQrCodePainter(payload),
-                    contentDescription = "QR-код для добавления устройства",
+                    contentDescription = addDeviceLabel,
                     modifier = Modifier
                         .size(220.dp)
                         .background(Color.White, RoundedCornerShape(8.dp))
@@ -313,7 +350,7 @@ private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: (
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    "Или скопируйте код и вставьте его на новом устройстве",
+                    copyCodeHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -348,7 +385,7 @@ private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: (
                         Icon(
                             imageVector = if (codeCopied) Icons.Default.Check
                             else Icons.Default.ContentCopy,
-                            contentDescription = "Скопировать код",
+                            contentDescription = copyCodeLabel,
                             tint = if (codeCopied) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -358,7 +395,7 @@ private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: (
 
                 AnimatedVisibility(visible = codeCopied) {
                     Text(
-                        "✓ Скопировано",
+                        codeCopiedLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp)
@@ -367,9 +404,9 @@ private fun QrDialog(payload: String, onDismiss: () -> Unit, onNavigateToScan: (
 
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onNavigateToScan) {
-                    Text("Хочу отсканировать QR вместо этого")
+                    Text(scanQrInsteadLabel)
                 }
-                TextButton(onClick = onDismiss) { Text("Закрыть") }
+                TextButton(onClick = onDismiss) { Text(closeLabel) }
             }
         }
     }

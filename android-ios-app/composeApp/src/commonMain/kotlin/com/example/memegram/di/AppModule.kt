@@ -15,6 +15,7 @@ import com.example.memegram.data.repository.ContactsRepositoryImpl
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
 import com.example.memegram.database.AppDatabase
+import com.example.memegram.audio.GlobalAudioPlayer
 import com.example.memegram.mls.MlsManager
 import com.russhwolf.settings.Settings
 import org.koin.core.module.dsl.viewModelOf
@@ -40,6 +41,7 @@ val appModule = module {
     single<SqlDriver> { createDatabaseDriver() }
     single { AppDatabase(get()) }
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
+    single { GlobalAudioPlayer() }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)

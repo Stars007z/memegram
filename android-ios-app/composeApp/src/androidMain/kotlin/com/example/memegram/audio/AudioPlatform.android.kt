@@ -133,11 +133,10 @@ class AudioPlayerAndroid : AudioPlayer {
     }
 
     override fun stop() {
-        onCompletionCallback?.invoke()
         onCompletionCallback = null
 
-        player?.stop()
-        player?.release()
+        try { player?.stop() } catch (_: Exception) {}
+        try { player?.release() } catch (_: Exception) {}
         player = null
         tempFile?.delete()
         isPausedState = false
@@ -147,8 +146,25 @@ class AudioPlayerAndroid : AudioPlayer {
     override fun isPaused(): Boolean = isPausedState
 
     override fun getProgress(): Float {
-        val p = player ?: return 0f
-        if (p.duration == 0) return 0f
-        return (p.currentPosition.toFloat() / p.duration.toFloat()).coerceIn(0f, 1f)
+        return try {
+            val p = player ?: return 0f
+            if (p.duration == 0) return 0f
+            (p.currentPosition.toFloat() / p.duration.toFloat()).coerceIn(0f, 1f)
+        } catch (_: IllegalStateException) { 0f }
+    }
+
+    override fun getDurationMs(): Long {
+        return try {
+            val p = player ?: return 0L
+            p.duration.toLong()
+        } catch (_: IllegalStateException) { 0L }
+    }
+
+    override fun seekTo(fraction: Float) {
+        try {
+            val p = player ?: return
+            val target = (fraction.coerceIn(0f, 1f) * p.duration).toInt()
+            p.seekTo(target)
+        } catch (_: IllegalStateException) { }
     }
 }

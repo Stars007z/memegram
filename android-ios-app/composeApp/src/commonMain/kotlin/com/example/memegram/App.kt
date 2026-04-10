@@ -6,6 +6,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +19,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.memegram.di.appModule
+import com.example.memegram.localization.EnStrings
+import com.example.memegram.localization.LocalStrings
+import com.example.memegram.localization.RuStrings
+import com.example.memegram.localization.S
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import kotlinx.serialization.Serializable
 import org.koin.compose.KoinApplication
@@ -55,6 +60,12 @@ fun App() {
         val themeViewModel = koinViewModel<ThemeViewModel>()
         val topBarColor by themeViewModel.topBarColor.collectAsState()
 
+        val languageViewModel = koinViewModel<LanguageViewModel>()
+        val currentLang by languageViewModel.currentLang.collectAsState()
+        val strings = if (currentLang == "ru") RuStrings else EnStrings
+        LaunchedEffect(strings) { S.current = strings }
+
+        CompositionLocalProvider(LocalStrings provides strings) {
         MaterialTheme {
             Surface {
                 val navController = rememberNavController()
@@ -76,7 +87,8 @@ fun App() {
                             onAddDevice = {
                                 navController.navigate(AddDeviceRoute)
                             },
-                            viewModel = viewModel
+                            viewModel = viewModel,
+                            languageViewModel = languageViewModel
                         )
                     }
                     composable<ChatsRoute> {
@@ -95,7 +107,7 @@ fun App() {
                             onNavigateToChat = { convId ->
                                 navController.navigate(
                                     ChatDetailRoute(
-                                        chatName = "Новый чат",
+                                        chatName = strings.newChat,
                                         conversationId = convId
                                     )
                                 )
@@ -273,7 +285,7 @@ fun App() {
                         CreateGroupScreen(
                             onBack = { navController.popBackStack() },
                             onGroupCreated = { chatId ->
-                                navController.navigate(ChatDetailRoute("Группа", chatId)) {
+                                navController.navigate(ChatDetailRoute(strings.groupDefault, chatId)) {
                                     popUpTo(ChatsRoute)
                                 }
                             }
@@ -292,6 +304,11 @@ fun App() {
                             onLeaveSuccess = {
                                 navController.navigate(ChatsRoute) {
                                     popUpTo(ChatsRoute) { inclusive = true }
+                                }
+                            },
+                            onNavigateToChat = { convId, chatName ->
+                                navController.navigate(ChatDetailRoute(chatName, convId)) {
+                                    popUpTo(ChatsRoute)
                                 }
                             },
                             viewModel = viewModel,
@@ -328,5 +345,6 @@ fun App() {
                 }
             }
         }
+        } // CompositionLocalProvider
     }
 }

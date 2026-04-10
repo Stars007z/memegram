@@ -132,6 +132,16 @@ class MlsServiceImpl(IMlsService):
         if not mls_group:
             raise ValueError("NOT_FOUND: MLS group not found")
 
+        # Role check: only admins/owners may add or remove members
+        if added_user_ids or removed_device_ids:
+            has_admin = await self._members.has_role(
+                conversation_id, user_id, ["owner", "admin"],
+            )
+            if not has_admin:
+                raise ValueError(
+                    "PERMISSION_DENIED: Only admins can add or remove members"
+                )
+
         if mls_group.current_epoch + 1 != new_epoch:
             raise ValueError("ABORTED: Epoch conflict — expected "
                              f"{mls_group.current_epoch + 1}, got {new_epoch}")

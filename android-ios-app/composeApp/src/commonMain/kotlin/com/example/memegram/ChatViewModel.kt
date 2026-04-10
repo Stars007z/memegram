@@ -4,7 +4,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.audio.AudioRecordResult
-import com.example.memegram.audio.createAudioPlayer
 import com.example.memegram.audio.createAudioRecorder
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
@@ -17,6 +16,7 @@ import com.example.memegram.data.gallery.guessMimeType
 import com.example.memegram.data.gallery.readUploadBytes
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
+import com.example.memegram.localization.S
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -66,7 +66,6 @@ class ChatViewModel(
         private set
 
     val audioRecorder = createAudioRecorder()
-    val audioPlayer = createAudioPlayer()
     private var myUserId: String? = null
     private var myDeviceId: String? = null
     private var typingJob: Job? = null
@@ -85,6 +84,14 @@ class ChatViewModel(
 
     private val _voiceDurationMs = MutableStateFlow(0L)
     val voiceDurationMs: StateFlow<Long> = _voiceDurationMs.asStateFlow()
+
+    /** The message being replied to (Telegram-style reply bar). */
+    private val _replyingTo = MutableStateFlow<Message?>(null)
+    val replyingTo: StateFlow<Message?> = _replyingTo.asStateFlow()
+
+    /** Map messageServerId → replyToServerId, populated from server data. */
+    private val _replyContext = MutableStateFlow<Map<String, String>>(emptyMap())
+    val replyContext: StateFlow<Map<String, String>> = _replyContext.asStateFlow()
 
     private var recordTimerJob: Job? = null
     private var rawAmplitudes = mutableListOf<Int>()
@@ -131,7 +138,7 @@ class ChatViewModel(
 
             val mlsReady = syncMlsPending(conversationId)
             if (!mlsReady) {
-                _error.value = "MLS не готов для этого чата"
+                _error.value = S.current.mlsNotReady
                 return@launch
             }
 
@@ -150,18 +157,22 @@ class ChatViewModel(
             decryptMutex.withLock {
                 val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
                 val newSenders = mutableMapOf<String, String>()
+                val newReplyCtx = mutableMapOf<String, String>()
 
                 val uiMessages = sortedMessages.map { msg ->
                     val existing = existingLocalMessages.find { it.serverId == msg.id }
                     val isSentByMe = msg.effectiveSenderId == myId
                     newSenders[msg.id] = msg.effectiveSenderId
+                    if (!msg.replyToMessageId.isNullOrBlank()) {
+                        newReplyCtx[msg.id] = msg.replyToMessageId
+                    }
 
                     val text = when {
                         existing != null && !existing.text.startsWith("🔒") && (existing.text.isNotBlank() || existing.type != "text") -> existing.text
                         else -> try {
-                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: "🔒 [Зашифровано]"
+                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: S.current.encrypted
                         } catch (_: Exception) {
-                            if (isSentByMe) "🔒 [Отправлено с другого устройства]" else "🔒 [Ошибка расшифровки]"
+                            if (isSentByMe) S.current.sentFromOtherDevice else S.current.decryptionError
                         }
                     }
 
@@ -180,12 +191,13 @@ class ChatViewModel(
                 }
 
                 _messageSenders.update { it + newSenders }
+                _replyContext.update { it + newReplyCtx }
                 chatRepository.saveMessages(uiMessages, conversationId)
                 mlsManager.flushState()
             }
         } catch (e: Exception) {
             println("MemegramDebug: Ошибка в loadMessages: ${e.message}")
-            _error.value = "Ошибка загрузки: ${e.message}"
+            _error.value = S.current.loadError(e.message ?: "")
         } finally {
             _isLoading.value = false
         }
@@ -227,6 +239,9 @@ class ChatViewModel(
                 data.senderUserId?.let { senderId ->
                     _messageSenders.update { it + (msgId to senderId) }
                 }
+                if (!data.replyToMessageId.isNullOrBlank()) {
+                    _replyContext.update { it + (msgId to data.replyToMessageId) }
+                }
                 decryptAndSave(
                     convId        = convId,
                     msgId         = msgId,
@@ -252,12 +267,51 @@ class ChatViewModel(
                 val msgId = data.messageId ?: return
                 val existing = _messages.value.find { it.serverId == msgId }
                 if (existing != null) {
-                    chatRepository.saveMessage(existing.copy(text = "🗑 Сообщение удалено"), convId)
+                    chatRepository.saveMessage(existing.copy(text = S.current.messageDeletedEmoji), convId)
                 }
             }
 
             "epoch_changed" -> syncMlsPending(convId)
+
+            "member_left" -> {
+                val userId = data.userId ?: return
+                val profile = _memberProfiles.value[userId]
+                val name = profile?.username ?: S.current.member
+                insertSystemMessage(convId, S.current.leftGroup(name))
+            }
+
+            "member_kicked" -> {
+                val userId = data.userId ?: return
+                val kickedByUserId = data.kickedBy
+                val profile = _memberProfiles.value[userId]
+                var kickerProfile = kickedByUserId?.let { _memberProfiles.value[it] }
+                if (kickerProfile == null && kickedByUserId != null) {
+                    kickerProfile = try {
+                        val fetched = api.getUserById(kickedByUserId)
+                        _memberProfiles.update { it + (kickedByUserId to fetched) }
+                        fetched
+                    } catch (_: Exception) { null }
+                }
+                val kickedName = profile?.username ?: S.current.member
+                val kickerName = kickerProfile?.username ?: S.current.admin
+                insertSystemMessage(convId, S.current.removedFromGroup(kickerName, kickedName))
+            }
         }
+    }
+
+    // ───────────────────────── System messages ────────────────────────────
+
+    private suspend fun insertSystemMessage(convId: String, text: String) {
+        val systemMsg = Message(
+            id = text.hashCode() + Clock.System.now().toEpochMilliseconds().toInt(),
+            serverId = "system_${Clock.System.now().toEpochMilliseconds()}",
+            text = text,
+            isOutgoing = false,
+            timestamp = Clock.System.now().toEpochMilliseconds(),
+            status = MessageStatus.SENT,
+            type = "system"
+        )
+        chatRepository.saveMessage(systemMsg, convId)
     }
 
     // ───────────────────────── Polling fallback ─────────────────────────
@@ -288,8 +342,12 @@ class ChatViewModel(
             println("MemegramDebug [Poll]: найдено ${newMessages.size} новых сообщений")
 
             val newSenders = mutableMapOf<String, String>()
+            val newReplyCtx = mutableMapOf<String, String>()
             for (msg in newMessages) {
                 newSenders[msg.id] = msg.effectiveSenderId
+                if (!msg.replyToMessageId.isNullOrBlank()) {
+                    newReplyCtx[msg.id] = msg.replyToMessageId
+                }
                 decryptAndSave(
                     convId        = conversationId,
                     msgId         = msg.id,
@@ -299,6 +357,9 @@ class ChatViewModel(
                 )
             }
             _messageSenders.update { it + newSenders }
+            if (newReplyCtx.isNotEmpty()) {
+                _replyContext.update { it + newReplyCtx }
+            }
         } catch (_: Exception) { }
     }
 
@@ -420,6 +481,9 @@ class ChatViewModel(
 
     private suspend fun sendTextMessageInternal(convId: String, text: String) {
         val now = Clock.System.now().toEpochMilliseconds()
+        val replyTo = _replyingTo.value
+        _replyingTo.value = null
+
         val tempMsg = Message(
             id = now.hashCode(), text = text, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING, type = "text"
@@ -428,7 +492,7 @@ class ChatViewModel(
 
         try {
             if (!mlsManager.hasGroup(convId)) {
-                chatRepository.saveMessage(tempMsg.copy(text = "⚠️ Шифрование не готово", status = MessageStatus.FAILED), convId)
+                chatRepository.saveMessage(tempMsg.copy(text = S.current.encryptionNotReady, status = MessageStatus.FAILED), convId)
                 return
             }
             val ciphertextB64 = mlsManager.encrypt(convId, text)
@@ -438,21 +502,26 @@ class ChatViewModel(
                 request = SendMessageRequest(
                     mlsCiphertextB64 = ciphertextB64,
                     type = "text",
-                    clientMessageId = generateUuid()
+                    clientMessageId = generateUuid(),
+                    replyToMessageId = replyTo?.serverId
                 )
             )
-            chatRepository.saveMessage(
-                tempMsg.copy(serverId = response.messageId, status = MessageStatus.SENT), convId
-            )
+            val sentMsg = tempMsg.copy(serverId = response.messageId, status = MessageStatus.SENT)
+            chatRepository.saveMessage(sentMsg, convId)
+            if (replyTo != null && replyTo.serverId.isNotBlank()) {
+                _replyContext.update { it + (response.messageId to replyTo.serverId) }
+            }
         } catch (e: Exception) {
             chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
-            _error.value = "Ошибка отправки: ${e.message}"
+            _error.value = S.current.sendError(e.message ?: "")
         }
     }
 
     private suspend fun sendPhotoMessageInternal(convId: String, item: AttachItem, caption: String = "") {
         val now = Clock.System.now().toEpochMilliseconds()
         val previewBytes = runCatching { item.readUploadBytes() }.getOrNull()
+        val replyTo = _replyingTo.value
+        _replyingTo.value = null
 
         val tempMsg = Message(
             id = now.hashCode(), text = caption, isOutgoing = true,
@@ -463,7 +532,7 @@ class ChatViewModel(
 
         try {
             if (!mlsManager.hasGroup(convId)) {
-                chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = "⚠️ Шифрование не готово"), convId)
+                chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = S.current.encryptionNotReady), convId)
                 return
             }
 
@@ -492,7 +561,8 @@ class ChatViewModel(
                     mlsCiphertextB64 = ciphertextB64,
                     type             = "image",
                     clientMessageId  = generateUuid(),
-                    mediaId          = initResp.mediaId
+                    mediaId          = initResp.mediaId,
+                    replyToMessageId = replyTo?.serverId
                 )
             )
 
@@ -506,12 +576,15 @@ class ChatViewModel(
                 ),
                 convId
             )
+            if (replyTo != null && replyTo.serverId.isNotBlank()) {
+                _replyContext.update { it + (response.messageId to replyTo.serverId) }
+            }
         } catch (e: Exception) {
             println("MemegramDebug [Photo] ❌ FATAL: ${e::class.simpleName}: ${e.message}")
             chatRepository.saveMessage(
-                tempMsg.copy(status = MessageStatus.FAILED, text = "❌ Ошибка отправки фото"), convId
+                tempMsg.copy(status = MessageStatus.FAILED, text = S.current.photoSendError), convId
             )
-            _error.value = "Ошибка отправки фото: ${e.message}"
+            _error.value = S.current.photoSendErrorDetail(e.message ?: "")
         }
     }
 
@@ -532,7 +605,7 @@ class ChatViewModel(
 
             try {
                 if (!mlsManager.hasGroup(convId)) {
-                    chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = "⚠️ Шифрование не готово"), convId)
+                    chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = S.current.encryptionNotReady), convId)
                     return@launch
                 }
 
@@ -580,7 +653,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 println("MemegramDebug [Voice]: 🚨 КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ: ${e.message}")
                 chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
-                _error.value = "Ошибка отправки голосового: ${e.message}"
+                _error.value = S.current.voiceSendError(e.message ?: "")
             }
         }
     }
@@ -707,6 +780,25 @@ class ChatViewModel(
     fun clearMessages() {
         val convId = currentConversationId ?: return
         viewModelScope.launch { chatRepository.deleteMessages(convId) }
+    }
+
+    fun setReplyTo(message: Message?) { _replyingTo.value = message }
+    fun clearReply() { _replyingTo.value = null }
+
+    fun deleteMessage(message: Message) {
+        val convId = currentConversationId ?: return
+        if (message.serverId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                api.deleteMessage(message.serverId, deleteForEveryone = true)
+                chatRepository.saveMessage(
+                    message.copy(text = S.current.messageDeleted, type = "text", mediaId = null),
+                    convId
+                )
+            } catch (e: Exception) {
+                _error.value = S.current.deleteError(e.message ?: "")
+            }
+        }
     }
 
     private fun parseMlsPayload(payload: String): Triple<String, String, String> {
