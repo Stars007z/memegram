@@ -228,24 +228,8 @@ class ConversationServiceImpl(IConversationService):
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
 
-        mls_group = await self._mls_groups.get_by_conversation_id(conversation_id)
-        if mls_group:
-            new_epoch = mls_group.current_epoch + 1
-            
-            await self._commits.create({
-                "conversation_id": conversation_id,
-                "sender_device_id": device_id,
-                "epoch": new_epoch,
-                "commit_data": commit_data,
-            })
-            
-            await self._mls_groups.update(mls_group, {"current_epoch": new_epoch})
-            
-            await self._stream.publish_event(conversation_id, {
-                "event_type": "epoch_changed",
-                "new_epoch": new_epoch,
-            })
-
+        # Mark the member as left (no MLS epoch change here —
+        # a remaining member will create the Remove Commit per RFC 9420 §12.2).
         await self._members.update(member, {"left_at": datetime.utcnow()})
 
         await self._stream.publish_event(conversation_id, {

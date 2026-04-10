@@ -302,7 +302,7 @@ class ChatViewModel(
         } catch (_: Exception) { }
     }
 
-    // ───────────────────────── Общая логика расшифровки ─────────────────────────
+    // ───────────────────────── General logic of decryption ─────────────────────────
 
     private suspend fun decryptAndSave(
         convId: String,
@@ -358,17 +358,13 @@ class ChatViewModel(
         }
 
         try {
-            // 🔥 ЕСЛИ ТОЛЬКО ЧТО ЗАШЛИ ПО WELCOME:
             if (justProcessedWelcome) {
-                // processWelcome уже установил правильную MLS-эпоху.
-                // Синхронизируем metadata с реальной эпохой из OpenMLS.
                 val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
                 mlsManager.updateGroupEpoch(conversationId, realEpoch)
                 println("MemegramDebug [Welcome]: Синхронизирована metadata-эпоха с реальной MLS = $realEpoch")
-                return true // Исторические коммиты применять не нужно!
+                return true
             }
 
-            // 🔥 ОБЫЧНЫЙ ФЛОУ (мы уже были в группе):
             val localEpoch = mlsManager.getGroupEpoch(conversationId)
             val commits = api.getPendingCommits(conversationId, localEpoch)
             val newCommits = commits.filter { it.epoch > localEpoch }

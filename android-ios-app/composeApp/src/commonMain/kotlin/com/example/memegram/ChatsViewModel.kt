@@ -3,6 +3,7 @@ package com.example.memegram
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.models.CommitGroupChangeRequest
 import com.example.memegram.data.models.LogoutRequest
 import com.example.memegram.data.models.SseEvent
 import com.example.memegram.data.network.ApiService
@@ -54,7 +55,7 @@ class ChatsViewModel(
             initMls()
             loadChatsInternal()
             startPolling()
-            startGlobalMlsSync() // Запускаем фоновый пылесос коммитов
+            startGlobalMlsSync()
         }
     }
 
@@ -163,7 +164,6 @@ class ChatsViewModel(
                     mlsManager.processWelcome(w.conversationId, w.welcomeDataB64)
                     api.ackWelcome(w.id)
 
-                    // processWelcome уже ставит реальную MLS-эпоху из OpenMLS group state
                     val realEpoch = mlsManager.getRealMlsEpoch(w.conversationId)
                     mlsManager.updateGroupEpoch(w.conversationId, realEpoch)
                     println("MemegramDebug [Welcome]: Новичку установлена реальная MLS-эпоха = $realEpoch")
@@ -270,6 +270,13 @@ class ChatsViewModel(
                     syncGroupCommitsQuietly(convId)
                 }
             }
+            "member_left" -> {
+                val leftUserId = event.data?.userId
+                val myUserId = sessionManager.getUserId()
+                if (leftUserId != null && leftUserId != myUserId && mlsManager.hasGroup(convId)) {
+                    handleMemberLeftRemoval(convId, leftUserId)
+                }
+            }
         }
     }
 
@@ -278,7 +285,6 @@ class ChatsViewModel(
             while (isActive) {
                 delay(15_000)
                 try {
-                    // Используем chats.value вместо _chats.value
                     val currentChats = chats.value
                     for (chat in currentChats) {
                         val convId = chat.conversationId
@@ -292,6 +298,50 @@ class ChatsViewModel(
         }
     }
 
+    private fun handleMemberLeftRemoval(conversationId: String, leftUserId: String) {
+        viewModelScope.launch {
+            try {
+                println("MemegramDebug [ChatsVM]: member_left event: user=$leftUserId in conv=$conversationId")
+
+                syncGroupCommitsQuietly(conversationId)
+
+                val commitB64 = try {
+                    mlsManager.removeMember(conversationId, leftUserId)
+                } catch (e: Exception) {
+                    println("MemegramDebug [ChatsVM]: removeMember failed (already removed?): ${e.message}")
+                    syncGroupCommitsQuietly(conversationId)
+                    return@launch
+                }
+
+                val currentEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                val nextEpoch = (currentEpoch + 1).toInt()
+
+                try {
+                    api.commitGroupChange(
+                        conversationId,
+                        CommitGroupChangeRequest(
+                            commitData = commitB64,
+                            newEpoch = nextEpoch,
+                            removedDeviceIds = emptyList()
+                        )
+                    )
+
+                    mlsManager.mergePendingCommit(conversationId)
+                    mlsManager.updateGroupEpoch(conversationId, nextEpoch.toLong())
+                    mlsManager.flushState()
+
+                    println("MemegramDebug [ChatsVM]: Remove commit sent successfully, epoch=$nextEpoch")
+                } catch (e: Exception) {
+                    println("MemegramDebug [ChatsVM]: commitGroupChange failed (epoch conflict?): ${e.message}")
+                    try { mlsManager.clearPendingCommit(conversationId) } catch (_: Exception) {}
+                    syncGroupCommitsQuietly(conversationId)
+                }
+            } catch (e: Exception) {
+                println("MemegramDebug [ChatsVM]: handleMemberLeftRemoval error: ${e.message}")
+            }
+        }
+    }
+
     private suspend fun syncGroupCommitsQuietly(conversationId: String, justProcessedWelcome: Boolean = false) {
         try {
             val localEpoch = mlsManager.getGroupEpoch(conversationId)
@@ -299,8 +349,6 @@ class ChatsViewModel(
 
             if (commits.isNotEmpty()) {
                 if (justProcessedWelcome) {
-                    // После Welcome мы уже на правильной эпохе внутри OpenMLS.
-                    // Просто синхронизируем metadata с реальной MLS-эпохой.
                     val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
                     mlsManager.updateGroupEpoch(conversationId, realEpoch)
                     println("MemegramDebug [Welcome]: Синхронизирована metadata-эпоха с реальной MLS = $realEpoch")

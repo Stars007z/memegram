@@ -144,7 +144,6 @@ fun GroupProfileScreen(
         Column(
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         ) {
-            // Шапка с большой аватаркой
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -162,7 +161,6 @@ fun GroupProfileScreen(
 
             HorizontalDivider()
 
-            // Кнопки управления
             ListItem(
                 headlineContent = { Text("Добавить участника", color = MaterialTheme.colorScheme.primary) },
                 leadingContent = { Icon(Icons.Default.PersonAdd, null, tint = MaterialTheme.colorScheme.primary) },
@@ -175,7 +173,6 @@ fun GroupProfileScreen(
 
             HorizontalDivider(thickness = 8.dp, color = MaterialTheme.colorScheme.surfaceVariant)
 
-            // Поиск участников
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },

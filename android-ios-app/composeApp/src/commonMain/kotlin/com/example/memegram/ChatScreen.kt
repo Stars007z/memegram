@@ -517,14 +517,12 @@ fun ChatScreen(
 
                         val isEmpty = inputText.trim().isEmpty() && attachments.isEmpty()
 
-                        // 1. Вычисляем цвет
                         val sendButtonBg = when {
                             recordState != ChatViewModel.RecordState.IDLE -> Color.Red
                             !isEmpty -> MaterialTheme.colorScheme.primary
                             else -> Color.Transparent
                         }
 
-                        // 2. Вычисляем правильный модификатор жестов
                         val buttonModifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)

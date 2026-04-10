@@ -69,7 +69,6 @@ class GroupProfileViewModel(
 
     private suspend fun syncGroupState(conversationId: String): Long {
         try {
-            // Используем реальную MLS-эпоху вместо metadata для точной синхронизации
             val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
             val localEpoch = if (realEpoch >= 0) realEpoch else mlsManager.getGroupEpoch(conversationId)
             val commits = api.getPendingCommits(conversationId, localEpoch)
@@ -83,7 +82,6 @@ class GroupProfileViewModel(
                     } catch (_: Exception) { false }
 
                     if (success) {
-                        // Берём реальную MLS-эпоху после применения commit'а
                         val newRealEpoch = mlsManager.getRealMlsEpoch(conversationId)
                         if (newRealEpoch > 0) {
                             mlsManager.updateGroupEpoch(conversationId, newRealEpoch)
@@ -97,7 +95,6 @@ class GroupProfileViewModel(
         } catch (e: Exception) {
             println("MemegramDebug [Sync]: ❌ Ошибка синхронизации: ${e.message}")
         }
-        // Возвращаем реальную MLS-эпоху
         val finalEpoch = mlsManager.getRealMlsEpoch(conversationId)
         return if (finalEpoch >= 0) finalEpoch else mlsManager.getGroupEpoch(conversationId)
     }
@@ -109,8 +106,6 @@ class GroupProfileViewModel(
             try {
                 var serverEpochCounter = syncGroupState(conversationId)
 
-                // 🔥 ИСПРАВЛЕНИЕ: Берем .last(), чтобы получить свежий KeyPackage,
-                // если бекенд забыл удалить уже использованные старые ключи.
                 val packages = api.getKeyPackagesForUser(userId).distinctBy { it.deviceId }
 
                 if (packages.isEmpty()) throw Exception("У пользователя нет устройств (KeyPackages не найдены)")
@@ -118,7 +113,6 @@ class GroupProfileViewModel(
                 for (kp in packages) {
                     try { mlsManager.flushState() } catch (_: Exception) {}
 
-                    // clearPendingCommit и clearPendingProposals теперь внутри addMemberToGroup
 
                     val addResult = mlsManager.addMemberToGroup(conversationId, kp.keyPackageData)
                     mlsManager.flushState()
@@ -161,28 +155,13 @@ class GroupProfileViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val serverEpochCounter = syncGroupState(conversationId)
-                val commitDataB64 = mlsManager.leaveGroup(conversationId)
-                val nextServerEpoch = (serverEpochCounter + 1).toInt()
+                api.leaveConversation(conversationId, LeaveConversationRequest())
 
-                try {
-                    api.commitGroupChange(
-                        conversationId,
-                        CommitGroupChangeRequest(
-                            commitData = commitDataB64,
-                            newEpoch = nextServerEpoch,
-                            removedDeviceIds = listOf(mlsManager.getMyDeviceId())
-                        )
-                    )
-                    api.leaveConversation(conversationId, LeaveConversationRequest(commitDataB64))
+                try { mlsManager.deleteLocalGroup(conversationId) } catch (_: Exception) {}
 
-                    chatRepository.deleteChat(conversationId)
-                    mlsManager.flushState()
-                    onSuccess()
-                } catch (networkError: Exception) {
-                    mlsManager.clearPendingCommit(conversationId)
-                    throw networkError
-                }
+                chatRepository.deleteChat(conversationId)
+                mlsManager.flushState()
+                onSuccess()
             } catch (e: Exception) {
                 _error.value = "Ошибка при выходе: ${e.message}"
             } finally {

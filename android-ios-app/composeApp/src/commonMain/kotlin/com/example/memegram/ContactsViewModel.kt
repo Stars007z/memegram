@@ -129,10 +129,8 @@ class ContactsViewModel(
 
                 val mlsGroupId = "${entry.contactUserId.take(16)}_${Clock.System.now().toEpochMilliseconds()}"
 
-                // 1. Создаем пустую группу локально
                 mlsManager.createEmptyGroup(mlsGroupId)
 
-                // 2. Создаем пустую группу на сервере
                 val conv = api.createDirectConversation(
                     CreateDirectConversationRequest(
                         recipientUserId = entry.contactUserId,
@@ -144,7 +142,6 @@ class ContactsViewModel(
                 var currentEpoch = 0L
                 mlsManager.updateGroupEpoch(conv.id, currentEpoch)
 
-                // 3. Добавляем всех по очереди
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
@@ -231,15 +228,13 @@ class ContactsViewModel(
 
                 val mlsGroupId = "group_${generateUuid()}"
 
-                // 1. Создаем пустую группу локально
                 mlsManager.createEmptyGroup(mlsGroupId)
 
                 val uniqueUserIds = allDevicesToInvite.map { it.first }.distinct()
                 val membersList = uniqueUserIds.map { uid ->
-                    MemberWelcomes(userId = uid, welcomes = emptyList()) // Без welcome
+                    MemberWelcomes(userId = uid, welcomes = emptyList())
                 }
 
-                // 2. Создаем группу на сервере
                 val conv = api.createGroupConversation(
                     CreateGroupConversationRequest(
                         name = groupName,
@@ -251,7 +246,6 @@ class ContactsViewModel(
                 var currentEpoch = 0L
                 mlsManager.updateGroupEpoch(conv.id, currentEpoch)
 
-                // 3. Прогоняем каждого девайса через коммит
                 for (device in allDevicesToInvite) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, device.second.keyPackageData)
@@ -337,14 +331,12 @@ class ContactsViewModel(
 
                 val mlsGroupId = "${userId.take(16)}_${Clock.System.now().toEpochMilliseconds()}"
 
-                // 1. Создаем ПУСТУЮ группу локально (Эпоха 0)
                 mlsManager.createEmptyGroup(mlsGroupId)
 
-                // 2. Создаем ПУСТУЮ группу на сервере (без welcome сообщений)
                 val conv = api.createDirectConversation(
                     CreateDirectConversationRequest(
                         recipientUserId = userId,
-                        welcomeMessages = emptyList() // Пусто! Мы добавим их коммитами ниже
+                        welcomeMessages = emptyList()
                     )
                 )
 
@@ -352,7 +344,6 @@ class ContactsViewModel(
                 var currentEpoch = 0L
                 mlsManager.updateGroupEpoch(conv.id, currentEpoch)
 
-                // 3. Добавляем ВСЕХ (никаких .drop(1)), чтобы каждый коммит улетел на сервер
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)

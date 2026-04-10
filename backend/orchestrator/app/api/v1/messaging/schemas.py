@@ -102,7 +102,7 @@ class GetConversationsResponseSchema(BaseModel):
 
 
 class LeaveConversationRequestSchema(BaseModel):
-    commit_data: str = Field(..., min_length=1, description="base64")
+    commit_data: str = Field(default="", description="Deprecated – ignored by server. Remaining members create the Remove Commit.")
 
 
 class LeaveConversationResponseSchema(BaseModel):

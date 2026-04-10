@@ -432,7 +432,7 @@ class ApiService(
             noCache()
         }.body<GetMediaDownloadUrlResponse>()
 
-    // ── Устройства ────────────────────────────────────────────────────
+// ── Devices ────────────────────────────────────────────────────
 
     suspend fun submitDeviceData(
         registrationId: String,

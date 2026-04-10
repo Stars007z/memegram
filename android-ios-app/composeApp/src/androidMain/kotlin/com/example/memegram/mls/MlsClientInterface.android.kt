@@ -39,6 +39,12 @@ private class AndroidMlsClient(
     override fun leaveGroup(groupId: ByteArray): ByteArray =
         handle.leaveGroup(groupId)
 
+    override fun deleteGroup(groupId: ByteArray) =
+        handle.deleteGroup(groupId)
+
+    override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray =
+        handle.removeMemberByIdentity(groupId, identity)
+
     override fun getGroupEpoch(groupId: ByteArray): ULong =
         handle.getGroupEpoch(groupId)
 

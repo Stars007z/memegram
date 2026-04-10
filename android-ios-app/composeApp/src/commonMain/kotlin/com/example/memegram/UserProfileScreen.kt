@@ -25,7 +25,7 @@ fun UserProfileScreen(
     userId: String,
     initialUsername: String,
     onBack: () -> Unit,
-    onStartChat: (String) -> Unit, // Передаем public_key
+    onStartChat: (String) -> Unit,
     viewModel: UserProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White

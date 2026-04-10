@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import redis.asyncio as aioredis
+from sqlalchemy.exc import IntegrityError
 
 from app.repositories.member_repo import MemberRepository
 from app.repositories.mls_commit_repo import MlsCommitRepository
@@ -135,12 +136,20 @@ class MlsServiceImpl(IMlsService):
             raise ValueError("ABORTED: Epoch conflict — expected "
                              f"{mls_group.current_epoch + 1}, got {new_epoch}")
 
-        await self._commits.create({
-            "conversation_id": conversation_id,
-            "sender_device_id": device_id,
-            "epoch": new_epoch,
-            "commit_data": commit_data,
-        })
+        try:
+            async with self._commits.session.begin_nested():
+                await self._commits.create({
+                    "conversation_id": conversation_id,
+                    "sender_device_id": device_id,
+                    "epoch": new_epoch,
+                    "commit_data": commit_data,
+                })
+        except IntegrityError:
+            # Another client already committed at this epoch (race condition).
+            # The unique constraint on (conversation_id, epoch) prevents duplicates.
+            # The savepoint (begin_nested) ensures the session stays clean.
+            raise ValueError("ABORTED: Epoch conflict — another commit already "
+                             f"exists at epoch {new_epoch}")
 
         if welcome_messages:
             for wm_device_id, welcome_data in welcome_messages:
@@ -157,8 +166,23 @@ class MlsServiceImpl(IMlsService):
 
         if added_user_ids:
             for new_uid in added_user_ids:
-                existing_member = await self._members.get_active_member(conversation_id, new_uid)
-                if not existing_member:
+                existing_member = await self._members.get_member(
+                    conversation_id, new_uid,
+                )
+                if existing_member:
+                    if existing_member.left_at is not None:
+                        # Re-add: member previously left — reset instead of INSERT
+                        await self._members.update(existing_member, {
+                            "left_at": None,
+                            "joined_at": datetime.utcnow(),
+                            "role": "member",
+                        })
+                        await self._stream.publish_event(conversation_id, {
+                            "event_type": "member_joined",
+                            "user_id": str(new_uid),
+                        })
+                    # else: already active member — skip
+                else:
                     await self._members.create({
                         "conversation_id": conversation_id,
                         "user_id": new_uid,

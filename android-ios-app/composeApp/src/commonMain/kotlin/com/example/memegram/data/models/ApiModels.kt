@@ -146,7 +146,8 @@ data class SseEventData(
     @SerialName("sender_device_id") val senderDeviceId: String? = null,
     @SerialName("mls_ciphertext") val mlsCiphertextB64: String? = null,
     @SerialName("new_mls_ciphertext") val newMlsCiphertextB64: String? = null,
-    @SerialName("created_at") val createdAt: Long = 0L
+    @SerialName("created_at") val createdAt: Long = 0L,
+    @SerialName("user_id") val userId: String? = null
 )
 
 @Serializable
@@ -293,5 +294,5 @@ data class CreateGroupConversationRequest(
 )
 @Serializable
 data class LeaveConversationRequest(
-    @SerialName("commit_data") val commitData: String
+    @SerialName("commit_data") val commitData: String = ""
 )

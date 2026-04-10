@@ -266,7 +266,6 @@ class MlsManager(
                     settings["mls_mapping_$conversationId"] = groupIdB64
                     saveState()
 
-                    // Получаем РЕАЛЬНУЮ эпоху из OpenMLS group state
                     val realEpoch = try {
                         c.getGroupEpoch(returnedGroupIdBytes).toLong()
                     } catch (_: Exception) { 0L }
@@ -297,10 +296,8 @@ class MlsManager(
                     val groupId = getMlsGroupId(conversationId)
                     val c = getOrCreateClient()
 
-                    // Запоминаем epoch до обработки
                     val epochBefore = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
 
-                    // processMessage в Rust уже вызывает merge_staged_commit() внутри себя!
                     val result = c.processMessage(groupId, Base64.decode(commitB64))
 
                     val epochAfter = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
@@ -314,8 +311,6 @@ class MlsManager(
                             return@withLock true
                         }
                         is IncomingMessageKt.Proposal -> {
-                            // Proposal НЕ меняет epoch — это НЕ commit!
-                            // Rust уже очистил stale proposals автоматически.
                             saveState()
                             println("MemegramDebug [MLS] ⚠️ processCommit: получен Proposal (не commit), " +
                                     "epoch=$epochAfter, members=$members — НЕ считаем как успех")
@@ -368,7 +363,6 @@ class MlsManager(
                     val groupId = getMlsGroupId(conversationId)
                     val c = getOrCreateClient()
 
-                    // Логируем реальную MLS-эпоху перед дешифровкой
                     val realEpoch = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
                     val metaEpoch = getGroupEpoch(conversationId)
                     println("MemegramDebug [MLS] decrypt: realMlsEpoch=$realEpoch, metadataEpoch=$metaEpoch")
@@ -398,12 +392,9 @@ class MlsManager(
             val groupId = getMlsGroupId(conversationId)
             val c = getOrCreateClient()
 
-            // Критично: очищаем stale proposals и pending commits
-            // перед add_members, чтобы избежать "Duplicate signature key"
             try { c.clearPendingProposals(groupId) } catch (_: Exception) {}
             try { c.clearPendingCommit(groupId) } catch (_: Exception) {}
 
-            // Диагностика: логируем состояние группы перед добавлением
             val memberCount = try { c.memberCount(groupId) } catch (_: Exception) { -1L }
             val realEpoch = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
             println("MemegramDebug [MLS] addMemberToGroup: conversationId=$conversationId, " +
@@ -513,6 +504,53 @@ class MlsManager(
             commitB64
         }
     }
+
+    /**
+     * Deletes a group from local MLS state without generating any MLS proposals.
+     * Use this when the member has already left via the server API and only needs
+     * to clean up local state. This is safer than [leaveGroup] because it won't fail
+     * if the group state is corrupted, and doesn't create an unnecessary proposal.
+     */
+    suspend fun deleteLocalGroup(conversationId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            try {
+                val mlsGroupIdBytes = getMlsGroupId(conversationId)
+                getOrCreateClient().deleteGroup(mlsGroupIdBytes)
+            } catch (e: Exception) {
+                println("MemegramDebug [MLS] deleteLocalGroup: Rust deleteGroup failed (OK): ${e.message}")
+            }
+
+            settings.remove("mls_mapping_$conversationId")
+            settings.remove("$KEY_GROUP_PREFIX$conversationId")
+            saveState()
+            println("MemegramDebug [MLS] deleteLocalGroup: $conversationId removed")
+        }
+    }
+
+    /**
+     * Creates a Remove Commit for a member identified by [targetUserId].
+     * Per RFC 9420 §12.2, only a *remaining* member can commit the removal.
+     * Returns the base64-encoded commit bytes to send to the server.
+     */
+    suspend fun removeMember(conversationId: String, targetUserId: String): String =
+        withContext(Dispatchers.Default) {
+            mutex.withLock {
+                val groupId = getMlsGroupId(conversationId)
+                val c = getOrCreateClient()
+
+                val epochBefore = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+                println("MemegramDebug [MLS] removeMember: conv=$conversationId, " +
+                        "target=$targetUserId, epochBefore=$epochBefore")
+
+                val commitBytes = c.removeMemberByIdentity(groupId, targetUserId)
+                val commitB64 = Base64.encode(commitBytes)
+                myRecentCommits.add(normalizeB64(commitB64))
+                saveState()
+
+                println("MemegramDebug [MLS] removeMember: commit created, ${commitBytes.size} bytes")
+                commitB64
+            }
+        }
 
     suspend fun mergePendingCommit(conversationId: String) = withContext(Dispatchers.Default) {
         mutex.withLock {

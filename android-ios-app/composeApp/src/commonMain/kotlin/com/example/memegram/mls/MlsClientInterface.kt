@@ -1,6 +1,5 @@
 package com.example.memegram.mls
 
-// ── Общие модели ────────────────────────────────────────────────────
 
 data class WelcomeBundleKt(
     val commit: ByteArray,
@@ -35,6 +34,8 @@ interface MlsPlatformClient {
     fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray
     fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt
     fun leaveGroup(groupId: ByteArray): ByteArray
+    fun deleteGroup(groupId: ByteArray)
+    fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray
     fun getGroupEpoch(groupId: ByteArray): ULong
     fun memberCount(groupId: ByteArray): ULong
     @Throws(Exception::class)
