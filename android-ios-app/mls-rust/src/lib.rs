@@ -184,12 +184,42 @@ impl MlsClientHandle {
             .add_members(&keys.provider, &keys.signer, &[kp_in.into()])
             .map_err(to_err)?;
 
-        group.merge_pending_commit(&keys.provider).map_err(to_err)?;
 
         Ok(WelcomeBundle {
             commit:  commit.tls_serialize_detached().map_err(to_err)?,
             welcome: welcome.tls_serialize_detached().map_err(to_err)?,
         })
+    }
+
+    pub fn merge_pending_commit(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+        let group = groups.get_mut(&group_id).ok_or_else(|| MlsError::General("group not found".into()))?;
+        group.merge_pending_commit(&keys.provider).map_err(to_err)?;
+        Ok(())
+    }
+
+    pub fn clear_pending_commit(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+        let group = groups.get_mut(&group_id).ok_or_else(|| MlsError::General("group not found".into()))?;
+        group.clear_pending_commit(keys.provider.storage()).map_err(to_err)?;
+
+        Ok(())
+    }
+
+    /// Очищает все pending proposals (stale) из proposal store группы.
+    /// Необходимо вызывать перед add_members, чтобы избежать "Duplicate signature key".
+    pub fn clear_pending_proposals(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+        let group = groups.get_mut(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+        group.clear_pending_proposals(keys.provider.storage()).map_err(to_err)?;
+        Ok(())
     }
 
     pub fn join_from_welcome(&self, welcome_bytes: Vec<u8>) -> Result<Vec<u8>, MlsError> {
@@ -202,7 +232,9 @@ impl MlsClientHandle {
             _ => return Err(MlsError::General("expected Welcome".into())),
         };
 
-        let cfg   = MlsGroupJoinConfig::builder().build();
+        let cfg   = MlsGroupJoinConfig::builder()
+            .use_ratchet_tree_extension(true)
+            .build();
         let group = StagedWelcome::new_from_welcome(
             &g.keys.provider, &cfg, welcome, None,
         )
@@ -250,6 +282,8 @@ impl MlsClientHandle {
         let group = groups.get_mut(&group_id)
             .ok_or_else(|| MlsError::General("group not found".into()))?;
 
+        let epoch_before = group.epoch().as_u64();
+
         let processed = group
             .process_message(&keys.provider, msg)
             .map_err(to_err)?;
@@ -263,7 +297,12 @@ impl MlsClientHandle {
                     .map_err(to_err)?;
                 Ok(IncomingMessage::CommitApplied)
             }
-            ProcessedMessageContent::ProposalMessage(_) => Ok(IncomingMessage::Proposal),
+            ProcessedMessageContent::ProposalMessage(_) => {
+                // Чистим stale proposals сразу — они могут создать
+                // "Duplicate signature key" при add_members.
+                let _ = group.clear_pending_proposals(keys.provider.storage());
+                Ok(IncomingMessage::Proposal)
+            }
             _ => Ok(IncomingMessage::Other),
         }
     }
@@ -275,6 +314,29 @@ impl MlsClientHandle {
         let group = groups.get(&group_id)
             .ok_or_else(|| MlsError::General("group not found".into()))?;
         Ok(group.members().count() as u64)
+    }
+
+    /// Возвращает список signature-ключей текущих членов группы (для отладки).
+    pub fn get_group_members_signature_keys(&self, group_id: Vec<u8>) -> Result<Vec<Vec<u8>>, MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+        let group = groups.get(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+
+        let sig_keys: Vec<Vec<u8>> = group.members()
+            .map(|m| m.signature_key.to_vec())
+            .collect();
+        Ok(sig_keys)
+    }
+
+    pub fn get_group_epoch(&self, group_id: Vec<u8>) -> Result<u64, MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+        let group = groups.get(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+        Ok(group.epoch().as_u64())
     }
 
     pub fn export_identity_key_pub(&self) -> Result<Vec<u8>, MlsError> {
@@ -292,5 +354,27 @@ impl MlsClientHandle {
             .credential
             .tls_serialize_detached()
             .map_err(to_err)
+    }
+
+    pub fn leave_group(&self, group_id: Vec<u8>) -> Result<Vec<u8>, MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+
+        let group = groups.get_mut(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+
+        let commit = group
+            .leave_group(&keys.provider, &keys.signer)
+            .map_err(to_err)?;
+
+        let serialized = commit.tls_serialize_detached().map_err(to_err)?;
+
+        // Удаляем группу из памяти — уходящий участник больше ею не владеет.
+        // Это предотвращает сохранение группы с невалидным pending commit при export_provider_state.
+        groups.remove(&group_id);
+
+        Ok(serialized)
     }
 }

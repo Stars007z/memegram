@@ -35,7 +35,9 @@ class ChatRepositoryImpl(
                         name = entity.name,
                         lastMessage = entity.lastMessage,
                         timestamp = entity.timestamp,
-                        unreadCount = entity.unreadCount.toInt()
+                        unreadCount = entity.unreadCount.toInt(),
+                        isLastMessageMine = entity.isLastMessageMine == 1L,
+                        lastSenderName = entity.lastSenderName
                     )
                 }
             }
@@ -49,7 +51,9 @@ class ChatRepositoryImpl(
                 lastMessage = chat.lastMessage,
                 timestamp = chat.timestamp,
                 unreadCount = chat.unreadCount.toLong(),
-                avatarMediaId = null
+                avatarMediaId = null,
+                isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
+                lastSenderName = chat.lastSenderName
             )
         }
     }
@@ -64,7 +68,9 @@ class ChatRepositoryImpl(
                         lastMessage = chat.lastMessage,
                         timestamp = chat.timestamp,
                         unreadCount = chat.unreadCount.toLong(),
-                        avatarMediaId = null
+                        avatarMediaId = null,
+                        isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
+                        lastSenderName = chat.lastSenderName
                     )
                 }
             }

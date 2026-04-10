@@ -274,6 +274,7 @@ message CommitGroupChangeRequest {
     repeated DeviceWelcome welcome_messages   = 6;
     bytes                  ratchet_tree       = 7;
     repeated string        removed_device_ids = 8;
+    repeated string        added_user_ids     = 9;
 }
 message CommitGroupChangeResponse {
     int64 new_epoch    = 1;

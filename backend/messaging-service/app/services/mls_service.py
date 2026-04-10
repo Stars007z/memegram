@@ -125,6 +125,7 @@ class MlsServiceImpl(IMlsService):
         welcome_messages: Optional[list[tuple[uuid.UUID, bytes]]] = None,
         ratchet_tree: Optional[bytes] = None,
         removed_device_ids: Optional[list[uuid.UUID]] = None,
+        added_user_ids: Optional[list[uuid.UUID]] = None,
     ) -> CommitResult:
         mls_group = await self._mls_groups.get_by_conversation_id(conversation_id)
         if not mls_group:
@@ -153,6 +154,20 @@ class MlsServiceImpl(IMlsService):
         if ratchet_tree is not None:
             update_data["ratchet_tree"] = ratchet_tree
         await self._mls_groups.update(mls_group, update_data)
+
+        if added_user_ids:
+            for new_uid in added_user_ids:
+                existing_member = await self._members.get_active_member(conversation_id, new_uid)
+                if not existing_member:
+                    await self._members.create({
+                        "conversation_id": conversation_id,
+                        "user_id": new_uid,
+                        "role": "member",
+                    })
+                    await self._stream.publish_event(conversation_id, {
+                        "event_type": "member_joined",
+                        "user_id": str(new_uid),
+                    })
 
         now = datetime.utcnow()
 

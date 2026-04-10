@@ -49,11 +49,7 @@ class AuthViewModel(
         viewModelScope.launch {
             _uiState.value = AuthState.Loading
             try {
-                val deviceId = sessionManager.getDeviceId()
-                    ?: run {
-                        _uiState.value = AuthState.Error("Устройство не зарегистрировано.")
-                        return@launch
-                    }
+                val deviceId = sessionManager.getDeviceId() ?: getHardwareDeviceId()
                 val initResp = api.loginInit(LoginInitRequest(deviceId = deviceId))
                 val signatureBytes = keyManager.signChallenge(initResp.challenge)
                 val signatureBase64 = Base64.encode(signatureBytes)
@@ -66,12 +62,19 @@ class AuthViewModel(
                     )
                 )
                 sessionManager.save(result)
-
                 initMlsAndUploadKeys()
-
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
-                _uiState.value = AuthState.Error(e.message ?: "Ошибка входа")
+                val errorMsg = e.message ?: "Ошибка входа"
+
+                if (errorMsg.contains("422") || errorMsg.contains("Device not found") || errorMsg.contains("401")) {
+                    sessionManager.clear()
+                    sessionManager.clearDeviceId()
+                    mlsManager.clearAll()
+                    _uiState.value = AuthState.Error("Аккаунт не найден на сервере. Зарегистрируйтесь заново.")
+                } else {
+                    _uiState.value = AuthState.Error(errorMsg)
+                }
             }
         }
     }
@@ -82,7 +85,6 @@ class AuthViewModel(
             _uiState.value = AuthState.Loading
             try {
                 mlsManager.clearAll()
-
                 keyManager.getOrCreateKeyPair()
                 val pubKey = keyManager.getPublicKeyBase64()
                 val deviceId = getHardwareDeviceId()
@@ -98,7 +100,6 @@ class AuthViewModel(
                 val result = api.register(req)
                 sessionManager.save(result)
                 initMlsAndUploadKeys()
-
                 _uiState.value = AuthState.Success
             } catch (e: Exception) {
                 _uiState.value = AuthState.Error(e.message ?: "Ошибка регистрации")
@@ -108,7 +109,6 @@ class AuthViewModel(
 
     private suspend fun initMlsAndUploadKeys() {
         mlsManager.initialize()
-
         if (mlsManager.needsKeyPackages()) {
             val countOnServer = runCatching { api.getKeyPackagesCount() }.getOrDefault(0)
             if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {

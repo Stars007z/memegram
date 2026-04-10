@@ -48,11 +48,13 @@ class ChatsViewModel(
     private val profileCache = mutableMapOf<String, com.example.memegram.data.models.UserProfileResponse>()
 
     private val peerCache = mutableMapOf<String, String>()
+
     init {
         viewModelScope.launch {
             initMls()
             loadChatsInternal()
             startPolling()
+            startGlobalMlsSync() // Запускаем фоновый пылесос коммитов
         }
     }
 
@@ -64,7 +66,7 @@ class ChatsViewModel(
                 api.uploadKeyPackages(packages)
             }
             processPendingWelcomes()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             _error.value = "Ошибка инициализации шифрования"
         }
     }
@@ -110,31 +112,42 @@ class ChatsViewModel(
                     } catch (_: Exception) {}
                 }
 
-                val localLastMessageText = chatRepository.getLastMessageText(conv.id)
+                val localMessages = chatRepository.getMessagesOnce(conv.id)
+                val localLastMessage = localMessages.lastOrNull()
+
+                val isMine = localLastMessage?.isOutgoing ?: false
+                val isGroup = conv.type != "direct"
+
+                val senderName = if (isGroup && !isMine && localLastMessage != null) {
+                    "?"
+                } else null
 
                 val displayLastMessage = when {
-                    localLastMessageText != null -> localLastMessageText
-                    conv.lastMessageType == "text"  -> "Сообщение"
+                    localLastMessage?.type == "voice" -> "🎤 Голосовое сообщение"
+                    localLastMessage?.type == "image" && localLastMessage.text.isBlank() -> "📸 Фото"
+                    localLastMessage != null && localLastMessage.text.isNotBlank() -> localLastMessage.text
+                    conv.lastMessageType == "voice" -> "🎤 Голосовое сообщение"
                     conv.lastMessageType == "image" -> "📸 Фото"
-                    conv.lastMessageType == null || conv.lastMessageType == "" -> "Новый чат"
-                    else -> conv.lastMessageType
+                    conv.lastMessageType == "text" -> "Сообщение"
+                    else -> "Новый чат"
                 }
 
                 ChatModel(
-                    id             = conv.id.hashCode(),
-                    conversationId = conv.id,
-                    name           = chatName,
-                    lastMessage    = displayLastMessage,
-                    timestamp      = conv.lastActivityAt * 1000,
-                    unreadCount    = conv.unreadCount
+                    id                = conv.id.hashCode(),
+                    conversationId    = conv.id,
+                    name              = chatName,
+                    lastMessage       = displayLastMessage,
+                    timestamp         = conv.lastActivityAt * 1000,
+                    unreadCount       = conv.unreadCount,
+                    isLastMessageMine = isMine,
+                    lastSenderName    = senderName
                 )
             }
 
             chatRepository.saveChats(newChatsList)
-
             subscribeToGlobalEvents(newChatsList.map { it.conversationId })
 
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             if (!silent) _error.value = "Не удалось загрузить чаты"
         } finally {
             if (!silent) _isLoading.value = false
@@ -149,6 +162,12 @@ class ChatsViewModel(
                 if (!mlsManager.hasGroup(w.conversationId)) {
                     mlsManager.processWelcome(w.conversationId, w.welcomeDataB64)
                     api.ackWelcome(w.id)
+
+                    // processWelcome уже ставит реальную MLS-эпоху из OpenMLS group state
+                    val realEpoch = mlsManager.getRealMlsEpoch(w.conversationId)
+                    mlsManager.updateGroupEpoch(w.conversationId, realEpoch)
+                    println("MemegramDebug [Welcome]: Новичку установлена реальная MLS-эпоха = $realEpoch")
+
                     hasNew = true
                 }
             }
@@ -232,18 +251,78 @@ class ChatsViewModel(
 
                 val chat = chatRepository.getChatById(convId)
                 if (chat != null) {
+                    val senderName = if (!isMine && chat.name != "Собеседник") chat.name else null
                     chatRepository.saveChat(
                         chat.copy(
                             lastMessage = decryptedText ?: if (isMine) "📨" else "🔒",
                             timestamp   = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
-                            unreadCount = if (isMine) chat.unreadCount else chat.unreadCount + 1
+                            unreadCount = if (isMine) chat.unreadCount else chat.unreadCount + 1,
+                            isLastMessageMine = isMine,
+                            lastSenderName = senderName
                         )
                     )
                 } else {
                     loadChatsInternal(silent = true)
                 }
             }
+            "epoch_changed" -> {
+                if (convId.isNotBlank()) {
+                    syncGroupCommitsQuietly(convId)
+                }
+            }
         }
+    }
+
+    private fun startGlobalMlsSync() {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(15_000)
+                try {
+                    // Используем chats.value вместо _chats.value
+                    val currentChats = chats.value
+                    for (chat in currentChats) {
+                        val convId = chat.conversationId
+                        if (mlsManager.hasGroup(convId)) {
+                            syncGroupCommitsQuietly(convId)
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    private suspend fun syncGroupCommitsQuietly(conversationId: String, justProcessedWelcome: Boolean = false) {
+        try {
+            val localEpoch = mlsManager.getGroupEpoch(conversationId)
+            val commits = api.getPendingCommits(conversationId, localEpoch)
+
+            if (commits.isNotEmpty()) {
+                if (justProcessedWelcome) {
+                    // После Welcome мы уже на правильной эпохе внутри OpenMLS.
+                    // Просто синхронизируем metadata с реальной MLS-эпохой.
+                    val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                    mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                    println("MemegramDebug [Welcome]: Синхронизирована metadata-эпоха с реальной MLS = $realEpoch")
+                } else {
+                    val newCommits = commits.filter { it.epoch > localEpoch }
+                    if (newCommits.isNotEmpty()) {
+                        newCommits.sortedBy { it.epoch }.forEach { commit ->
+                            val success = try {
+                                mlsManager.processCommit(conversationId, commit.commitDataB64)
+                            } catch (e: Exception) {
+                                println("MemegramDebug [BackgroundSync]: ❌ Ошибка коммита ${commit.epoch}: ${e.message}")
+                                false
+                            }
+                            if (success) {
+                                mlsManager.updateGroupEpoch(conversationId, commit.epoch)
+                            }
+                        }
+                    }
+                }
+                mlsManager.flushState()
+            }
+        } catch (_: Exception) {}
     }
 
     fun setSearchQuery(query: String) { _searchQuery.value = query }

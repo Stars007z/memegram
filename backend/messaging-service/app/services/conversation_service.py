@@ -31,6 +31,7 @@ class ConversationServiceImpl(IConversationService):
         member_repo: MemberRepository,
         mls_group_repo: MlsGroupRepository,
         mls_welcome_repo: MlsWelcomeRepository,
+        commit_repo: MlsCommitRepository,
         message_repo: MessageRepository,
         contacts_client: IContactsClient,
         redis: aioredis.Redis,
@@ -40,6 +41,7 @@ class ConversationServiceImpl(IConversationService):
         self._members = member_repo
         self._mls_groups = mls_group_repo
         self._welcomes = mls_welcome_repo
+        self._commits = commit_repo
         self._messages = message_repo
         self._contacts = contacts_client
         self._redis = redis
@@ -225,6 +227,24 @@ class ConversationServiceImpl(IConversationService):
         member = await self._members.get_active_member(conversation_id, user_id)
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
+
+        mls_group = await self._mls_groups.get_by_conversation_id(conversation_id)
+        if mls_group:
+            new_epoch = mls_group.current_epoch + 1
+            
+            await self._commits.create({
+                "conversation_id": conversation_id,
+                "sender_device_id": device_id,
+                "epoch": new_epoch,
+                "commit_data": commit_data,
+            })
+            
+            await self._mls_groups.update(mls_group, {"current_epoch": new_epoch})
+            
+            await self._stream.publish_event(conversation_id, {
+                "event_type": "epoch_changed",
+                "new_epoch": new_epoch,
+            })
 
         await self._members.update(member, {"left_at": datetime.utcnow()})
 

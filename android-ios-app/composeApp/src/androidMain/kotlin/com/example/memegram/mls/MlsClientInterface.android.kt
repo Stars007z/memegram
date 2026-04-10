@@ -35,6 +35,27 @@ private class AndroidMlsClient(
             is IncomingMessage.Proposal     -> IncomingMessageKt.Proposal
             else                            -> IncomingMessageKt.Other
         }
+
+    override fun leaveGroup(groupId: ByteArray): ByteArray =
+        handle.leaveGroup(groupId)
+
+    override fun getGroupEpoch(groupId: ByteArray): ULong =
+        handle.getGroupEpoch(groupId)
+
+    override fun memberCount(groupId: ByteArray): ULong =
+        handle.memberCount(groupId)
+
+    override fun mergePendingCommit(groupId: ByteArray) {
+        handle.mergePendingCommit(groupId)
+    }
+
+    override fun clearPendingCommit(groupId: ByteArray) {
+        handle.clearPendingCommit(groupId)
+    }
+
+    override fun clearPendingProposals(groupId: ByteArray) {
+        handle.clearPendingProposals(groupId)
+    }
 }
 
 actual fun createMlsClient(identity: String): MlsPlatformClient =

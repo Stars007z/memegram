@@ -31,6 +31,7 @@ class MlsManager(
     private val mutex = Mutex()
     private var _client: MlsPlatformClient? = null
     private var _stateDirty = false
+    private val myRecentCommits = mutableSetOf<String>()
 
 // ── Клиент ────────────────────────────────────────────────────────
 
@@ -172,7 +173,19 @@ class MlsManager(
     }
 
 // ── Создание группы (инициатор) ───────────────────────────────────
+    private fun normalizeB64(b64: String): String = b64.replace("\\s+".toRegex(), "")
 
+    suspend fun createEmptyGroup(mlsGroupId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            println("MemegramDebug [MLS] ───── createEmptyGroup() ─────")
+            val groupIdBytes = mlsGroupId.encodeToByteArray()
+            val c = getOrCreateClient()
+            c.createGroupWithId(groupIdBytes)
+            saveState()
+            println("MemegramDebug [MLS] ✅ Пустая группа создана")
+            println("MemegramDebug [MLS] ────────────────────────")
+        }
+    }
     suspend fun createGroup(
         mlsGroupId: String,
         peerKeyPackageB64: String
@@ -186,8 +199,10 @@ class MlsManager(
             val groupIdBytes = mlsGroupId.encodeToByteArray()
             val c = getOrCreateClient()
             c.createGroupWithId(groupIdBytes)
-            println("MemegramDebug [MLS]   ✅ createGroupWithId — OK")
             val bundle = c.addMember(groupIdBytes, Base64.decode(peerKeyPackageB64))
+            c.mergePendingCommit(groupIdBytes)
+            val commitB64 = Base64.encode(bundle.commit)
+            myRecentCommits.add(normalizeB64(commitB64))
             saveState()
             println("MemegramDebug [MLS]   ✅ addMember — OK")
             println("MemegramDebug [MLS]   welcome size: ${bundle.welcome.size} bytes")
@@ -195,7 +210,7 @@ class MlsManager(
             println("MemegramDebug [MLS] ────────────────────────")
             CreateGroupResult(
                 welcomeB64 = Base64.encode(bundle.welcome),
-                commitB64  = Base64.encode(bundle.commit)
+                commitB64  = commitB64
             )
         }
     }
@@ -243,37 +258,25 @@ class MlsManager(
             mutex.withLock {
                 val stateSize = settings.getStringOrNull(KEY_PROVIDER_STATE)?.length ?: 0
                 val kpCount   = settings.getInt(KEY_KP_COUNT, 0)
-                println("MemegramDebug [MLS] ───── processWelcome() ─────")
-                println("MemegramDebug [MLS]   conversationId = $conversationId")
-                println("MemegramDebug [MLS]   identity       = $identity")
-                println("MemegramDebug [MLS]   state size     = $stateSize chars")
-                println("MemegramDebug [MLS]   kpCount        = $kpCount")
-                println("MemegramDebug [MLS]   welcome size   = ${welcomeB64.length} chars")
-                if (stateSize == 0) {
-                    println("MemegramDebug [MLS] ❌ КРИТИЧНО: state пуст! " +
-                            "Клиент новый — key packages на сервере устарели!")
-                }
-                if (kpCount == 0) {
-                    println("MemegramDebug [MLS] ⚠️ kpCount=0: key packages могли быть " +
-                            "израсходованы или никогда не генерировались для этого identity")
-                }
+
                 try {
-                    val returnedGroupIdBytes =
-                        getOrCreateClient().joinFromWelcome(Base64.decode(welcomeB64))
+                    val c = getOrCreateClient()
+                    val returnedGroupIdBytes = c.joinFromWelcome(Base64.decode(welcomeB64))
                     val groupIdB64 = Base64.encode(returnedGroupIdBytes)
                     settings["mls_mapping_$conversationId"] = groupIdB64
                     saveState()
-                    markGroupKnown(conversationId, epoch = 1L)
+
+                    // Получаем РЕАЛЬНУЮ эпоху из OpenMLS group state
+                    val realEpoch = try {
+                        c.getGroupEpoch(returnedGroupIdBytes).toLong()
+                    } catch (_: Exception) { 0L }
+
+                    markGroupKnown(conversationId, epoch = realEpoch)
                     println("MemegramDebug [MLS] ✅ processWelcome OK: " +
-                            "groupId=${groupIdB64.take(20)}...")
+                            "groupId=${groupIdB64.take(20)}..., realMlsEpoch=$realEpoch")
                     println("MemegramDebug [MLS] ────────────────────────")
                 } catch (e: Exception) {
                     println("MemegramDebug [MLS] ❌ processWelcome FAILED: ${e.message}")
-                    println("MemegramDebug [MLS]   Вероятная причина: key package, " +
-                            "использованный отправителем (${welcomeB64.take(20)}...), " +
-                            "не найден в локальном store. " +
-                            "state size=$stateSize, kpCount=$kpCount")
-                    println("MemegramDebug [MLS] ────────────────────────")
                     throw e
                 }
             }
@@ -281,25 +284,59 @@ class MlsManager(
 
 // ── Обработка Commit ──────────────────────────────────────────────
 
-    suspend fun processCommit(conversationId: String, commitB64: String) =
+    suspend fun processCommit(conversationId: String, commitB64: String): Boolean =
         withContext(Dispatchers.Default) {
             mutex.withLock {
-                println("MemegramDebug [MLS] processCommit: conversationId=$conversationId")
+                val normalized = normalizeB64(commitB64)
+                if (myRecentCommits.contains(normalized)) {
+                    println("MemegramDebug [MLS] ✅ processCommit: это наш коммит, безопасно пропускаем.")
+                    return@withLock true
+                }
+
                 try {
                     val groupId = getMlsGroupId(conversationId)
-                    val result = getOrCreateClient().processMessage(groupId, kotlin.io.encoding.Base64.decode(commitB64))
+                    val c = getOrCreateClient()
+
+                    // Запоминаем epoch до обработки
+                    val epochBefore = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+
+                    // processMessage в Rust уже вызывает merge_staged_commit() внутри себя!
+                    val result = c.processMessage(groupId, Base64.decode(commitB64))
+
+                    val epochAfter = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+                    val members = try { c.memberCount(groupId).toLong() } catch (_: Exception) { -1L }
+
                     when (result) {
-                        is IncomingMessageKt.CommitApplied, is IncomingMessageKt.Proposal -> {
+                        is IncomingMessageKt.CommitApplied -> {
                             saveState()
-                            println("MemegramDebug [MLS] ✅ processCommit: Успешно применен")
+                            println("MemegramDebug [MLS] ✅ processCommit: CommitApplied " +
+                                    "epoch $epochBefore→$epochAfter, members=$members")
+                            return@withLock true
+                        }
+                        is IncomingMessageKt.Proposal -> {
+                            // Proposal НЕ меняет epoch — это НЕ commit!
+                            // Rust уже очистил stale proposals автоматически.
+                            saveState()
+                            println("MemegramDebug [MLS] ⚠️ processCommit: получен Proposal (не commit), " +
+                                    "epoch=$epochAfter, members=$members — НЕ считаем как успех")
+                            return@withLock false
                         }
                         else -> {
                             saveState()
-                            println("MemegramDebug [MLS] ⚠️ processCommit: Иной результат ($result)")
+                            println("MemegramDebug [MLS] ⚠️ processCommit: result=${result::class.simpleName}, " +
+                                    "epoch=$epochAfter, members=$members")
+                            return@withLock false
                         }
                     }
                 } catch (e: Exception) {
-                    println("MemegramDebug [MLS] ⚠️ Ошибка обработки Commits: ${e.message}. Игнорируем дубликат, чтобы не сломать синхронизацию.")
+                    val msg = e.message ?: ""
+                    if (msg.contains("epoch differs") || msg.contains("too old") || msg.contains("forward secrecy")) {
+                        println("MemegramDebug [MLS] ⚠️ Пропускаем устаревший коммит: $msg")
+                        return@withLock false
+                    } else {
+                        println("MemegramDebug [MLS] ❌ Критическая ошибка MLS: $msg")
+                        throw e
+                    }
                 }
             }
         }
@@ -329,7 +366,14 @@ class MlsManager(
                 println("MemegramDebug [MLS] decrypt: conversationId=$conversationId, cipherLen=${ciphertextB64.length}")
                 try {
                     val groupId = getMlsGroupId(conversationId)
-                    val result = getOrCreateClient().processMessage(groupId, kotlin.io.encoding.Base64.decode(ciphertextB64))
+                    val c = getOrCreateClient()
+
+                    // Логируем реальную MLS-эпоху перед дешифровкой
+                    val realEpoch = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+                    val metaEpoch = getGroupEpoch(conversationId)
+                    println("MemegramDebug [MLS] decrypt: realMlsEpoch=$realEpoch, metadataEpoch=$metaEpoch")
+
+                    val result = c.processMessage(groupId, kotlin.io.encoding.Base64.decode(ciphertextB64))
                     markDirty()
                     if (result is IncomingMessageKt.Application) {
                         val text = result.data.decodeToString()
@@ -351,16 +395,32 @@ class MlsManager(
         keyPackageB64: String
     ): AddMemberResult = withContext(Dispatchers.Default) {
         mutex.withLock {
-            println("MemegramDebug [MLS] addMemberToGroup: conversationId=$conversationId")
             val groupId = getMlsGroupId(conversationId)
             val c = getOrCreateClient()
-            val bundle = c.addMember(groupId, Base64.decode(keyPackageB64))
-            saveState()
-            println("MemegramDebug [MLS] ✅ addMemberToGroup: welcome=${bundle.welcome.size}b, commit=${bundle.commit.size}b")
-            AddMemberResult(
-                welcomeB64 = Base64.encode(bundle.welcome),
-                commitB64  = Base64.encode(bundle.commit)
-            )
+
+            // Критично: очищаем stale proposals и pending commits
+            // перед add_members, чтобы избежать "Duplicate signature key"
+            try { c.clearPendingProposals(groupId) } catch (_: Exception) {}
+            try { c.clearPendingCommit(groupId) } catch (_: Exception) {}
+
+            // Диагностика: логируем состояние группы перед добавлением
+            val memberCount = try { c.memberCount(groupId) } catch (_: Exception) { -1L }
+            val realEpoch = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+            println("MemegramDebug [MLS] addMemberToGroup: conversationId=$conversationId, " +
+                    "members=$memberCount, realEpoch=$realEpoch")
+
+            try {
+                val bundle = c.addMember(groupId, Base64.decode(keyPackageB64))
+                val commitB64 = Base64.encode(bundle.commit)
+                myRecentCommits.add(normalizeB64(commitB64))
+                saveState()
+                println("MemegramDebug [MLS] ✅ addMemberToGroup: welcome=${bundle.welcome.size}b, commit=${bundle.commit.size}b")
+                AddMemberResult(Base64.encode(bundle.welcome), commitB64)
+            } catch (e: Exception) {
+                println("MemegramDebug [MLS] ❌ addMemberToGroup FAILED: ${e.message}")
+                println("MemegramDebug [MLS]   memberCount=$memberCount, realEpoch=$realEpoch")
+                throw e
+            }
         }
     }
 
@@ -402,6 +462,15 @@ class MlsManager(
         }
     }
 
+    suspend fun getRealMlsEpoch(conversationId: String): Long = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            try {
+                val groupId = getMlsGroupId(conversationId)
+                getOrCreateClient().getGroupEpoch(groupId).toLong()
+            } catch (_: Exception) { -1L }
+        }
+    }
+
     fun clearAll() {
         println("MemegramDebug [MLS] ⚠️ clearAll() вызван! identity=$identity, " +
                 "state size=${settings.getStringOrNull(KEY_PROVIDER_STATE)?.length ?: 0} chars")
@@ -428,6 +497,39 @@ class MlsManager(
             settings.remove("mls_mapping_$oldConversationId")
         }
         println("MemegramDebug [MLS] migrateGroupId: $oldConversationId → $newConversationId OK")
+    }
+
+    suspend fun leaveGroup(conversationId: String): String = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val mlsGroupIdBytes = getMlsGroupId(conversationId)
+            val commitBytes = getOrCreateClient().leaveGroup(mlsGroupIdBytes)
+
+            val commitB64 = Base64.encode(commitBytes)
+            myRecentCommits.add(normalizeB64(commitB64))
+
+            settings.remove("mls_mapping_$conversationId")
+            settings.remove("$KEY_GROUP_PREFIX$conversationId")
+            saveState()
+            commitB64
+        }
+    }
+
+    suspend fun mergePendingCommit(conversationId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val groupId = getMlsGroupId(conversationId)
+            getOrCreateClient().mergePendingCommit(groupId)
+            saveState()
+            println("MemegramDebug [MLS] ✅ Pending commit успешно смержен")
+        }
+    }
+
+    suspend fun clearPendingCommit(conversationId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val groupId = getMlsGroupId(conversationId)
+            getOrCreateClient().clearPendingCommit(groupId)
+            saveState()
+            println("MemegramDebug [MLS] ⚠️ Pending commit отменен (ошибка сети)")
+        }
     }
 }
 

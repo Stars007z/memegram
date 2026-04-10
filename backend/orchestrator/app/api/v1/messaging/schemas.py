@@ -174,6 +174,7 @@ class CommitGroupChangeRequestSchema(BaseModel):
     welcome_messages: List[DeviceWelcomeSchema] = Field(default_factory=list)
     ratchet_tree: Optional[str] = Field(None, description="base64")
     removed_device_ids: List[str] = Field(default_factory=list)
+    added_user_ids: Optional[List[str]] = Field(default=None)
 
 
 class CommitGroupChangeResponseSchema(BaseModel):

@@ -6,7 +6,6 @@ data class WelcomeBundleKt(
     val commit: ByteArray,
     val welcome: ByteArray
 ) {
-    // ByteArray не реализует equals/hashCode по содержимому — исправляем
     override fun equals(other: Any?): Boolean {
         if (other !is WelcomeBundleKt) return false
         return commit.contentEquals(other.commit) && welcome.contentEquals(other.welcome)
@@ -35,6 +34,15 @@ interface MlsPlatformClient {
     fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray
     fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray
     fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt
+    fun leaveGroup(groupId: ByteArray): ByteArray
+    fun getGroupEpoch(groupId: ByteArray): ULong
+    fun memberCount(groupId: ByteArray): ULong
+    @Throws(Exception::class)
+    fun mergePendingCommit(groupId: ByteArray)
+    @Throws(Exception::class)
+    fun clearPendingCommit(groupId: ByteArray)
+    @Throws(Exception::class)
+    fun clearPendingProposals(groupId: ByteArray)
 }
 
 expect fun createMlsClient(identity: String): MlsPlatformClient

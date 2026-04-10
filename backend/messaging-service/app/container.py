@@ -57,12 +57,14 @@ class RequestScope:
             from app.repositories.mls_group_repo import MlsGroupRepository
             from app.repositories.mls_welcome_repo import MlsWelcomeRepository
             from app.repositories.message_repo import MessageRepository
+            from app.repositories.mls_commit_repo import MlsCommitRepository
 
             self._cache["conversation"] = ConversationServiceImpl(
                 conversation_repo=ConversationRepository(self._session),
                 member_repo=MemberRepository(self._session),
                 mls_group_repo=MlsGroupRepository(self._session),
                 mls_welcome_repo=MlsWelcomeRepository(self._session),
+                commit_repo=MlsCommitRepository(self._session),
                 message_repo=MessageRepository(self._session),
                 contacts_client=self._contacts,
                 redis=self._redis,
