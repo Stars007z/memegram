@@ -26,11 +26,11 @@ class UserSettingsResult:
     account_auto_delete_after_days: int = 0
     profile_visible_to: str = "everybody"
     last_active_visible_to: str = "everybody"
-    chat_background_data: Optional[bytes] = None
+    chat_background_media_id: Optional[str] = None
     top_bar_color: str = ""
-    ringtone_data: Optional[bytes] = None
+    ringtone_media_id: Optional[str] = None
     ringtone_vibration_strength: int = 1
-    notification_sound_data: Optional[bytes] = None
+    notification_sound_media_id: Optional[str] = None
     notification_vibration_strength: int = 1
 
 

@@ -1,0 +1,113 @@
+syntax = "proto3";
+package item_storage;
+
+service ItemStorageService {
+  rpc InitiateUpload(InitiateUploadRequest)   returns (InitiateUploadResponse);
+  rpc ConfirmUpload(ConfirmUploadRequest)     returns (ConfirmUploadResponse);
+  rpc GetDownloadUrl(GetDownloadUrlRequest)   returns (GetDownloadUrlResponse);
+  rpc DeleteItem(DeleteItemRequest)           returns (DeleteItemResponse);
+  rpc DeleteUserItems(DeleteUserItemsRequest) returns (DeleteUserItemsResponse);
+  rpc CleanupPendingUploads(CleanupPendingUploadsRequest) returns (CleanupPendingUploadsResponse);
+  rpc GetItemMetadata(GetItemMetadataRequest) returns (GetItemMetadataResponse);
+  rpc HealthCheck(HealthCheckRequest)         returns (HealthCheckResponse);
+}
+
+// --- InitiateUpload ---
+
+message InitiateUploadRequest {
+  string owner_user_id = 1;
+  string item_type     = 2;  // avatar, profile_background, chat_background, notification_sound, ringtone
+  string mime_type     = 3;
+  int64  size_bytes    = 4;
+}
+
+message InitiateUploadResponse {
+  string item_id    = 1;  // UUID
+  string upload_url = 2;  // presigned S3 PUT URL
+  int64  expires_at = 3;  // Unix timestamp
+}
+
+// --- ConfirmUpload ---
+
+message ConfirmUploadRequest {
+  string owner_user_id = 1;
+  string item_id       = 2;
+}
+
+message ConfirmUploadResponse {
+  bool success = 1;
+}
+
+// --- GetDownloadUrl ---
+
+message GetDownloadUrlRequest {
+  string item_id           = 1;
+  string requester_user_id = 2;
+}
+
+message GetDownloadUrlResponse {
+  string download_url = 1;
+  int64  expires_at   = 2;
+  string mime_type    = 3;
+}
+
+// --- DeleteItem ---
+
+message DeleteItemRequest {
+  string owner_user_id = 1;
+  string item_id       = 2;
+}
+
+message DeleteItemResponse {
+  bool success = 1;
+}
+
+// --- DeleteUserItems ---
+
+message DeleteUserItemsRequest {
+  string          owner_user_id = 1;
+  repeated string item_types    = 2;  // empty = all types
+}
+
+message DeleteUserItemsResponse {
+  int32 deleted_count = 1;
+}
+
+// --- CleanupPendingUploads ---
+
+message CleanupPendingUploadsRequest {
+  int32 older_than_seconds = 1;  // default 7200
+  int32 batch_size         = 2;  // default 100
+}
+
+message CleanupPendingUploadsResponse {
+  int32 cleaned_count = 1;
+}
+
+// --- GetItemMetadata ---
+
+message GetItemMetadataRequest {
+  string item_id           = 1;
+  string requester_user_id = 2;
+}
+
+message GetItemMetadataResponse {
+  string item_id        = 1;
+  string owner_user_id  = 2;
+  string item_type      = 3;
+  string mime_type      = 4;
+  int64  size_bytes     = 5;
+  int64  uploaded_at    = 6;
+  string access_policy  = 7;
+}
+
+// --- HealthCheck ---
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status    = 1;  // ok / degraded
+  string db_status = 2;
+  string s3_status = 3;
+  string version   = 4;
+}

@@ -49,6 +49,10 @@ def _settings_from_response(s) -> UserSettingsResult:
         except Exception:
             return getattr(s, field, "") or ""
 
+    def _opt_media_id(field: str) -> str | None:
+        val = _opt_str(field)
+        return val if val else None
+
     return UserSettingsResult(
         id=s.user_id,
         user_id=s.user_id,
@@ -62,9 +66,9 @@ def _settings_from_response(s) -> UserSettingsResult:
         top_bar_color=_opt_str("top_bar_color"),
         ringtone_vibration_strength=_opt_int("ringtone_vibration_strength"),
         notification_vibration_strength=_opt_int("notification_vibration_strength"),
-        chat_background_data=None,
-        ringtone_data=None,
-        notification_sound_data=None,
+        chat_background_media_id=_opt_media_id("chat_background_media_id"),
+        ringtone_media_id=_opt_media_id("ringtone_media_id"),
+        notification_sound_media_id=_opt_media_id("notification_sound"),
     )
 
 

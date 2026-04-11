@@ -1,11 +1,18 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends
 from app.api.v1.user.schemas import (
     UserProfileResponseSchema, UpdateUserRequestSchema, DeleteUserResponseSchema,
     UserSettingsResponseSchema, UpdateUserSettingsRequestSchema, UserHealthResponseSchema,
+    SyncSettingsRequestSchema, SyncSettingsResponseSchema, MediaDownloadInfoSchema,
 )
-from app.api.dependencies import get_current_session, get_user_gateway
+from app.api.dependencies import get_current_session, get_user_gateway, get_item_storage_gateway
 from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, UpdateUserSettingsRequest
+from app.core.interfaces.item_storage_gateway import IItemStorageGateway
 from app.core.session_context import SessionContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -95,3 +102,59 @@ async def update_my_settings(
     )
     result = await gateway.update_user_settings(request)
     return UserSettingsResponseSchema(**result.__dict__)
+
+
+_MEDIA_FIELDS = [
+    ("chat_background_media_id", "chat_background"),
+    ("ringtone_media_id", "ringtone"),
+    ("notification_sound_media_id", "notification_sound"),
+]
+
+
+@router.post("/me/settings/sync", response_model=SyncSettingsResponseSchema)
+async def sync_my_settings(
+    body: SyncSettingsRequestSchema,
+    session: SessionContext = Depends(get_current_session),
+    user_gw: IUserGateway = Depends(get_user_gateway),
+    storage_gw: IItemStorageGateway = Depends(get_item_storage_gateway),
+):
+    """Return current settings and presigned download URLs only for
+    media items that differ from the client's locally cached versions."""
+    settings_result = await user_gw.get_user_settings(user_id=session.user_id)
+    settings_schema = UserSettingsResponseSchema(**settings_result.__dict__)
+
+    changed: list[tuple[str, str]] = []
+    for field_attr, field_label in _MEDIA_FIELDS:
+        server_id = getattr(settings_result, field_attr, None)
+        client_id = getattr(body, field_attr, None)
+        if server_id and server_id != client_id:
+            changed.append((field_label, server_id))
+
+    media_updates: list[MediaDownloadInfoSchema] = []
+    if changed:
+        tasks = [
+            storage_gw.get_download_url(
+                item_id=item_id, requester_user_id=session.user_id,
+            )
+            for _, item_id in changed
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for (field_label, item_id), result in zip(changed, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Failed to get download URL for %s (%s): %s",
+                    field_label, item_id, result,
+                )
+                continue
+            media_updates.append(MediaDownloadInfoSchema(
+                field=field_label,
+                item_id=item_id,
+                download_url=result.download_url,
+                expires_at=result.expires_at,
+                mime_type=result.mime_type,
+            ))
+
+    return SyncSettingsResponseSchema(
+        settings=settings_schema,
+        media_updates=media_updates,
+    )
