@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.UpdateSettingsRequest
 import com.example.memegram.data.repository.UserRepository
+import com.example.memegram.localization.AppStrings
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -82,32 +83,33 @@ class PrivacyViewModel(
     fun clearError() { _error.value = null }
 
     companion object {
-        fun visibilityLabel(value: String) = when (value) {
-            "contacts" -> "Контакты"
-            "nobody"   -> "Никто"
-            else       -> "Все"
+        fun visibilityLabel(value: String, s: AppStrings) = when (value) {
+            "contacts" -> s.visContacts
+            "nobody"   -> s.visNobody
+            else       -> s.visEverybody
         }
-        fun visibilityValue(label: String) = when (label) {
-            "Контакты" -> "contacts"
-            "Никто"    -> "nobody"
-            else       -> "everybody"
+        fun visibilityValue(label: String, s: AppStrings) = when (label) {
+            s.visContacts -> "contacts"
+            s.visNobody   -> "nobody"
+            else          -> "everybody"
         }
-        val visibilityOptions = listOf("Все", "Контакты", "Никто")
+        fun visibilityOptions(s: AppStrings) = listOf(s.visEverybody, s.visContacts, s.visNobody)
 
-        fun daysLabel(days: Int?) = when (days) {
-            30  -> "1 месяц"
-            90  -> "3 месяца"
-            180 -> "6 месяцев"
-            365 -> "1 год"
-            else -> "Выкл"
+        fun daysLabel(days: Int?, s: AppStrings) = when (days) {
+            30  -> s.days1Month
+            90  -> s.days3Months
+            180 -> s.days6Months
+            365 -> s.days1Year
+            else -> s.daysOff
         }
-        fun daysValue(label: String) = when (label) {
-            "1 месяц"  -> 30
-            "3 месяца" -> 90
-            "6 месяцев"-> 180
-            "1 год"    -> 365
-            else       -> null
+        fun daysValue(label: String, s: AppStrings) = when (label) {
+            s.days1Month  -> 30
+            s.days3Months -> 90
+            s.days6Months -> 180
+            s.days1Year   -> 365
+            else          -> null
         }
-        val autoDeleteOptions = listOf("Выкл", "1 месяц", "3 месяца", "6 месяцев", "1 год")
+        fun autoDeleteOptions(s: AppStrings) =
+            listOf(s.daysOff, s.days1Month, s.days3Months, s.days6Months, s.days1Year)
     }
 }

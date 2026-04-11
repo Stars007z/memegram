@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +28,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
@@ -36,13 +39,16 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(
     topBarColor: Color,
     onBack: () -> Unit,
+    onLogoutDone: () -> Unit,
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val s = LocalStrings.current
     val username      by viewModel.username.collectAsState()
     val bio           by viewModel.bio.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
     val error         by viewModel.error.collectAsState()
+    val message       by viewModel.message.collectAsState()
     val avatarBytes   by viewModel.avatarBytes.collectAsState()
     val coverBytes    by viewModel.coverBytes.collectAsState()
     val myPublicKey   by viewModel.myPublicKey.collectAsState()
@@ -64,16 +70,16 @@ fun ProfileScreen(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text  = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Профиль") },
+                title = { Text(s.profileTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -94,7 +100,6 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Обложка ──────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,7 +137,6 @@ fun ProfileScreen(
                 }
             }
 
-            // ── Аватар ───────────────────────────────────────────────────
             Box(
                 contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier.offset(y = (-38).dp)
@@ -178,7 +182,6 @@ fun ProfileScreen(
                 }
             }
 
-            // ── Поля профиля ─────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -189,16 +192,16 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = usernameInput,
                     onValueChange = { usernameInput = it },
-                    label = { Text("Имя пользователя") },
+                    label = { Text(s.username) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     trailingIcon = {
                         if (usernameInput != username) {
                             TextButton(
-                                onClick = { viewModel.updateUsername(usernameInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -206,7 +209,7 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = bioInput,
                     onValueChange = { bioInput = it },
-                    label = { Text("О себе") },
+                    label = { Text(s.aboutMe) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 90.dp),
@@ -215,9 +218,9 @@ fun ProfileScreen(
                     trailingIcon = {
                         if (bioInput != bio) {
                             TextButton(
-                                onClick = { viewModel.updateBio(bioInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -237,15 +240,31 @@ fun ProfileScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(if (keyCopied) "Скопировано!" else "Скопировать мой публичный ключ")
+                        Text(if (keyCopied) s.copied else s.copyMyPublicKey)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { viewModel.logout(onLogoutDone) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.logout)
                 }
 
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .size(26.dp),
+                            .size(26.dp)
+                            .padding(top = 16.dp),
                         strokeWidth = 2.5.dp
                     )
                 }

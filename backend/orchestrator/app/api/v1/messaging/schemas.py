@@ -1,6 +1,6 @@
 import base64
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -23,11 +23,18 @@ class KeyPackageResponseSchema(BaseModel):
     key_package_data: bytes
     key_package_ref: bytes
 
+    @field_serializer('key_package_data', 'key_package_ref')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
+
 
 class UserDeviceKeyPackageSchema(BaseModel):
     device_id: str
     key_package_data: bytes
     key_package_ref: bytes
+
+    @field_serializer('key_package_data', 'key_package_ref')
+    def _b64(self, v: bytes) -> str:
+        return base64.b64encode(v).decode()
 
 
 class GetKeyPackagesForUserResponseSchema(BaseModel):
@@ -95,10 +102,22 @@ class GetConversationsResponseSchema(BaseModel):
 
 
 class LeaveConversationRequestSchema(BaseModel):
-    commit_data: str = Field(..., min_length=1, description="base64")
+    commit_data: str = Field(default="", description="Deprecated – ignored by server. Remaining members create the Remove Commit.")
 
 
 class LeaveConversationResponseSchema(BaseModel):
+    success: bool
+
+
+class KickMemberResponseSchema(BaseModel):
+    success: bool
+
+
+class UpdateMemberRoleRequestSchema(BaseModel):
+    new_role: str = Field(..., pattern=r"^(admin|member)$", description="'admin' or 'member'")
+
+
+class UpdateMemberRoleResponseSchema(BaseModel):
     success: bool
 
 
@@ -129,6 +148,9 @@ class MessageEntrySchema(BaseModel):
     created_at: int
     edited_at: int
     deleted_at: int
+
+    @field_serializer('mls_ciphertext')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 class GetMessagesResponseSchema(BaseModel):
@@ -164,6 +186,7 @@ class CommitGroupChangeRequestSchema(BaseModel):
     welcome_messages: List[DeviceWelcomeSchema] = Field(default_factory=list)
     ratchet_tree: Optional[str] = Field(None, description="base64")
     removed_device_ids: List[str] = Field(default_factory=list)
+    added_user_ids: Optional[List[str]] = Field(default=None)
 
 
 class CommitGroupChangeResponseSchema(BaseModel):
@@ -176,6 +199,9 @@ class WelcomeEntrySchema(BaseModel):
     conversation_id: str
     welcome_data: bytes
     created_at: int
+
+    @field_serializer('welcome_data')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 class GetPendingWelcomesResponseSchema(BaseModel):
@@ -190,6 +216,9 @@ class CommitEntrySchema(BaseModel):
     epoch: int
     commit_data: bytes
     created_at: int
+
+    @field_serializer('commit_data')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 class GetPendingCommitsResponseSchema(BaseModel):
@@ -219,6 +248,9 @@ class GetMediaDownloadUrlResponseSchema(BaseModel):
     download_url: str
     expires_in: int
     encryption_metadata: bytes
+
+    @field_serializer('encryption_metadata')
+    def _b64(self, v: bytes) -> str: return base64.b64encode(v).decode()
 
 
 # ── Presence ──────────────────────────────────────────────────────────

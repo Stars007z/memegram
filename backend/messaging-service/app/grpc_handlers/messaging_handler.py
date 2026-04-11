@@ -55,6 +55,12 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def LeaveConversation(self, request, context):
         return await self._conversations.leave_conversation(request, context)
 
+    async def KickMember(self, request, context):
+        return await self._conversations.kick_member(request, context)
+
+    async def UpdateMemberRole(self, request, context):
+        return await self._conversations.update_member_role(request, context)
+
     # ── Messages ────────────────────────────────────
 
     async def SendMessage(self, request, context):

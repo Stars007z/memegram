@@ -2,6 +2,7 @@ package com.example.memegram.data.local
 
 import com.russhwolf.settings.Settings
 import com.example.memegram.data.models.AuthResponse
+import com.example.memegram.data.models.ConfirmDeviceAdditionResponse
 
 class SessionManager(private val settings: Settings) {
 
@@ -15,7 +16,7 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun getDeviceId(): String? = settings.getStringOrNull("device_id")
-
+    fun getUserId(): String? = settings.getStringOrNull("user_id")
     fun getAccessToken(): String? = settings.getStringOrNull("access_token")
 
     val isLoggedIn: Boolean
@@ -42,7 +43,7 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun getUsername(): String {
-        return settings.getString("profile_username", "Влад")
+        return settings.getString("profile_username", "")
     }
 
     fun getBio(): String {
@@ -50,7 +51,16 @@ class SessionManager(private val settings: Settings) {
     }
 
     fun clearDeviceId() {
-        settings.remove("deviceid")
-        settings.remove("userid")
+        settings.remove("device_id")
+        settings.remove("user_id")
+    }
+
+    fun saveSession(response: ConfirmDeviceAdditionResponse) {
+        settings.putString("access_token", response.accessToken)
+        settings.putString("refresh_token", response.refreshToken)
+        settings.putString("user_id",       response.userId)
+        settings.putString("device_id",     response.newDeviceId)
+        settings.putBoolean("is_primary",   false)
+        settings.putLong("expires_at",      response.expiresAt)
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
 
 data class Language(
     val code: String,
@@ -32,11 +33,11 @@ fun LanguageScreen(
     onBack: () -> Unit,
     viewModel: LanguageViewModel
 ) {
+    val s = LocalStrings.current
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val currentLang by viewModel.currentLang.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var aiTranslation by remember { mutableStateOf(false) }
-    var showRestartSnackbar by remember { mutableStateOf(false) }
 
     val allLanguages = remember {
         listOf(
@@ -64,19 +65,10 @@ fun LanguageScreen(
         }
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(showRestartSnackbar) {
-        if (showRestartSnackbar) {
-            snackbarHostState.showSnackbar("Перезапустите приложение для применения языка")
-            showRestartSnackbar = false
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Язык") },
+                title = { Text(s.languageTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -92,8 +84,7 @@ fun LanguageScreen(
                     navigationIconContentColor = topBarTextColor
                 )
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -103,7 +94,7 @@ fun LanguageScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Поиск языка...") },
+                placeholder = { Text(s.searchLanguage) },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null)
                 },
@@ -131,12 +122,12 @@ fun LanguageScreen(
                 ) {
                     Column {
                         Text(
-                            text = "AI-перевод",
+                            text = s.aiTranslation,
                             fontWeight = FontWeight.Medium,
                             fontSize = 15.sp
                         )
                         Text(
-                            text = "Скоро...",
+                            text = s.comingSoon,
                             color = Color.Gray,
                             fontSize = 12.sp
                         )
@@ -168,7 +159,6 @@ fun LanguageScreen(
                             .fillMaxWidth()
                             .clickable {
                                 viewModel.setLanguage(language.code)
-                                showRestartSnackbar = true
                             },
                         shape = RoundedCornerShape(10.dp),
                         tonalElevation = if (isSelected) 4.dp else 1.dp,

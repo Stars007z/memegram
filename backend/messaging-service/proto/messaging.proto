@@ -55,10 +55,12 @@ message ConversationEvent {
         MessageEdited  message_edited  = 3;
         MessageDeleted message_deleted = 4;
         TypingEvent    typing          = 5;
-        MemberEvent    member_joined   = 6;
-        MemberEvent    member_left     = 7;
-        EpochChanged   epoch_changed   = 8;
-        DeviceRevoked  device_revoked  = 9;
+        MemberEvent       member_joined  = 6;
+        MemberEvent       member_left    = 7;
+        EpochChanged      epoch_changed  = 8;
+        DeviceRevoked     device_revoked = 9;
+        MemberKickedEvent member_kicked  = 10;
+        RoleChangedEvent  role_changed   = 11;
     }
 }
 
@@ -79,6 +81,16 @@ message TypingEvent {
 
 message MemberEvent {
     string user_id = 1;
+}
+
+message MemberKickedEvent {
+    string user_id   = 1; // kicked member
+    string kicked_by = 2; // admin who kicked
+}
+
+message RoleChangedEvent {
+    string user_id  = 1;
+    string new_role = 2;
 }
 
 message EpochChanged {
@@ -192,6 +204,25 @@ message LeaveConversationResponse {
     bool success = 1;
 }
 
+message KickMemberRequest {
+    string user_id         = 1; // caller (admin)
+    string conversation_id = 2;
+    string target_user_id  = 3;
+}
+message KickMemberResponse {
+    bool success = 1;
+}
+
+message UpdateMemberRoleRequest {
+    string user_id         = 1; // caller (admin)
+    string conversation_id = 2;
+    string target_user_id  = 3;
+    string new_role        = 4; // "admin" or "member"
+}
+message UpdateMemberRoleResponse {
+    bool success = 1;
+}
+
 // ──────────────────────────────────────────────
 // Messages
 // ──────────────────────────────────────────────
@@ -274,6 +305,7 @@ message CommitGroupChangeRequest {
     repeated DeviceWelcome welcome_messages   = 6;
     bytes                  ratchet_tree       = 7;
     repeated string        removed_device_ids = 8;
+    repeated string        added_user_ids     = 9;
 }
 message CommitGroupChangeResponse {
     int64 new_epoch    = 1;
@@ -425,6 +457,8 @@ service MessagingService {
     rpc GetConversations(GetConversationsRequest)                 returns (GetConversationsResponse);
     rpc GetConversation(GetConversationRequest)                   returns (ConversationResponse);
     rpc LeaveConversation(LeaveConversationRequest)               returns (LeaveConversationResponse);
+    rpc KickMember(KickMemberRequest)                             returns (KickMemberResponse);
+    rpc UpdateMemberRole(UpdateMemberRoleRequest)                 returns (UpdateMemberRoleResponse);
 
     // Messages
     rpc SendMessage(SendMessageRequest)   returns (SendMessageResponse);

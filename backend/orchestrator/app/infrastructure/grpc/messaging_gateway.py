@@ -260,6 +260,39 @@ class GrpcMessagingGateway(IMessagingGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.success
 
+    async def kick_member(
+        self, user_id: str, conversation_id: str, target_user_id: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().KickMember(
+                messaging_pb2.KickMemberRequest(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    target_user_id=target_user_id,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
+
+    async def update_member_role(
+        self, user_id: str, conversation_id: str, target_user_id: str, new_role: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().UpdateMemberRole(
+                messaging_pb2.UpdateMemberRoleRequest(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    target_user_id=target_user_id,
+                    new_role=new_role,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
+
     # ── Messages ──────────────────────────────────────────────────────
 
     async def send_message(
@@ -367,6 +400,7 @@ class GrpcMessagingGateway(IMessagingGateway):
         welcome_messages: list[DeviceWelcome],
         ratchet_tree: bytes,
         removed_device_ids: list[str],
+        added_user_ids: list[str] = None,
     ) -> CommitGroupChangeResult:
         try:
             resp = await self._stub().CommitGroupChange(
@@ -379,6 +413,7 @@ class GrpcMessagingGateway(IMessagingGateway):
                     welcome_messages=_device_welcomes_to_proto(welcome_messages),
                     ratchet_tree=ratchet_tree,
                     removed_device_ids=removed_device_ids,
+                    added_user_ids=added_user_ids or [],
                 ),
                 timeout=self._timeout,
             )
@@ -576,6 +611,14 @@ class GrpcMessagingGateway(IMessagingGateway):
         elif which == "member_left":
             result["type"] = "member_left"
             result["data"] = {"user_id": event.member_left.user_id}
+        elif which == "member_kicked":
+            mk = event.member_kicked
+            result["type"] = "member_kicked"
+            result["data"] = {"user_id": mk.user_id, "kicked_by": mk.kicked_by}
+        elif which == "role_changed":
+            rc = event.role_changed
+            result["type"] = "role_changed"
+            result["data"] = {"user_id": rc.user_id, "new_role": rc.new_role}
         elif which == "epoch_changed":
             result["type"] = "epoch_changed"
             result["data"] = {"new_epoch": event.epoch_changed.new_epoch}

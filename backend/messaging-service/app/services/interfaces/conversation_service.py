@@ -91,3 +91,22 @@ class IConversationService(ABC):
         commit_data: bytes,
     ) -> bool:
         ...
+
+    @abstractmethod
+    async def kick_member(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+    ) -> bool:
+        ...
+
+    @abstractmethod
+    async def update_member_role(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+        new_role: str,
+    ) -> bool:
+        ...

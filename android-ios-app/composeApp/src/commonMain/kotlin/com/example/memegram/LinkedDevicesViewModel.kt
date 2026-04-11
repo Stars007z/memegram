@@ -1,0 +1,235 @@
+package com.example.memegram
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.models.*
+import com.example.memegram.data.network.ApiService
+import com.example.memegram.data.repository.ChatRepository
+import com.example.memegram.mls.MlsManager
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+
+data class DeviceUiModel(
+    val serverId: String,
+    val clientDeviceId: String,
+    val name: String,
+    val type: String,
+    val isActive: Boolean,
+    val isCurrentDevice: Boolean,
+    val lastSeen: Long
+)
+
+class LinkedDevicesViewModel(
+    private val api: ApiService,
+    private val sessionManager: SessionManager,
+    private val mlsManager: MlsManager,
+    private val chatRepository: ChatRepository
+) : ViewModel() {
+
+    private val _devices           = MutableStateFlow<List<DeviceUiModel>>(emptyList())
+    val devices: StateFlow<List<DeviceUiModel>> = _devices.asStateFlow()
+
+    private val _pendingAdditions  = MutableStateFlow<List<PendingDeviceRegistration>>(emptyList())
+    val pendingAdditions: StateFlow<List<PendingDeviceRegistration>> = _pendingAdditions.asStateFlow()
+
+    private val _qrPayload         = MutableStateFlow<String?>(null)
+    val qrPayload: StateFlow<String?> = _qrPayload.asStateFlow()
+
+    private val _isLoading         = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error             = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _successMessage    = MutableStateFlow<String?>(null)
+    val successMessage: StateFlow<String?> = _successMessage.asStateFlow()
+
+    private var pollingJob: Job? = null
+
+    init {
+        load()
+        startPendingPolling()
+    }
+
+    fun load() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val currentClientDeviceId = sessionManager.getDeviceId()
+                _devices.value = api.getDevices().map { it.toUiModel(currentClientDeviceId) }
+                refreshPending()
+            } catch (e: Exception) {
+                _error.value = "Ошибка загрузки устройств"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun refreshPending() {
+        try { _pendingAdditions.value = api.getPendingDeviceAdditions() }
+        catch (_: Exception) {}
+    }
+
+    fun initAddDevice() {
+        viewModelScope.launch {
+            try {
+                val resp = api.initDeviceAddition()
+                _qrPayload.value = "memegram://add-device/${resp.registrationId}/${resp.registrationCode}"
+            } catch (e: Exception) {
+                _error.value = "Не удалось создать QR: ${e.message}"
+            }
+        }
+    }
+
+    fun clearQr() { _qrPayload.value = null }
+
+    fun confirmAddition(registrationId: String, confirm: Boolean) {
+        viewModelScope.launch {
+            try {
+                val pendingDev = _pendingAdditions.value.find { it.registrationId == registrationId }
+
+                val resp = api.confirmDeviceAddition(
+                    registrationId,
+                    ConfirmDeviceAdditionRequest(
+                        confirm = confirm,
+                        newDeviceName = if (confirm) pendingDev?.deviceName else null
+                    )
+                )
+
+                if (confirm) {
+                    _successMessage.value = "Устройство '${resp.newDeviceId.take(8)}...' добавлено"
+                    addNewDeviceToAllMlsGroups(
+                        newDeviceId = resp.newDeviceId,
+                        userId      = resp.userId
+                    )
+                }
+                refreshPending()
+                load()
+            } catch (e: Exception) {
+                _error.value = "Ошибка подтверждения: ${e.message}"
+            }
+        }
+    }
+
+    private suspend fun addNewDeviceToAllMlsGroups(newDeviceId: String, userId: String) {
+        println("LinkedDevicesVM НАЧАЛО добавления устройства $newDeviceId во все чаты")
+        val myDeviceId = sessionManager.getDeviceId()
+
+        var keyPackageData: String? = null
+        var attempts = 0
+
+        while (attempts < 15 && keyPackageData == null) {
+            try {
+                println("LinkedDevicesVM ⏳ Попытка ${attempts + 1}: Запрашиваем ключи для $userId...")
+                val packages = api.getKeyPackagesForUser(userId)
+
+                keyPackageData = packages.find { it.deviceId != myDeviceId }?.keyPackageData
+
+                if (keyPackageData != null) {
+                    println("LinkedDevicesVM ✅ НАЙДЕН чужой key package! (размер: ${keyPackageData.length} байт)")
+                }
+            } catch (e: Exception) {
+                println("LinkedDevicesVM ❌ Ошибка запроса ключей: ${e.message}")
+            }
+
+            if (keyPackageData == null) {
+                delay(2000)
+                attempts++
+            }
+        }
+
+        if (keyPackageData == null) {
+            println("LinkedDevicesVM 🚨 КРИТИЧЕСКАЯ ОШИБКА: Ключи для нового устройства так и не появились на сервере за 30 сек!")
+            return
+        }
+
+        println("LinkedDevicesVM 📥 Запрашиваем актуальный список чатов с бэкенда...")
+        try {
+            val conversationsResp = api.getConversations(limit = 100)
+            val conversations = conversationsResp.items
+            println("LinkedDevicesVM 💬 Найдено чатов для обработки: ${conversations.size}")
+
+            if (conversations.isEmpty()) {
+                println("LinkedDevicesVM ⚠️ У пользователя нет чатов, Welcome-сообщения создавать не для чего.")
+                return
+            }
+
+            conversations.forEach { chat ->
+                val convId = chat.id
+                println("LinkedDevicesVM ⚙️ Обработка чата $convId...")
+
+                if (!mlsManager.hasGroup(convId)) {
+                    println("LinkedDevicesVM ⏭️ Пропускаем $convId: у нас нет локальных ключей от этого чата")
+                    return@forEach
+                }
+
+                try {
+                    val addResult = mlsManager.addMemberToGroup(convId, keyPackageData)
+                    mlsManager.flushState()
+                    val epoch = mlsManager.getGroupEpoch(convId)
+
+                    println("LinkedDevicesVM 📤 Отправляем Commit+Welcome на сервер (epoch = ${epoch + 1})...")
+                    api.commitGroupChange(
+                        convId,
+                        CommitGroupChangeRequest(
+                            commitData      = addResult.commitB64,
+                            newEpoch        = (epoch + 1).toInt(),
+                            welcomeMessages = listOf(
+                                DeviceWelcome(deviceId = newDeviceId, welcomeData = addResult.welcomeB64)
+                            )
+                        )
+                    )
+                    mlsManager.updateGroupEpoch(convId, epoch + 1)
+                    println("LinkedDevicesVM ✅ УСПЕХ! Новое устройство добавлено в чат $convId")
+                } catch (e: Exception) {
+                    println("LinkedDevicesVM ❌ ОШИБКА при добавлении в $convId: ${e.message}")
+                }
+            }
+            println("LinkedDevicesVM ✅ ПРОЦЕСС ДОБАВЛЕНИЯ ПОЛНОСТЬЮ ЗАВЕРШЕН!")
+
+        } catch (e: Exception) {
+            println("LinkedDevicesVM ❌ Ошибка при получении списка чатов: ${e.message}")
+        }
+    }
+
+    fun revokeDevice(deviceId: String) {
+        viewModelScope.launch {
+            try {
+                api.revokeDevice(deviceId, RevokeDeviceRequest())
+                _successMessage.value = "Устройство отозвано"
+                load()
+            } catch (e: Exception) {
+                _error.value = "Ошибка отзыва: ${e.message}"
+            }
+        }
+    }
+
+    fun clearError()   { _error.value = null }
+    fun clearSuccess() { _successMessage.value = null }
+
+    private fun startPendingPolling() {
+        pollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(5_000)
+                refreshPending()
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        pollingJob?.cancel()
+    }
+
+    private fun DeviceInfoResponse.toUiModel(currentClientDeviceId: String?) = DeviceUiModel(
+        serverId          = id,
+        clientDeviceId    = clientDeviceId,
+        name              = deviceName,
+        type              = deviceType,
+        isActive          = isActive,
+        isCurrentDevice   = clientDeviceId == currentClientDeviceId,
+        lastSeen          = lastSeen
+    )
+}

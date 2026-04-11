@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from starlette.responses import StreamingResponse
 
 from app.api.dependencies import get_current_session, get_messaging_gateway
@@ -20,6 +20,9 @@ from app.api.v1.messaging.schemas import (
     ConversationSummarySchema,
     LeaveConversationRequestSchema,
     LeaveConversationResponseSchema,
+    KickMemberResponseSchema,
+    UpdateMemberRoleRequestSchema,
+    UpdateMemberRoleResponseSchema,
     SendMessageRequestSchema,
     SendMessageResponseSchema,
     MessageEntrySchema,
@@ -109,9 +112,12 @@ async def upload_key_packages(
 )
 async def get_key_packages_for_user(
     target_user_id: str,
+    response: Response,  # 🔥 ИНЖЕКТИМ RESPONSE
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
+    # 🔥 ЖЕСТКО ОТКЛЮЧАЕМ КЭШ НА МОБИЛКЕ
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     results = await gw.get_key_packages_for_user(target_user_id)
     return GetKeyPackagesForUserResponseSchema(
         key_packages=[
@@ -127,9 +133,11 @@ async def get_key_packages_for_user(
 
 @router.get("/key-packages/count", response_model=KeyPackagesCountResponseSchema)
 async def get_key_packages_count(
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     count = await gw.get_key_packages_count(session.user_id, session.device_id)
     return KeyPackagesCountResponseSchema(available_count=count)
 
@@ -181,11 +189,13 @@ async def create_group_conversation(
 
 @router.get("/conversations", response_model=GetConversationsResponseSchema)
 async def get_conversations(
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
     limit: int = Query(20, ge=1, le=100),
     cursor: str = Query(""),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_conversations(session.user_id, limit, cursor)
     return GetConversationsResponseSchema(
         items=[
@@ -204,9 +214,11 @@ async def get_conversations(
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponseSchema)
 async def get_conversation(
     conversation_id: str,
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_conversation(session.user_id, conversation_id)
     return _conv_to_schema(result)
 
@@ -228,6 +240,44 @@ async def leave_conversation(
         commit_data=b64_to_bytes(body.commit_data),
     )
     return LeaveConversationResponseSchema(success=success)
+
+
+@router.post(
+    "/conversations/{conversation_id}/members/{target_user_id}/kick",
+    response_model=KickMemberResponseSchema,
+)
+async def kick_member(
+    conversation_id: str,
+    target_user_id: str,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.kick_member(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        target_user_id=target_user_id,
+    )
+    return KickMemberResponseSchema(success=success)
+
+
+@router.patch(
+    "/conversations/{conversation_id}/members/{target_user_id}/role",
+    response_model=UpdateMemberRoleResponseSchema,
+)
+async def update_member_role(
+    conversation_id: str,
+    target_user_id: str,
+    body: UpdateMemberRoleRequestSchema,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.update_member_role(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        target_user_id=target_user_id,
+        new_role=body.new_role,
+    )
+    return UpdateMemberRoleResponseSchema(success=success)
 
 
 # ── Messages ──────────────────────────────────────────────────────────
@@ -262,11 +312,13 @@ async def send_message(
 )
 async def get_messages(
     conversation_id: str,
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
     before_message_id: str = Query(""),
     limit: int = Query(50, ge=1, le=100),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_messages(
         user_id=session.user_id,
         conversation_id=conversation_id,
@@ -354,6 +406,7 @@ async def commit_group_change(
         welcome_messages=welcomes,
         ratchet_tree=b64_to_bytes(body.ratchet_tree) if body.ratchet_tree else b"",
         removed_device_ids=body.removed_device_ids,
+        added_user_ids=body.added_user_ids
     )
     return CommitGroupChangeResponseSchema(
         new_epoch=result.new_epoch, committed_at=result.committed_at,
@@ -362,9 +415,11 @@ async def commit_group_change(
 
 @router.get("/welcomes", response_model=GetPendingWelcomesResponseSchema)
 async def get_pending_welcomes(
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     items = await gw.get_pending_welcomes(session.device_id)
     return GetPendingWelcomesResponseSchema(
         items=[
@@ -393,10 +448,12 @@ async def ack_welcome(
 )
 async def get_pending_commits(
     conversation_id: str,
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
     since_epoch: int = Query(0, ge=0),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     commits = await gw.get_pending_commits(
         session.device_id, conversation_id, since_epoch,
     )
@@ -443,9 +500,11 @@ async def confirm_media_upload(
 @router.get("/media/{media_id}/download", response_model=GetMediaDownloadUrlResponseSchema)
 async def get_media_download_url(
     media_id: str,
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_media_download_url(session.user_id, media_id)
     return GetMediaDownloadUrlResponseSchema(
         download_url=result.download_url,

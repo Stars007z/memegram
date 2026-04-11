@@ -161,9 +161,11 @@ Messaging-service — **единый сервис** (не дробим даль�
 | `commit_data` | BYTEA NOT NULL | Сериализованный MLS PublicMessage (Commit) |
 | `created_at` | TIMESTAMP | — |
 
-**Индексы:** INDEX(`conversation_id`, `epoch`)
+**Constraints:** UNIQUE(`conversation_id`, `epoch`)
 
 > Хранятся для синхронизации устройств, которые были оффлайн во время Commit. Устройство запрашивает все Commit'ы с момента своей последней известной эпохи.
+>
+> ⚠️ UniqueConstraint гарантирует, что для каждой эпохи в группе может существовать ровно один Commit. Это предотвращает race condition, когда несколько участников одновременно пытаются применить Commit к одной эпохе (например, два участника одновременно создают Remove Commit при `member_left`). Проигравший получает `ABORTED` и должен синхронизироваться.
 
 ---
 
@@ -294,12 +296,67 @@ messaging-service
 #### `LeaveConversation(LeaveConversationRequest) → LeaveConversationResponse`
 Участник покидает группу.
 
-**Вход:** `user_id`, `device_id`, `conversation_id`, `commit_data: bytes` (MLS Remove Commit)
+**Вход:** `user_id`, `device_id`, `conversation_id`, `commit_data?: bytes` (optional, не используется)
 
 **Логика:**
 1. Проверка членства
-2. Вызов `CommitGroupChange` внутренне
-3. UPDATE `conversation_members.left_at = now()`
+2. UPDATE `conversation_members.left_at = now()`
+3. Redis PUBLISH событие `member_left: { user_id, conversation_id }` в канал чата
+
+**Возврат:** `success: bool`
+
+> ⚠️ **RFC 9420 §12.2:** Участник НЕ может закоммитить своё собственное удаление из MLS-группы. `leave_group()` в OpenMLS возвращает Proposal, а не Commit. Поэтому сервер НЕ вызывает `CommitGroupChange` при выходе.
+>
+> **Протокол выхода:**
+> 1. Уходящий клиент вызывает `leaveConversation()` → сервер помечает участника как ушедшего и публикует SSE `member_left`
+> 2. Клиент локально удаляет MLS-группу из OpenMLS storage (`group.delete()`) и очищает маппинги
+> 3. Оставшиеся участники, получив `member_left`, создают MLS Remove Commit через `remove_member_by_identity()` и отправляют его на сервер через `CommitGroupChange`
+> 4. Благодаря UniqueConstraint на `(conversation_id, epoch)`, только один Remove Commit будет принят; остальные получат `ABORTED` и синхронизируются
+>
+> **Rejoin:** При повторном добавлении участника в группу (через Welcome), `CommitGroupChange` обрабатывает `added_user_ids` с трёхсторонней логикой: если участник имеет запись с `left_at != NULL` — UPDATE (обнуление `left_at`), если активный — skip, если нет записи — INSERT.
+
+---
+
+#### `KickMember(KickMemberRequest) → KickMemberResponse`
+Администратор удаляет участника из группы (серверная часть — пометка + SSE-событие).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID — удаляемый участник
+
+**Логика:**
+1. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+2. Проверка, что `target_user_id != user_id` (для выхода — используй `LeaveConversation`)
+3. Проверка, что target — active member
+4. Нельзя кикнуть `owner`
+5. Admin может кикнуть только `member`; `owner` может кикнуть и `admin`, и `member`
+6. UPDATE `conversation_members.left_at = now()` для target
+7. Redis PUBLISH событие `member_kicked: { user_id, kicked_by }`
+
+**Возврат:** `success: bool`
+
+> **MLS Remove Commit:** После успешного kick серверная часть только помечает участника как ушедшего. Админ-клиент, получив успешный ответ, создаёт MLS Remove Commit через `removeMemberByIdentity()` и отправляет через `CommitGroupChange`. Это аналогично тому, как другие участники создают Remove Commit при `member_left`.
+
+---
+
+#### `UpdateMemberRole(UpdateMemberRoleRequest) → UpdateMemberRoleResponse`
+Изменение роли участника группы (promote/demote).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID
+- `new_role` string — `"admin"` или `"member"`
+
+**Логика:**
+1. Валидация `new_role` ∈ {`admin`, `member`}
+2. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+3. Нельзя менять собственную роль
+4. Нельзя менять роль `owner`
+5. Только `owner` может снять `admin` → `member` (демоушн)
+6. UPDATE `conversation_members.role = new_role`
+7. Redis PUBLISH событие `role_changed: { user_id, new_role }`
 
 **Возврат:** `success: bool`
 
@@ -403,7 +460,8 @@ Server-Streaming. Клиент держит стрим открытым для �
 - `message_edited: { message_id, new_mls_ciphertext, edited_at }`
 - `message_deleted: { message_id }`
 - `typing: { user_id, conversation_id, is_typing }`
-- `member_joined / member_left: { user_id, conversation_id }`
+- `member_joined: { user_id, conversation_id }`
+- `member_left: { user_id, conversation_id }` — триггер для оставшихся участников: получив это событие, один из них создаёт MLS Remove Commit и отправляет через `CommitGroupChange`
 - `epoch_changed: { conversation_id, new_epoch }` — триггер для синхронизации MLS
 
 **Логика:** Redis SUB на каналы `conv:{id}` для каждого из `conversation_ids`. При получении события — форвард в стрим.
@@ -428,11 +486,17 @@ Server-Streaming. Клиент держит стрим открытым для �
 **Логика:**
 1. Проверка прав: Add/Remove — только `owner`/`admin`; Update — любой `member`
 2. Оптимистичная проверка `current_epoch + 1 = new_epoch` → `ABORTED` при конфликте
-3. INSERT `mls_commit_messages`
+3. INSERT `mls_commit_messages` внутри SAVEPOINT (`session.begin_nested()`):
+   - При `IntegrityError` (UniqueConstraint на `conversation_id` + `epoch`) → `ABORTED` с сообщением об epoch conflict
+   - Клиент при получении `ABORTED` должен выполнить `clearPendingCommit()` + `syncGroupCommits()` для синхронизации
 4. INSERT `mls_welcome_messages` для каждого нового устройства (если Add)
 5. UPDATE `mls_groups.current_epoch = new_epoch`, `ratchet_tree`
-6. Если есть `removed_device_ids` — INSERT `conversation_members.left_at` для соответствующих user_id (если у пользователя не осталось активных устройств в группе)
-7. Redis PUBLISH событие `epoch_changed` в канал чата
+6. Обработка `added_user_ids` (трёхсторонняя логика для поддержки rejoin):
+   - Если участник имеет запись с `left_at != NULL` → UPDATE: обнуление `left_at`, обновление `joined_at` и `role`
+   - Если участник активен (`left_at IS NULL`) → skip
+   - Если записи нет → INSERT новый `conversation_member`
+7. Если есть `removed_device_ids` — UPDATE `conversation_members.left_at` для соответствующих user_id (если у пользователя не осталось активных устройств в группе)
+8. Redis PUBLISH событие `epoch_changed` в канал чата
 
 **Возврат:** `new_epoch: int64`, `committed_at: TIMESTAMP`
 
