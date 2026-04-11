@@ -87,6 +87,10 @@ fun ChatsScreen(
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var newKeyInput by remember { mutableStateOf("") }
 
+    LaunchedEffect(Unit) {
+        profileViewModel.loadProfile()
+    }
+
     LaunchedEffect(isSearchMode) {
         if (isSearchMode) focusRequester.requestFocus()
         else viewModel.setSearchQuery("")
@@ -403,20 +407,12 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(50.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF6075F2)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = chat.name.take(1).uppercase(),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
+        AvatarImage(
+            mediaId = chat.avatarMediaId,
+            size = 50.dp,
+            fallbackLetter = chat.name.take(1).uppercase(),
+            backgroundColor = Color(0xFF6075F2)
+        )
 
         Spacer(modifier = Modifier.width(16.dp))
 
@@ -432,20 +428,13 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!chat.isLastMessageMine && !chat.lastSenderName.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = chat.lastSenderName.take(1).uppercase(),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    AvatarImage(
+                        mediaId = chat.lastSenderAvatarMediaId,
+                        size = 18.dp,
+                        fallbackLetter = chat.lastSenderName.take(1).uppercase(),
+                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                     Spacer(modifier = Modifier.width(6.dp))
                 } else if (chat.isLastMessageMine) {
                     Text(

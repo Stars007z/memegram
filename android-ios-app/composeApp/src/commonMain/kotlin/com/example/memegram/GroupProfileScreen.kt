@@ -40,6 +40,7 @@ fun GroupProfileScreen(
     onBack: () -> Unit,
     onLeaveSuccess: () -> Unit,
     onNavigateToChat: (conversationId: String, chatName: String) -> Unit = { _, _ -> },
+    onNavigateToUserProfile: (userId: String, username: String) -> Unit = { _, _ -> },
     viewModel: GroupProfileViewModel,
     contactsViewModel: ContactsViewModel
 ) {
@@ -221,12 +222,13 @@ fun GroupProfileScreen(
                                 modifier = Modifier.clickable { selectedContactId = contact.contactUserId },
                                 headlineContent = { Text(name) },
                                 leadingContent = {
-                                    Box(
-                                        modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(name.take(1).uppercase(), color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                    }
+                                    AvatarImage(
+                                        mediaId = contact.profile?.avatarMediaId,
+                                        size = 36.dp,
+                                        fallbackLetter = name.take(1).uppercase(),
+                                        backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 },
                                 trailingContent = {
                                     RadioButton(selected = isSelected, onClick = null)
@@ -324,20 +326,20 @@ fun GroupProfileScreen(
                             headlineContent = { Text(member.user.username ?: s.noName) },
                             supportingContent = { Text(roleDisplayName(member.role, s)) },
                             leadingContent = {
-                                Box(
-                                    modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = (member.user.username ?: "?").take(1).uppercase(),
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                AvatarImage(
+                                    mediaId = member.user.avatarMediaId,
+                                    size = 40.dp,
+                                    fallbackLetter = (member.user.username ?: "?").take(1).uppercase(),
+                                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
                             },
                             modifier = if (canInteract) {
                                 Modifier.combinedClickable(
-                                    onClick = {},
+                                    onClick = {
+                                        val name = member.user.username ?: s.noName
+                                        onNavigateToUserProfile(member.user.id, name)
+                                    },
                                     onLongClick = { contextMenuMember = member }
                                 )
                             } else Modifier

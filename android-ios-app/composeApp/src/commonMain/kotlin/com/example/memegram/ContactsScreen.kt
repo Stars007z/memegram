@@ -323,23 +323,14 @@ private fun ContactItem(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(
-                    if (entry.isFavorite) accentColor.copy(alpha = 0.2f)
-                    else MaterialTheme.colorScheme.surfaceVariant
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = displayName.take(1).uppercase(),
-                color = if (entry.isFavorite) accentColor else Color.Gray,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-        }
+        AvatarImage(
+            mediaId = entry.profile?.avatarMediaId,
+            size = 46.dp,
+            fallbackLetter = displayName.take(1).uppercase(),
+            backgroundColor = if (entry.isFavorite) accentColor.copy(alpha = 0.2f)
+                else MaterialTheme.colorScheme.surfaceVariant,
+            textColor = if (entry.isFavorite) accentColor else Color.Gray
+        )
 
         Spacer(Modifier.width(14.dp))
 

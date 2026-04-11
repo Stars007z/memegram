@@ -37,7 +37,9 @@ class ChatRepositoryImpl(
                         timestamp = entity.timestamp,
                         unreadCount = entity.unreadCount.toInt(),
                         isLastMessageMine = entity.isLastMessageMine == 1L,
-                        lastSenderName = entity.lastSenderName
+                        lastSenderName = entity.lastSenderName,
+                        avatarMediaId = entity.avatarMediaId,
+                        lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId
                     )
                 }
             }
@@ -51,9 +53,10 @@ class ChatRepositoryImpl(
                 lastMessage = chat.lastMessage,
                 timestamp = chat.timestamp,
                 unreadCount = chat.unreadCount.toLong(),
-                avatarMediaId = null,
+                avatarMediaId = chat.avatarMediaId,
                 isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
-                lastSenderName = chat.lastSenderName
+                lastSenderName = chat.lastSenderName,
+                lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId
             )
         }
     }
@@ -68,9 +71,10 @@ class ChatRepositoryImpl(
                         lastMessage = chat.lastMessage,
                         timestamp = chat.timestamp,
                         unreadCount = chat.unreadCount.toLong(),
-                        avatarMediaId = null,
+                        avatarMediaId = chat.avatarMediaId,
                         isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
-                        lastSenderName = chat.lastSenderName
+                        lastSenderName = chat.lastSenderName,
+                        lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId
                     )
                 }
             }
@@ -97,7 +101,11 @@ class ChatRepositoryImpl(
                 name = entity.name,
                 lastMessage = entity.lastMessage,
                 timestamp = entity.timestamp,
-                unreadCount = entity.unreadCount.toInt()
+                unreadCount = entity.unreadCount.toInt(),
+                isLastMessageMine = entity.isLastMessageMine == 1L,
+                lastSenderName = entity.lastSenderName,
+                avatarMediaId = entity.avatarMediaId,
+                lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId
             )
         }
     }
@@ -123,7 +131,8 @@ class ChatRepositoryImpl(
                         mediaId            = entity.mediaId,
                         encryptionMetadata = entity.encryptionMetadata,
                         localPreviewBytes  = entity.localPreviewBytes,
-                        mediaUrl           = entity.mediaUrl
+                        mediaUrl           = entity.mediaUrl,
+                        senderUserId       = entity.senderUserId
                     )
 
                 }
@@ -144,12 +153,13 @@ class ChatRepositoryImpl(
                     realId, conversationId, message.text,
                     if (message.isOutgoing) 1L else 0L, message.timestamp, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
-                    message.localPreviewBytes, message.mediaUrl, now
+                    message.localPreviewBytes, message.mediaUrl, now, message.senderUserId
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
-                    message.localPreviewBytes, message.mediaUrl, now, message.timestamp, realId
+                    message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
+                    message.senderUserId, realId
                 )
                 runGarbageCollector(conversationId)
             }
@@ -177,7 +187,8 @@ class ChatRepositoryImpl(
                         localPreviewBytes  = message.localPreviewBytes,
                         mediaUrl           = message.mediaUrl,
                         lastAccessedAt     = now,
-                        accessCount        = 1L
+                        accessCount        = 1L,
+                        senderUserId       = message.senderUserId
                     )
 
                 }
@@ -219,9 +230,9 @@ class ChatRepositoryImpl(
                         mediaId            = entity.mediaId,
                         encryptionMetadata = entity.encryptionMetadata,
                         localPreviewBytes  = entity.localPreviewBytes,
-                        mediaUrl           = entity.mediaUrl
+                        mediaUrl           = entity.mediaUrl,
+                        senderUserId       = entity.senderUserId
                     )
-
                 }
         }
     }

@@ -44,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -178,6 +179,7 @@ fun ChatScreen(
     val isGroupChat by viewModel.isGroupChat.collectAsState()
     val messageSenders by viewModel.messageSenders.collectAsState()
     val memberProfiles by viewModel.memberProfiles.collectAsState()
+    val peerAvatarMediaId by viewModel.peerAvatarMediaId.collectAsState()
 
     val replyingTo by viewModel.replyingTo.collectAsState()
     val replyContext by viewModel.replyContext.collectAsState()
@@ -449,15 +451,15 @@ fun ChatScreen(
                             .clickable { onProfileClick() }
                             .padding(end = 16.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(topBarTextColor.copy(alpha = 0.2f))
-                                .clickable { showFullScreenAvatar = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(chatName.take(1).uppercase(), color = topBarTextColor, fontSize = 16.sp)
+                        Box(modifier = Modifier.clickable { showFullScreenAvatar = true }) {
+                            AvatarImage(
+                                mediaId = if (!isGroupChat) peerAvatarMediaId else null,
+                                size = 36.dp,
+                                fallbackLetter = chatName.take(1).uppercase(),
+                                backgroundColor = topBarTextColor.copy(alpha = 0.2f),
+                                textColor = topBarTextColor,
+                                textStyle = TextStyle(fontSize = 16.sp)
+                            )
                         }
                         Spacer(Modifier.width(10.dp))
                         Text(chatName, color = topBarTextColor)
@@ -776,15 +778,14 @@ fun ChatScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = profile?.username?.take(1)?.uppercase() ?: "?",
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
+                                    AvatarImage(
+                                        mediaId = profile?.avatarMediaId,
+                                        size = 36.dp,
+                                        fallbackLetter = profile?.username?.take(1)?.uppercase() ?: "?",
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        textStyle = TextStyle(fontSize = 14.sp)
                                     )
                                 }
 

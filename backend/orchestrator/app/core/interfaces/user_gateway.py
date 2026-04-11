@@ -7,8 +7,8 @@ from typing import Optional
 class UserProfileResult:
     id: str
     username: str
-    avatar_data: Optional[bytes] = None
-    profile_background_data: Optional[bytes] = None
+    avatar_media_id: Optional[str] = None
+    profile_background_media_id: Optional[str] = None
     user_public_key: str = ""
     bio: str = ""
     last_active: int = 0

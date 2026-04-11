@@ -205,14 +205,13 @@ fun App() {
                         )
                     }
                     composable<LanguageRoute> {
-                        val viewModel = koinViewModel<LanguageViewModel>()
                         LanguageScreen(
                             topBarColor = topBarColor,
                             onBack = {
                                 if (navController.previousBackStackEntry != null)
                                     navController.popBackStack()
                             },
-                            viewModel = viewModel
+                            viewModel = languageViewModel
                         )
                     }
                     composable<PrivacyRoute> {
@@ -310,6 +309,9 @@ fun App() {
                                 navController.navigate(ChatDetailRoute(chatName, convId)) {
                                     popUpTo(ChatsRoute)
                                 }
+                            },
+                            onNavigateToUserProfile = { userId, username ->
+                                navController.navigate(UserProfileRoute(userId, username))
                             },
                             viewModel = viewModel,
                             contactsViewModel = contactsVm
