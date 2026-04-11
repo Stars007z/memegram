@@ -350,13 +350,15 @@ services:
       /bin/sh -c "
         mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} &&
         mc mb --ignore-existing local/$${S3_BUCKET_NAME:-messenger-media-dev} &&
-        echo 'Bucket created successfully' &&
+        mc mb --ignore-existing local/$${ITEM_STORAGE_S3_BUCKET:-messenger-items-dev} &&
+        echo 'Buckets created successfully' &&
         exit 0
       "
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:-messenger-media-dev}
+      ITEM_STORAGE_S3_BUCKET: ${ITEM_STORAGE_S3_BUCKET:-messenger-items-dev}
     networks:
       - memegram-backend
 
@@ -405,6 +407,76 @@ services:
       start_period: 20s
 
   # ─────────────────────────────────────────
+  # ITEM STORAGE
+  # ─────────────────────────────────────────
+
+  item-storage-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-item-storage-postgres
+    environment:
+      POSTGRES_USER: ${ITEM_STORAGE_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${ITEM_STORAGE_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${ITEM_STORAGE_DB_NAME:-item_storage_db}
+    ports:
+      - "5437:5432"
+    volumes:
+      - item_storage_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ITEM_STORAGE_DB_USER:-memegram} -d ${ITEM_STORAGE_DB_NAME:-item_storage_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  item-storage-service:
+    build:
+      context: ./backend/item-storage-service
+      dockerfile: Dockerfile
+    container_name: memegram-item-storage-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h item-storage-postgres -U ${ITEM_STORAGE_DB_USER:-memegram} -d ${ITEM_STORAGE_DB_NAME:-item_storage_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${ITEM_STORAGE_DB_USER:-memegram}:${ITEM_STORAGE_DB_PASSWORD:-changeme}@item-storage-postgres:5432/${ITEM_STORAGE_DB_NAME:-item_storage_db}
+      - GRPC_PORT=50056
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET_NAME=${ITEM_STORAGE_S3_BUCKET:-messenger-items-dev}
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_SSE_TYPE=AES256
+      - KMS_KEY_ID=
+      - PRESIGNED_UPLOAD_TTL=${PRESIGNED_UPLOAD_TTL:-3600}
+      - PRESIGNED_DOWNLOAD_TTL=${PRESIGNED_DOWNLOAD_TTL:-900}
+      - PENDING_CLEANUP_AFTER_SECONDS=${PENDING_CLEANUP_AFTER_SECONDS:-7200}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    ports:
+      - "50056:50056"
+    depends_on:
+      item-storage-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50056'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
   # ORCHESTRATOR
   # ─────────────────────────────────────────
 
@@ -436,6 +508,9 @@ services:
       - MEDIA_GRPC_HOST=media-service
       - MEDIA_GRPC_PORT=50055
       - MEDIA_GRPC_TIMEOUT=10
+      - ITEM_STORAGE_GRPC_HOST=item-storage-service
+      - ITEM_STORAGE_GRPC_PORT=50056
+      - ITEM_STORAGE_GRPC_TIMEOUT=10
       - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
       - REDIS_URL=redis://auth-redis:6379/0
     ports:
@@ -450,6 +525,8 @@ services:
       messaging-service:
         condition: service_healthy
       media-service:
+        condition: service_healthy
+      item-storage-service:
         condition: service_healthy
     networks:
       - memegram-backend
@@ -472,4 +549,5 @@ volumes:
   contacts_postgres_data:
   messaging_postgres_data:
   media_postgres_data:
+  item_storage_postgres_data:
   minio_data:

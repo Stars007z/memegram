@@ -1,5 +1,5 @@
 import asyncio
-import grpc.aio  # ← Импортируем async gRPC
+import grpc.aio
 from grpc_reflection.v1alpha import reflection
 
 from app.generated import auth_pb2, auth_pb2_grpc
