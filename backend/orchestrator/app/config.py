@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     MEDIA_GRPC_PORT: int = 50055
     MEDIA_GRPC_TIMEOUT: float = 10.0
 
+    ITEM_STORAGE_GRPC_HOST: str = "localhost"
+    ITEM_STORAGE_GRPC_PORT: int = 50056
+    ITEM_STORAGE_GRPC_TIMEOUT: float = 10.0
+
     AUTO_DELETE_CRON_HOUR: int = 3
     AUTO_DELETE_CRON_MINUTE: int = 0
 
@@ -54,6 +58,10 @@ class Settings(BaseSettings):
     @property
     def MEDIA_GRPC_ADDRESS(self) -> str:
         return f"{self.MEDIA_GRPC_HOST}:{self.MEDIA_GRPC_PORT}"
+
+    @property
+    def ITEM_STORAGE_GRPC_ADDRESS(self) -> str:
+        return f"{self.ITEM_STORAGE_GRPC_HOST}:{self.ITEM_STORAGE_GRPC_PORT}"
 
 
 settings = Settings()
