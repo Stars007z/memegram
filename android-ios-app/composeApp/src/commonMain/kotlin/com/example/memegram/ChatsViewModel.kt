@@ -92,11 +92,14 @@ class ChatsViewModel(
         if (!silent) _error.value = null
 
         try {
+            profileCache.clear()
+
             val response = api.getConversations()
             val currentUserId = sessionManager.getUserId()
 
             val newChatsList = response.items.map { conv ->
                 var chatName = conv.name?.takeIf { it.isNotBlank() } ?: "Собеседник"
+                var peerAvatarMediaId: String? = null
 
                 if (conv.type == "direct") {
                     try {
@@ -109,6 +112,7 @@ class ChatsViewModel(
                             val profile = profileCache[peerId]
                                 ?: api.getUserById(peerId).also { profileCache[peerId] = it }
                             chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
+                            peerAvatarMediaId = profile.avatarMediaId
                         }
                     } catch (_: Exception) {}
                 }
@@ -119,9 +123,23 @@ class ChatsViewModel(
                 val isMine = localLastMessage?.isOutgoing ?: false
                 val isGroup = conv.type != "direct"
 
-                val senderName = if (isGroup && !isMine && localLastMessage != null) {
-                    "?"
-                } else null
+                var senderName: String? = null
+                var lastSenderAvatarMediaId: String? = null
+
+                if (isGroup && !isMine && localLastMessage != null) {
+                    val senderId = localLastMessage.senderUserId
+                    if (senderId != null) {
+                        try {
+                            val senderProfile = profileCache[senderId]
+                                ?: api.getUserById(senderId).also { profileCache[senderId] = it }
+                            senderName = senderProfile.username?.takeIf { it.isNotBlank() }
+                                ?: "User_${senderId.take(4)}"
+                            lastSenderAvatarMediaId = senderProfile.avatarMediaId
+                        } catch (_: Exception) {
+                            senderName = "User_${senderId.take(4)}"
+                        }
+                    }
+                }
 
                 val displayLastMessage = when {
                     localLastMessage?.type == "voice" -> "🎤 Голосовое сообщение"
@@ -134,14 +152,16 @@ class ChatsViewModel(
                 }
 
                 ChatModel(
-                    id                = conv.id.hashCode(),
-                    conversationId    = conv.id,
-                    name              = chatName,
-                    lastMessage       = displayLastMessage,
-                    timestamp         = conv.lastActivityAt * 1000,
-                    unreadCount       = conv.unreadCount,
-                    isLastMessageMine = isMine,
-                    lastSenderName    = senderName
+                    id                      = conv.id.hashCode(),
+                    conversationId          = conv.id,
+                    name                    = chatName,
+                    lastMessage             = displayLastMessage,
+                    timestamp               = conv.lastActivityAt * 1000,
+                    unreadCount             = conv.unreadCount,
+                    isLastMessageMine       = isMine,
+                    lastSenderName          = senderName,
+                    avatarMediaId           = peerAvatarMediaId,
+                    lastSenderAvatarMediaId = lastSenderAvatarMediaId
                 )
             }
 
@@ -237,13 +257,14 @@ class ChatsViewModel(
                     mlsManager.flushState()
                     chatRepository.saveMessage(
                         Message(
-                            id         = event.data?.id.hashCode(),
-                            serverId   = event.data?.id ?: "",
-                            text       = decryptedText,
-                            isOutgoing = isMine,
-                            timestamp  = (event.data?.createdAt?.let { it * 1000L })
+                            id           = event.data?.id.hashCode(),
+                            serverId     = event.data?.id ?: "",
+                            text         = decryptedText,
+                            isOutgoing   = isMine,
+                            timestamp    = (event.data?.createdAt?.let { it * 1000L })
                                 ?: Clock.System.now().toEpochMilliseconds(),
-                            status     = MessageStatus.SENT
+                            status       = MessageStatus.SENT,
+                            senderUserId = event.data?.senderUserId
                         ),
                         convId
                     )
@@ -251,14 +272,28 @@ class ChatsViewModel(
 
                 val chat = chatRepository.getChatById(convId)
                 if (chat != null) {
-                    val senderName = if (!isMine && chat.name != "Собеседник") chat.name else null
+                    var senderName: String? = null
+                    var senderAvatarMediaId: String? = null
+                    val senderId = event.data?.senderUserId
+                    if (!isMine && senderId != null) {
+                        try {
+                            val profile = profileCache[senderId]
+                                ?: api.getUserById(senderId).also { profileCache[senderId] = it }
+                            senderName = profile.username?.takeIf { it.isNotBlank() }
+                                ?: "User_${senderId.take(4)}"
+                            senderAvatarMediaId = profile.avatarMediaId
+                        } catch (_: Exception) {
+                            senderName = "User_${senderId.take(4)}"
+                        }
+                    }
                     chatRepository.saveChat(
                         chat.copy(
-                            lastMessage = decryptedText ?: if (isMine) "📨" else "🔒",
-                            timestamp   = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
-                            unreadCount = if (isMine) chat.unreadCount else chat.unreadCount + 1,
-                            isLastMessageMine = isMine,
-                            lastSenderName = senderName
+                            lastMessage             = decryptedText ?: if (isMine) "\uD83D\uDCE8" else "\uD83D\uDD12",
+                            timestamp               = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
+                            unreadCount             = if (isMine) chat.unreadCount else chat.unreadCount + 1,
+                            isLastMessageMine       = isMine,
+                            lastSenderName          = senderName,
+                            lastSenderAvatarMediaId = senderAvatarMediaId
                         )
                     )
                 } else {

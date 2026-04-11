@@ -65,6 +65,9 @@ class ChatViewModel(
     var peerUserId: String? = null
         private set
 
+    private val _peerAvatarMediaId = MutableStateFlow<String?>(null)
+    val peerAvatarMediaId: StateFlow<String?> = _peerAvatarMediaId.asStateFlow()
+
     val audioRecorder = createAudioRecorder()
     private var myUserId: String? = null
     private var myDeviceId: String? = null
@@ -133,6 +136,14 @@ class ChatViewModel(
                 } else {
                     val peer = conv.members.find { it.userId != myUserId }
                     peerUserId = peer?.userId
+                    peer?.userId?.let { peerId ->
+                        launch {
+                            try {
+                                val profile = api.getUserById(peerId)
+                                _peerAvatarMediaId.value = profile.avatarMediaId
+                            } catch (_: Exception) {}
+                        }
+                    }
                 }
             } catch (_: Exception) { }
 
@@ -179,14 +190,15 @@ class ChatViewModel(
                     val (parsedType, parsedMediaId, content) = parseMlsPayload(text)
 
                     Message(
-                        id         = existing?.id ?: msg.id.hashCode(),
-                        serverId   = msg.id,
-                        text       = content,
-                        isOutgoing = isSentByMe,
-                        timestamp  = msg.createdAt * 1000L,
-                        status     = MessageStatus.SENT,
-                        type       = if (parsedType != "text") parsedType else (existing?.type ?: "text"),
-                        mediaId    = parsedMediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId
+                        id           = existing?.id ?: msg.id.hashCode(),
+                        serverId     = msg.id,
+                        text         = content,
+                        isOutgoing   = isSentByMe,
+                        timestamp    = msg.createdAt * 1000L,
+                        status       = MessageStatus.SENT,
+                        type         = if (parsedType != "text") parsedType else (existing?.type ?: "text"),
+                        mediaId      = parsedMediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
+                        senderUserId = msg.effectiveSenderId
                     )
                 }
 
@@ -247,7 +259,8 @@ class ChatViewModel(
                     msgId         = msgId,
                     ciphertextB64 = data.mlsCiphertextB64 ?: "",
                     createdAt     = data.createdAt,
-                    isOutgoing    = data.senderUserId == myId
+                    isOutgoing    = data.senderUserId == myId,
+                    senderUserId  = data.senderUserId
                 )
             }
 
@@ -329,6 +342,15 @@ class ChatViewModel(
     private suspend fun pollNewMessages(conversationId: String) {
         try {
             val myId = myUserId ?: return
+            if (!_isGroupChat.value && peerUserId != null) {
+                try {
+                    val profile = api.getUserById(peerUserId!!)
+                    if (profile.avatarMediaId != _peerAvatarMediaId.value) {
+                        _peerAvatarMediaId.value = profile.avatarMediaId
+                    }
+                } catch (_: Exception) {}
+            }
+
             val serverMessages = api.getMessages(conversationId)
             val localMessages  = chatRepository.getMessagesOnce(conversationId)
             val localServerIds = localMessages.map { it.serverId }.toSet()
@@ -353,7 +375,8 @@ class ChatViewModel(
                     msgId         = msg.id,
                     ciphertextB64 = msg.mlsCiphertextB64,
                     createdAt     = msg.createdAt,
-                    isOutgoing    = msg.effectiveSenderId == myId
+                    isOutgoing    = msg.effectiveSenderId == myId,
+                    senderUserId  = msg.effectiveSenderId
                 )
             }
             _messageSenders.update { it + newSenders }
@@ -370,7 +393,8 @@ class ChatViewModel(
         msgId: String,
         ciphertextB64: String,
         createdAt: Long,
-        isOutgoing: Boolean
+        isOutgoing: Boolean,
+        senderUserId: String? = null
     ) {
         decryptMutex.withLock {
             val alreadyExists = chatRepository.getMessagesOnce(convId)
@@ -386,14 +410,15 @@ class ChatViewModel(
             val (parsedType, parsedMediaId, content) = parseMlsPayload(plaintext)
 
             val msg = Message(
-                id         = msgId.hashCode(),
-                serverId   = msgId,
-                text       = content,
-                isOutgoing = isOutgoing,
-                timestamp  = createdAt * 1000L,
-                status     = MessageStatus.SENT,
-                type       = if (parsedType != "text") parsedType else "text",
-                mediaId    = parsedMediaId.takeIf { it.isNotBlank() }
+                id           = msgId.hashCode(),
+                serverId     = msgId,
+                text         = content,
+                isOutgoing   = isOutgoing,
+                timestamp    = createdAt * 1000L,
+                status       = MessageStatus.SENT,
+                type         = if (parsedType != "text") parsedType else "text",
+                mediaId      = parsedMediaId.takeIf { it.isNotBlank() },
+                senderUserId = senderUserId
             )
             chatRepository.saveMessage(msg, convId)
         }
@@ -486,7 +511,8 @@ class ChatViewModel(
 
         val tempMsg = Message(
             id = now.hashCode(), text = text, isOutgoing = true,
-            timestamp = now, status = MessageStatus.SENDING, type = "text"
+            timestamp = now, status = MessageStatus.SENDING, type = "text",
+            senderUserId = myUserId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -526,7 +552,8 @@ class ChatViewModel(
         val tempMsg = Message(
             id = now.hashCode(), text = caption, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING,
-            type = "image", localPreviewBytes = previewBytes
+            type = "image", localPreviewBytes = previewBytes,
+            senderUserId = myUserId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -598,7 +625,8 @@ class ChatViewModel(
             isOutgoing = true,
             timestamp = now,
             status = MessageStatus.SENDING,
-            type = "voice"
+            type = "voice",
+            senderUserId = myUserId
         )
         viewModelScope.launch {
             chatRepository.saveMessage(tempMsg, convId)

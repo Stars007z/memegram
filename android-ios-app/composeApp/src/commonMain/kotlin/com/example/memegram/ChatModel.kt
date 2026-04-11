@@ -8,7 +8,9 @@ data class ChatModel(
     val timestamp: Long,
     val unreadCount: Int = 0,
     val isLastMessageMine: Boolean = false,
-    val lastSenderName: String? = null
+    val lastSenderName: String? = null,
+    val avatarMediaId: String? = null,
+    val lastSenderAvatarMediaId: String? = null
 )
 
 data class Message(
@@ -22,7 +24,8 @@ data class Message(
     val mediaId: String? = null,
     val encryptionMetadata: String? = null,
     val localPreviewBytes: ByteArray? = null,
-    val mediaUrl: String? = null
+    val mediaUrl: String? = null,
+    val senderUserId: String? = null
 )
 
 enum class MessageStatus { SENDING, SENT, FAILED }

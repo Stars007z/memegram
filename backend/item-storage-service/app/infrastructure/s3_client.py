@@ -1,4 +1,5 @@
 import aioboto3
+from botocore.config import Config as BotoConfig
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Any
 from app.config import settings
@@ -10,14 +11,7 @@ _session = aioboto3.Session(
     region_name=settings.AWS_REGION,
 )
 
-
-def _sse_params() -> dict[str, str]:
-    if settings.S3_SSE_TYPE == "aws:kms":
-        params: dict[str, str] = {"ServerSideEncryption": "aws:kms"}
-        if settings.KMS_KEY_ID:
-            params["SSEKMSKeyId"] = settings.KMS_KEY_ID
-        return params
-    return {"ServerSideEncryption": "AES256"}
+_boto_config = BotoConfig(signature_version="s3v4")
 
 
 @asynccontextmanager
@@ -25,6 +19,7 @@ async def get_s3_client() -> AsyncGenerator[Any, None]:
     async with _session.client(
         "s3",
         endpoint_url=settings.s3_endpoint,
+        config=_boto_config,
     ) as client:
         yield client
 
@@ -32,13 +27,11 @@ async def get_s3_client() -> AsyncGenerator[Any, None]:
 async def generate_presigned_upload_url(
     bucket: str, key: str, mime_type: str, ttl: int,
 ) -> str:
-    sse = _sse_params()
     params: dict[str, Any] = {
         "Bucket": bucket,
         "Key": key,
         "ContentType": mime_type,
     }
-    params.update(sse)
 
     async with get_s3_client() as client:
         url: str = await client.generate_presigned_url(

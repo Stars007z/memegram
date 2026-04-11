@@ -62,6 +62,7 @@ fun AuthScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .statusBarsPadding()
                 .padding(top = 16.dp, end = 16.dp)
         ) {
             Surface(

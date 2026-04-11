@@ -42,6 +42,7 @@ val appModule = module {
     single { AppDatabase(get()) }
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single { GlobalAudioPlayer() }
+    single { AvatarCache(get()) }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)

@@ -31,8 +31,8 @@ def _profile_from_response(profile) -> UserProfileResult:
         bio=profile.bio,
         last_active=last_active,
         is_deleted=profile.is_deleted,
-        avatar_data=None,
-        profile_background_data=None,
+        avatar_media_id=profile.avatar_media_id or None,
+        profile_background_media_id=profile.profile_background_media_id or None,
     )
 
 
