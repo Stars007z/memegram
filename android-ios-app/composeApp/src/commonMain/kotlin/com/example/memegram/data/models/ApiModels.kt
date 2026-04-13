@@ -82,7 +82,10 @@ data class UserSettingsResponse(
     @SerialName("ringtone_media_id") val ringtoneMediaId: String? = null,
     @SerialName("ringtone_vibration_strength") val ringtoneVibrationStrength: Int? = null,
     @SerialName("notification_sound_media_id") val notificationSoundMediaId: String? = null,
-    @SerialName("notification_vibration_strength") val notificationVibrationStrength: Int? = null
+    @SerialName("notification_vibration_strength") val notificationVibrationStrength: Int? = null,
+    @SerialName("top_bar_media_id") val topBarMediaId: String? = null,
+    @SerialName("my_bubble_media_id") val myBubbleMediaId: String? = null,
+    @SerialName("their_bubble_media_id") val theirBubbleMediaId: String? = null
 )
 
 @Serializable
@@ -99,7 +102,10 @@ data class UpdateSettingsRequest(
     @SerialName("ringtone_media_id") val ringtoneMediaId: String? = null,
     @SerialName("notification_sound") val notificationSound: String? = null,
     @SerialName("notification_vibration_strength") val notificationVibrationStrength: Int? = null,
-    @SerialName("ringtone_vibration_strength") val ringtoneVibrationStrength: Int? = null
+    @SerialName("ringtone_vibration_strength") val ringtoneVibrationStrength: Int? = null,
+    @SerialName("top_bar_media_id") val topBarMediaId: String? = null,
+    @SerialName("my_bubble_media_id") val myBubbleMediaId: String? = null,
+    @SerialName("their_bubble_media_id") val theirBubbleMediaId: String? = null
 )
 
 @Serializable

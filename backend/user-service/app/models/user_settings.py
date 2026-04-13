@@ -25,6 +25,9 @@ class UserSettings(Base):
 
     chat_background_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     top_bar_color: Mapped[str] = mapped_column(String(20), nullable=True)
+    top_bar_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    my_bubble_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    their_bubble_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     ringtone_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     ringtone_vibration_strength: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

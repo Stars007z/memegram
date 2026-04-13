@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.models.ContactEntry
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,16 +91,16 @@ fun ContactsScreen(
                 Column {
                     Text(
                         s.enterPublicKey,
-                        fontSize = 13.sp,
+                        fontSize = 13.ssp,
                         color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = 12.sdp)
                     )
                     OutlinedTextField(
                         value = publicKeyInput,
                         onValueChange = { publicKeyInput = it },
                         label = { Text(s.publicKey) },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(12.sdp),
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isAdding,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -115,8 +118,8 @@ fun ContactsScreen(
                 ) {
                     if (isAdding) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.sdp),
+                            strokeWidth = 2.sdp,
                             color = Color.White
                         )
                     } else {
@@ -177,6 +180,7 @@ fun ContactsScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.contactsTitle) },
                 navigationIcon = {
@@ -190,12 +194,13 @@ fun ContactsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     actionIconContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -216,22 +221,22 @@ fun ContactsScreen(
                         Icon(
                             Icons.Default.People,
                             contentDescription = null,
-                            modifier = Modifier.size(64.dp),
+                            modifier = Modifier.size(64.sdp),
                             tint = Color.LightGray
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(12.sdp))
                         Text(
                             s.noContacts,
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.Gray
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(4.sdp))
                         Text(
                             s.addContactHint,
-                            fontSize = 13.sp,
+                            fontSize = 13.ssp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp)
+                            modifier = Modifier.padding(horizontal = 32.sdp)
                         )
                     }
                 }
@@ -257,7 +262,7 @@ fun ContactsScreen(
                                     onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(start = 72.dp),
+                                    modifier = Modifier.padding(start = 72.sdp),
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             }
@@ -279,7 +284,7 @@ fun ContactsScreen(
                                     onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(start = 72.dp),
+                                    modifier = Modifier.padding(start = 72.sdp),
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             }
@@ -295,10 +300,10 @@ fun ContactsScreen(
 private fun SectionHeader(title: String, accentColor: Color) {
     Text(
         text = title,
-        fontSize = 12.sp,
+        fontSize = 12.ssp,
         fontWeight = FontWeight.Bold,
         color = accentColor,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier = Modifier.padding(horizontal = 16.sdp, vertical = 8.sdp)
     )
 }
 
@@ -320,30 +325,30 @@ private fun ContactItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.sdp, vertical = 10.sdp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AvatarImage(
             mediaId = entry.profile?.avatarMediaId,
-            size = 46.dp,
+            size = 46.sdp,
             fallbackLetter = displayName.take(1).uppercase(),
             backgroundColor = if (entry.isFavorite) accentColor.copy(alpha = 0.2f)
                 else MaterialTheme.colorScheme.surfaceVariant,
             textColor = if (entry.isFavorite) accentColor else Color.Gray
         )
 
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(14.sdp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = displayName,
                 fontWeight = FontWeight.Medium,
-                fontSize = 15.sp
+                fontSize = 15.ssp
             )
             entry.profile?.bio?.takeIf { it.isNotBlank() }?.let { bio ->
                 Text(
                     text = bio,
-                    fontSize = 12.sp,
+                    fontSize = 12.ssp,
                     color = Color.Gray,
                     maxLines = 1
                 )

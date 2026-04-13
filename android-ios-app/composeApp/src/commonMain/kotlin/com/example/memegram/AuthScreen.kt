@@ -23,6 +23,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
 
 @Composable
 fun AuthScreen(
@@ -30,10 +32,12 @@ fun AuthScreen(
     viewModel: AuthViewModel,
     onAddDevice: () -> Unit,
     languageViewModel: LanguageViewModel,
+    themeViewModel: ThemeViewModel,
 ) {
     val state by viewModel.uiState.collectAsState()
     val s = LocalStrings.current
     val currentLang by languageViewModel.currentLang.collectAsState()
+    val isDarkMode by themeViewModel.isDarkMode.collectAsState()
     var isLoginMode by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
@@ -46,6 +50,19 @@ fun AuthScreen(
     )
     val currentFlag = languages.find { it.code == currentLang }?.flag ?: "\uD83C\uDDFA\uD83C\uDDF8"
 
+    // Colors that adapt to dark mode
+    val bgGradientStart = if (isDarkMode) Color(0xFF1B1B2F) else Color(0xFFF8F7FF)
+    val bgGradientEnd = if (isDarkMode) Color(0xFF162447) else Color(0xFFEDE9FF)
+    val cardBg = if (isDarkMode) Color(0xFF2A2A3E) else Color.White
+    val accentColor = Color(0xFF6075F2)
+    val textPrimary = if (isDarkMode) Color(0xFFE4E1E6) else Color(0xFF1A1A2E)
+    val textSecondary = if (isDarkMode) Color(0xFFA0A0B8) else Color(0xFF888AA0)
+    val borderColor = if (isDarkMode) Color(0xFF3A3A50) else Color(0xFFE0E0E0)
+    val errorBg = if (isDarkMode) Color(0xFF3D1F1F) else Color(0xFFFFEDED)
+    val buttonBg = if (isDarkMode) Color(0xFF7B8BF5) else Color(0xFF6075F2)
+    val buttonDisabled = if (isDarkMode) Color(0xFF4A4A6A) else Color(0xFFB0B8F8)
+    val iconBubbleBg = if (isDarkMode) Color(0xFF2A2A3E) else Color.White
+
     LaunchedEffect(state) {
         if (state is AuthState.Success) onLoginSuccess()
     }
@@ -55,59 +72,92 @@ fun AuthScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFFF8F7FF), Color(0xFFEDE9FF))
+                    colors = listOf(bgGradientStart, bgGradientEnd)
                 )
             )
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 16.dp, end = 16.dp)
+                .padding(top = 16.sdp, end = 16.sdp),
+            horizontalArrangement = Arrangement.spacedBy(10.sdp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(44.sdp)
                     .clip(CircleShape)
-                    .clickable { showLangMenu = true },
+                    .clickable { themeViewModel.toggleDarkMode() },
                 shape = CircleShape,
-                color = Color.White,
-                shadowElevation = 4.dp,
+                color = iconBubbleBg,
+                shadowElevation = 4.sdp,
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Text(text = currentFlag, fontSize = 22.sp)
+                    AnimatedContent(
+                        targetState = isDarkMode,
+                        transitionSpec = {
+                            (fadeIn() + scaleIn()) togetherWith (fadeOut() + scaleOut())
+                        }
+                    ) { dark ->
+                        Icon(
+                            imageVector = if (dark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = null,
+                            tint = if (dark) Color(0xFFFFC107) else Color(0xFFFF9800),
+                            modifier = Modifier.size(24.sdp)
+                        )
+                    }
                 }
             }
-            DropdownMenu(
-                expanded = showLangMenu,
-                onDismissRequest = { showLangMenu = false }
-            ) {
-                languages.forEach { lang ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = lang.flag, fontSize = 20.sp)
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = lang.label,
-                                    fontWeight = if (lang.code == currentLang) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (lang.code == currentLang) Color(0xFF6075F2) else Color.Unspecified
-                                )
+
+            // Language selector
+            Box {
+                Surface(
+                    modifier = Modifier
+                        .size(44.sdp)
+                        .clip(CircleShape)
+                        .clickable { showLangMenu = true },
+                    shape = CircleShape,
+                    color = iconBubbleBg,
+                    shadowElevation = 4.sdp,
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text(text = currentFlag, fontSize = 22.ssp)
+                    }
+                }
+                DropdownMenu(
+                    expanded = showLangMenu,
+                    onDismissRequest = { showLangMenu = false }
+                ) {
+                    languages.forEach { lang ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = lang.flag, fontSize = 20.ssp)
+                                    Spacer(Modifier.width(12.sdp))
+                                    Text(
+                                        text = lang.label,
+                                        fontWeight = if (lang.code == currentLang) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (lang.code == currentLang) accentColor else Color.Unspecified
+                                    )
+                                }
+                            },
+                            onClick = {
+                                languageViewModel.setLanguage(lang.code)
+                                showLangMenu = false
                             }
-                        },
-                        onClick = {
-                            languageViewModel.setLanguage(lang.code)
-                            showLangMenu = false
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
 
         Column(
             modifier = Modifier
+                .widthIn(max = 480.dp)
                 .fillMaxSize()
-                .padding(horizontal = 28.dp),
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 28.sdp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -115,21 +165,21 @@ fun AuthScreen(
             Text(
                 text = buildAnnotatedString {
                     withStyle(SpanStyle(color = Color.Red)) { append("Meme") }
-                    withStyle(SpanStyle(color = Color(0xFF1A1A2E))) { append("Gram") }
+                    withStyle(SpanStyle(color = textPrimary)) { append("Gram") }
                 },
-                fontSize = 38.sp,
+                fontSize = 38.ssp,
                 fontWeight = FontWeight.Bold,
             )
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(36.sdp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                shape = RoundedCornerShape(24.sdp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.sdp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(20.sdp)) {
                     AnimatedVisibility(
                         visible = !isLoginMode,
                         enter = fadeIn() + expandVertically(),
@@ -141,14 +191,20 @@ fun AuthScreen(
                                 onValueChange = { username = it },
                                 label = s.nickname,
                                 icon = Icons.Default.Person,
+                                isDarkMode = isDarkMode,
+                                accentColor = accentColor,
+                                borderColor = borderColor,
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(12.sdp))
                             AuthTextField(
                                 value = inviteCode,
                                 onValueChange = { inviteCode = it },
                                 label = s.inviteCode,
                                 icon = Icons.Default.CardGiftcard,
                                 placeholder = "XXXXXXXX",
+                                isDarkMode = isDarkMode,
+                                accentColor = accentColor,
+                                borderColor = borderColor,
                             )
                         }
                     }
@@ -160,12 +216,12 @@ fun AuthScreen(
                     ) {
                         Text(
                             text = s.autoLoginHint,
-                            fontSize = 14.sp,
-                            color = Color(0xFF888AA0),
+                            fontSize = 14.ssp,
+                            color = textSecondary,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
+                                .padding(vertical = 8.sdp)
                         )
                     }
                 }
@@ -175,31 +231,31 @@ fun AuthScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEDED))
+                        .padding(top = 12.sdp),
+                    shape = RoundedCornerShape(12.sdp),
+                    colors = CardDefaults.cardColors(containerColor = errorBg)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 16.sdp, vertical = 10.sdp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.ErrorOutline,
                             contentDescription = null,
                             tint = Color(0xFFD32F2F),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.sdp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(8.sdp))
                         Text(
                             text = (state as? AuthState.Error)?.message ?: "",
                             color = Color(0xFFD32F2F),
-                            fontSize = 13.sp
+                            fontSize = 13.ssp
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(20.sdp))
 
             Button(
                 onClick = {
@@ -208,38 +264,38 @@ fun AuthScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(16.dp),
+                    .height(54.sdp),
+                shape = RoundedCornerShape(16.sdp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6075F2),
-                    disabledContainerColor = Color(0xFFB0B8F8)
+                    containerColor = buttonBg,
+                    disabledContainerColor = buttonDisabled
                 ),
                 enabled = state !is AuthState.Loading
             ) {
                 if (state is AuthState.Loading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(22.sdp),
                         color = Color.White,
-                        strokeWidth = 2.5.dp
+                        strokeWidth = 2.5.sdp
                     )
                 } else {
                     Text(
                         text = if (isLoginMode) s.login else s.register,
-                        fontSize = 16.sp,
+                        fontSize = 16.ssp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.sdp))
 
             TextButton(onClick = { isLoginMode = !isLoginMode }) {
                 Text(
                     text = if (isLoginMode) s.noAccountRegister
                     else s.hasAccountLogin,
-                    color = Color(0xFF6075F2),
-                    fontSize = 14.sp,
+                    color = accentColor,
+                    fontSize = 14.ssp,
                     textAlign = TextAlign.Center
                 )
             }
@@ -250,9 +306,9 @@ fun AuthScreen(
                 Icon(
                     imageVector = Icons.Default.QrCode,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.sdp)
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(8.sdp))
                 Text(s.loginFromOtherDevice)
             }
         }
@@ -266,22 +322,26 @@ private fun AuthTextField(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     placeholder: String = "",
+    isDarkMode: Boolean = false,
+    accentColor: Color = Color(0xFF6075F2),
+    borderColor: Color = Color(0xFFE0E0E0),
 ) {
+    val placeholderColor = if (isDarkMode) Color(0xFF666680) else Color(0xFFCCCCCC)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 14.sp) },
-        placeholder = if (placeholder.isNotEmpty()) {{ Text(placeholder, color = Color(0xFFCCCCCC)) }} else null,
+        label = { Text(label, fontSize = 14.ssp) },
+        placeholder = if (placeholder.isNotEmpty()) {{ Text(placeholder, color = placeholderColor) }} else null,
         leadingIcon = {
-            Icon(icon, contentDescription = null, tint = Color(0xFF6075F2), modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.sdp))
         },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(12.sdp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color(0xFF6075F2),
-            unfocusedBorderColor = Color(0xFFE0E0E0),
-            focusedLabelColor = Color(0xFF6075F2),
+            focusedBorderColor = accentColor,
+            unfocusedBorderColor = borderColor,
+            focusedLabelColor = accentColor,
         )
     )
 }

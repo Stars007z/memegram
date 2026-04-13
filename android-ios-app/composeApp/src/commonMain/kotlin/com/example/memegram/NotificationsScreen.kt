@@ -23,6 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 sealed class NotifItem {
     data class Category(
@@ -129,7 +132,7 @@ fun NotificationsScreen(
                                     }
                                     muteDialogTarget = null
                                 }
-                                .padding(vertical = 12.dp),
+                                .padding(vertical = 12.sdp),
                             color = if (option == disableForever || option == disableForTime)
                                 MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.primary
@@ -195,7 +198,7 @@ fun NotificationsScreen(
                                     )
                                     showVibrateDialog = false
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 10.sdp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -207,7 +210,7 @@ fun NotificationsScreen(
                                     showVibrateDialog = false
                                 }
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(8.sdp))
                             Text(opt)
                         }
                     }
@@ -237,7 +240,7 @@ fun NotificationsScreen(
                                     )
                                     showRingtoneDialog = false
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 10.sdp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -249,7 +252,7 @@ fun NotificationsScreen(
                                     showRingtoneDialog = false
                                 }
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(8.sdp))
                             Text(opt)
                         }
                     }
@@ -264,6 +267,7 @@ fun NotificationsScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.notificationsTitle) },
                 navigationIcon = {
@@ -276,20 +280,21 @@ fun NotificationsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
+                .padding(horizontal = 12.sdp),
+            verticalArrangement = Arrangement.spacedBy(4.sdp),
+            contentPadding = PaddingValues(vertical = 12.sdp)
         ) {
             items(displayData, key = { item ->
                 when (item) {
@@ -357,20 +362,20 @@ private fun CategoryItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(12.sdp),
+        tonalElevation = 2.sdp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.sdp, vertical = 14.sdp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = category.name,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 16.ssp
             )
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
@@ -396,33 +401,33 @@ private fun ChatNotifItem(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp)
+            .padding(start = 12.sdp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        tonalElevation = 1.dp
+        shape = RoundedCornerShape(10.sdp),
+        tonalElevation = 1.sdp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.sdp, vertical = 12.sdp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(10.sdp)
                     .clip(CircleShape)
                     .background(indicatorColor)
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(12.sdp))
             Text(
                 text = chat.name,
                 modifier = Modifier.weight(1f),
-                fontSize = 15.sp
+                fontSize = 15.ssp
             )
             Text(
                 text = statusText,
                 color = indicatorColor,
-                fontSize = 13.sp,
+                fontSize = 13.ssp,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -440,17 +445,17 @@ private fun CallsSettingsBlock(
     onVibrateClick: () -> Unit,
     onRingtoneClick: () -> Unit
 ) {
-    Column(modifier = Modifier.padding(top = 20.dp)) {
+    Column(modifier = Modifier.padding(top = 20.sdp)) {
         Text(
             text = callsSectionLabel,
-            fontSize = 12.sp,
+            fontSize = 12.ssp,
             color = Color(0xFF8E8E93),
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            modifier = Modifier.padding(start = 4.sdp, bottom = 6.sdp)
         )
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            tonalElevation = 2.dp,
+            shape = RoundedCornerShape(12.sdp),
+            tonalElevation = 2.sdp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
@@ -458,33 +463,33 @@ private fun CallsSettingsBlock(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onVibrateClick)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.sdp, vertical = 14.sdp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(vibrationLabel, fontSize = 15.sp)
+                    Text(vibrationLabel, fontSize = 15.ssp)
                     Text(
                         text = vibrate,
                         color = accentColor,
-                        fontSize = 15.sp
+                        fontSize = 15.ssp
                     )
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.sdp))
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onRingtoneClick)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.sdp, vertical = 14.sdp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(ringtoneLabel, fontSize = 15.sp)
+                    Text(ringtoneLabel, fontSize = 15.ssp)
                     Text(
                         text = ringtone,
                         color = accentColor,
-                        fontSize = 15.sp,
+                        fontSize = 15.ssp,
                         maxLines = 1
                     )
                 }

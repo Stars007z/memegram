@@ -19,6 +19,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 data class Language(
     val code: String,
@@ -67,6 +70,7 @@ fun LanguageScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.languageTitle) },
                 navigationIcon = {
@@ -79,11 +83,12 @@ fun LanguageScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -99,24 +104,24 @@ fun LanguageScreen(
                     Icon(Icons.Default.Search, contentDescription = null)
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(12.sdp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.sdp, vertical = 12.sdp)
             )
 
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                tonalElevation = 2.dp
+                    .padding(horizontal = 16.sdp)
+                    .padding(bottom = 8.sdp),
+                shape = RoundedCornerShape(12.sdp),
+                tonalElevation = 2.sdp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.sdp, vertical = 14.sdp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -124,12 +129,12 @@ fun LanguageScreen(
                         Text(
                             text = s.aiTranslation,
                             fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp
+                            fontSize = 15.ssp
                         )
                         Text(
                             text = s.comingSoon,
                             color = Color.Gray,
-                            fontSize = 12.sp
+                            fontSize = 12.ssp
                         )
                     }
                     Switch(
@@ -143,14 +148,14 @@ fun LanguageScreen(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.sdp))
 
             LazyColumn(
                 contentPadding = PaddingValues(
-                    horizontal = 16.dp,
-                    vertical = 4.dp
+                    horizontal = 16.sdp,
+                    vertical = 4.sdp
                 ),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.sdp)
             ) {
                 items(filteredLanguages, key = { it.code }) { language ->
                     val isSelected = currentLang == language.code
@@ -160,8 +165,8 @@ fun LanguageScreen(
                             .clickable {
                                 viewModel.setLanguage(language.code)
                             },
-                        shape = RoundedCornerShape(10.dp),
-                        tonalElevation = if (isSelected) 4.dp else 1.dp,
+                        shape = RoundedCornerShape(10.sdp),
+                        tonalElevation = if (isSelected) 4.sdp else 1.sdp,
                         color = if (isSelected)
                             topBarColor.copy(alpha = 0.12f)
                         else
@@ -170,7 +175,7 @@ fun LanguageScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                                .padding(horizontal = 16.sdp, vertical = 14.sdp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -178,12 +183,12 @@ fun LanguageScreen(
                                 Text(
                                     text = language.nameNative,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 15.sp,
+                                    fontSize = 15.ssp,
                                     color = if (isSelected) topBarColor else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = language.nameEnglish,
-                                    fontSize = 12.sp,
+                                    fontSize = 12.ssp,
                                     color = Color.Gray
                                 )
                             }

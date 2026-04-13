@@ -30,8 +30,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
 
 @Composable
 fun VoicePlaybackBar(
@@ -59,12 +59,12 @@ fun VoicePlaybackBar(
             modifier = modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .padding(horizontal = 8.sdp, vertical = 6.sdp)
         ) {
             // ── play / pause ──
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(36.sdp)
                     .clip(CircleShape)
                     .background(accentColor.copy(alpha = 0.15f))
                     .clickable { onTogglePlayPause() },
@@ -74,16 +74,16 @@ fun VoicePlaybackBar(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = accentColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.sdp)
                 )
             }
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.sdp))
 
             // ── waveform (scrubbable) ──
             val amplitudes = state.waveform.ifEmpty { List(30) { 1 } }
 
-            Box(modifier = Modifier.weight(1f).height(28.dp)) {
+            Box(modifier = Modifier.weight(1f).height(28.sdp)) {
                 ScrubbableWaveform(
                     amplitudes = amplitudes,
                     progress = state.progress,
@@ -94,7 +94,7 @@ fun VoicePlaybackBar(
                 )
             }
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.sdp))
 
             // ── time label ──
             val currentMs = (state.durationMs * state.progress).toLong()
@@ -102,16 +102,16 @@ fun VoicePlaybackBar(
             Text(
                 text = timeText,
                 color = textColor.copy(alpha = 0.7f),
-                fontSize = 11.sp,
+                fontSize = 11.ssp,
                 fontWeight = FontWeight.Medium
             )
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.sdp))
 
             // ── close button ──
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(28.sdp)
                     .clip(CircleShape)
                     .clickable { onClose() },
                 contentAlignment = Alignment.Center
@@ -120,7 +120,7 @@ fun VoicePlaybackBar(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close",
                     tint = textColor.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.sdp)
                 )
             }
         }
@@ -138,6 +138,9 @@ private fun ScrubbableWaveform(
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val barWidthDp = 3.sdp
+    val spacingDp = 2.sdp
+    val minBarHeightDp = 4.sdp
     Canvas(
         modifier = modifier
             .pointerInput(Unit) {
@@ -152,14 +155,14 @@ private fun ScrubbableWaveform(
                 }
             }
     ) {
-        val barWidth = 3.dp.toPx()
-        val spacing = 2.dp.toPx()
+        val barWidth = barWidthDp.toPx()
+        val spacing = spacingDp.toPx()
         val maxBars = (size.width / (barWidth + spacing)).toInt()
 
         val displayAmps = if (amplitudes.size > maxBars) amplitudes.takeLast(maxBars) else amplitudes
 
         displayAmps.forEachIndexed { index, amp ->
-            val barHeight = maxOf(4.dp.toPx(), (amp / 9f) * size.height)
+            val barHeight = maxOf(minBarHeightDp.toPx(), (amp / 9f) * size.height)
             val x = index * (barWidth + spacing)
             val isPlayed = (index.toFloat() / displayAmps.size) <= progress
 

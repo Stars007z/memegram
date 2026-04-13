@@ -15,6 +15,7 @@ interface ChatRepository {
     suspend fun saveMessage(message: Message, conversationId: String)
     suspend fun saveMessages(messages: List<Message>, conversationId: String)
     suspend fun deleteMessages(conversationId: String)
+    suspend fun deleteMessageByServerId(serverId: String)
 
     suspend fun clearAllLocalData()
 

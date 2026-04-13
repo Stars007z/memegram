@@ -52,6 +52,9 @@ def _settings_to_proto(s) -> user_pb2.UserSettings:
         ringtone_vibration_strength=s.ringtone_vibration_strength or 0,
         notification_sound=str(s.notification_sound) if s.notification_sound else "",
         notification_vibration_strength=s.notification_vibration_strength or 0,
+        top_bar_media_id=str(s.top_bar_media_id) if s.top_bar_media_id else "",
+        my_bubble_media_id=str(s.my_bubble_media_id) if s.my_bubble_media_id else "",
+        their_bubble_media_id=str(s.their_bubble_media_id) if s.their_bubble_media_id else "",
     )
 
 
@@ -269,6 +272,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
                     "last_active_visible_to", "chat_background_media_id", "top_bar_color",
                     "ringtone_media_id", "ringtone_vibration_strength",
                     "notification_sound", "notification_vibration_strength",
+                    "top_bar_media_id", "my_bubble_media_id", "their_bubble_media_id",
                 ]
                 kwargs = {
                     f: getattr(request, f)

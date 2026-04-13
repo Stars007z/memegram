@@ -24,6 +24,21 @@ ITEM_TYPE_CONFIG: dict[str, dict] = {
         "max_size": 10 * 1024 * 1024,
         "access_policy": "owner_only",
     },
+    "top_bar": {
+        "allowed_mimes": {"image/jpeg", "image/png", "image/webp"},
+        "max_size": 5 * 1024 * 1024,
+        "access_policy": "owner_only",
+    },
+    "my_bubble": {
+        "allowed_mimes": {"image/jpeg", "image/png", "image/webp"},
+        "max_size": 5 * 1024 * 1024,
+        "access_policy": "owner_only",
+    },
+    "their_bubble": {
+        "allowed_mimes": {"image/jpeg", "image/png", "image/webp"},
+        "max_size": 5 * 1024 * 1024,
+        "access_policy": "owner_only",
+    },
     "notification_sound": {
         "allowed_mimes": {"audio/ogg", "audio/mpeg", "audio/aac"},
         "max_size": 1 * 1024 * 1024,

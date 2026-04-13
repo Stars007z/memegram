@@ -18,6 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +121,7 @@ fun PrivacyScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.privacyTitle) },
                 navigationIcon = {
@@ -126,11 +130,12 @@ fun PrivacyScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -138,8 +143,8 @@ fun PrivacyScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.sdp, vertical = 12.sdp),
+            verticalArrangement = Arrangement.spacedBy(8.sdp)
         ) {
             SectionLabel(s.contactsTitle)
             PrivacyItem(
@@ -149,7 +154,7 @@ fun PrivacyScreen(
                 onClick = onBlackListClick
             )
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(4.sdp))
 
             SectionLabel(s.privacySection)
             PrivacyItem(
@@ -165,7 +170,7 @@ fun PrivacyScreen(
                 onClick = { showLastActiveVisDialog = true }
             )
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(4.sdp))
 
             SectionLabel(s.autoDeleteSection)
             PrivacyItem(
@@ -181,29 +186,29 @@ fun PrivacyScreen(
                 onClick = { showAutoDeleteAccDialog = true }
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.sdp))
 
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable(enabled = !isLoading) {
                     showDeleteAccountDialog = true
                 },
-                shape = RoundedCornerShape(12.dp),
-                tonalElevation = 2.dp
+                shape = RoundedCornerShape(12.sdp),
+                tonalElevation = 2.sdp
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 16.sdp, vertical = 16.sdp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.sdp), strokeWidth = 2.sdp)
                     } else {
                         Text(
                             s.deleteAccountAction,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp
+                            fontSize = 15.ssp
                         )
                     }
                 }
@@ -231,11 +236,11 @@ private fun PrivacyChoiceDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(option) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.sdp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = current == option, onClick = { onSelect(option) })
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(8.sdp))
                         Text(option)
                     }
                 }
@@ -249,8 +254,8 @@ private fun PrivacyChoiceDialog(
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text, fontSize = 12.sp, color = Color(0xFF8E8E93), fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+        text, fontSize = 12.ssp, color = Color(0xFF8E8E93), fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
     )
 }
 
@@ -264,19 +269,19 @@ private fun PrivacyItem(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(12.sdp),
+        tonalElevation = 2.sdp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.sdp, vertical = 14.sdp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                Text(subtitle, fontSize = 13.sp, color = accentColor)
+                Text(title, fontSize = 15.ssp, fontWeight = FontWeight.Medium)
+                Text(subtitle, fontSize = 13.ssp, color = accentColor)
             }
             if (showArrow) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.Gray)
         }
