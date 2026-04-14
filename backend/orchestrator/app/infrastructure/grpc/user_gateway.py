@@ -69,6 +69,9 @@ def _settings_from_response(s) -> UserSettingsResult:
         chat_background_media_id=_opt_media_id("chat_background_media_id"),
         ringtone_media_id=_opt_media_id("ringtone_media_id"),
         notification_sound_media_id=_opt_media_id("notification_sound"),
+        top_bar_media_id=_opt_media_id("top_bar_media_id"),
+        my_bubble_media_id=_opt_media_id("my_bubble_media_id"),
+        their_bubble_media_id=_opt_media_id("their_bubble_media_id"),
     )
 
 
@@ -168,6 +171,7 @@ class GrpcUserGateway(IUserGateway):
             "account_auto_delete_after_days", "profile_visible_to", "last_active_visible_to",
             "chat_background_media_id", "top_bar_color", "ringtone_media_id",
             "ringtone_vibration_strength", "notification_sound", "notification_vibration_strength",
+            "top_bar_media_id", "my_bubble_media_id", "their_bubble_media_id",
         ]
         for f in optional_fields:
             val = getattr(request, f, None)

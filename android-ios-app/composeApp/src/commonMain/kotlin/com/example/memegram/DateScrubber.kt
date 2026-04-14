@@ -27,6 +27,8 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
 
 @Composable
 fun DateScrubber(
@@ -43,18 +45,18 @@ fun DateScrubber(
     var dragFraction by remember { mutableStateOf(0f) }
     var dragLabel    by remember { mutableStateOf("") }
 
-    BoxWithConstraints(modifier = modifier.width(40.dp)) {
+    BoxWithConstraints(modifier = modifier.width(40.sdp)) {
         val trackH = maxHeight
 
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(3.dp)
+                .width(3.sdp)
                 .background(
                     if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                     else Color.Gray.copy(alpha = 0.3f),
-                    RoundedCornerShape(2.dp)
+                    RoundedCornerShape(2.sdp)
                 )
         )
 
@@ -62,8 +64,8 @@ fun DateScrubber(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 0.dp, y = trackH * dragFraction - 6.dp)
-                    .size(12.dp)
+                    .offset(x = 0.sdp, y = trackH * dragFraction - 6.sdp)
+                    .size(12.sdp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
             )
         }
@@ -72,16 +74,16 @@ fun DateScrubber(
             Text(
                 text     = dragLabel,
                 color    = Color.White,
-                fontSize = 12.sp,
+                fontSize = 12.ssp,
                 maxLines = 1,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(
-                        x = (-46).dp,
-                        y = (trackH * dragFraction - 12.dp).coerceAtLeast(0.dp)
+                        x = (-46).sdp,
+                        y = (trackH * dragFraction - 12.sdp).coerceAtLeast(0.sdp)
                     )
-                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.sdp))
+                    .padding(horizontal = 8.sdp, vertical = 4.sdp)
             )
         }
 

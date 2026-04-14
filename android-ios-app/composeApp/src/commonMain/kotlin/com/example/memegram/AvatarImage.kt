@@ -18,8 +18,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import org.koin.compose.koinInject
+import com.example.memegram.utils.sdp
 
 @Composable
 fun AvatarImage(
@@ -29,7 +29,7 @@ fun AvatarImage(
     backgroundColor: Color = Color(0xFF6075F2),
     textColor: Color = Color.White,
     textStyle: TextStyle? = null,
-    borderWidth: Dp = 0.dp,
+    borderWidth: Dp = 0.sdp,
     borderColor: Color = Color.White
 ) {
     val avatarCache = koinInject<AvatarCache>()
@@ -46,7 +46,7 @@ fun AvatarImage(
         .clip(CircleShape)
         .background(backgroundColor)
         .then(
-            if (borderWidth > 0.dp) Modifier.border(borderWidth, borderColor, CircleShape)
+            if (borderWidth > 0.sdp) Modifier.border(borderWidth, borderColor, CircleShape)
             else Modifier
         )
 

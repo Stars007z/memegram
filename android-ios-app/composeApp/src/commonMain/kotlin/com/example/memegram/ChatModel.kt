@@ -25,7 +25,8 @@ data class Message(
     val encryptionMetadata: String? = null,
     val localPreviewBytes: ByteArray? = null,
     val mediaUrl: String? = null,
-    val senderUserId: String? = null
+    val senderUserId: String? = null,
+    val groupId: String? = null
 )
 
 enum class MessageStatus { SENDING, SENT, FAILED }

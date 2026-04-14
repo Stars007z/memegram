@@ -20,6 +20,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +70,7 @@ fun BlackListScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.blackListTitle) },
                 navigationIcon = {
@@ -75,11 +79,12 @@ fun BlackListScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -103,13 +108,13 @@ fun BlackListScreen(
                             color = Color.Gray,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(6.sdp))
                         Text(
                             text = s.blockedUsersHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp)
+                            modifier = Modifier.padding(horizontal = 32.sdp)
                         )
                     }
                 }
@@ -125,7 +130,7 @@ fun BlackListScreen(
                                 onUnblock = { pendingUnblockId = entry.blockedUserId }
                             )
                             HorizontalDivider(
-                                modifier = Modifier.padding(start = 72.dp),
+                                modifier = Modifier.padding(start = 72.sdp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             )
                         }
@@ -146,14 +151,14 @@ private fun BlockedUserItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.sdp, vertical = 12.sdp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(46.sdp)
                     .clip(CircleShape)
                     .background(accentColor.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
@@ -162,10 +167,10 @@ private fun BlockedUserItem(
                     text = displayName.take(1).uppercase(),
                     color = accentColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    fontSize = 18.ssp
                 )
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(14.sdp))
             Text(
                 text = displayName,
                 style = MaterialTheme.typography.bodyLarge,
@@ -175,12 +180,12 @@ private fun BlockedUserItem(
 
         TextButton(
             onClick = onUnblock,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(10.sdp),
             colors = ButtonDefaults.textButtonColors(
                 contentColor = MaterialTheme.colorScheme.error
             )
         ) {
-            Text(unblockLabel, fontSize = 13.sp)
+            Text(unblockLabel, fontSize = 13.ssp)
         }
     }
 }

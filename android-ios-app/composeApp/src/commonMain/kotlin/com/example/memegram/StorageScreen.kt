@@ -21,6 +21,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +43,7 @@ fun StorageScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.dataAndStorageTitle) },
                 navigationIcon = {
@@ -49,11 +52,12 @@ fun StorageScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -66,7 +70,7 @@ fun StorageScreen(
                 s.autoClearCache,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier.padding(16.sdp)
             )
 
             val options = listOf(
@@ -122,32 +126,32 @@ fun StorageScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { viewModel.setCleanupStrategy(key) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.sdp, vertical = 12.sdp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     RadioButton(
                         selected = cleanupStrategy == key,
                         onClick = { viewModel.setCleanupStrategy(key) }
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(12.sdp))
                     Text(title, style = MaterialTheme.typography.bodyLarge)
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.sdp))
             HorizontalDivider()
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.sdp))
 
             OutlinedButton(
                 onClick = { viewModel.clearCache() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(12.dp),
+                    .padding(horizontal = 16.sdp),
+                shape = RoundedCornerShape(12.sdp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {
-                Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.sdp))
+                Spacer(Modifier.width(8.sdp))
                 Text(s.clearLocalCache)
             }
         }
@@ -169,12 +173,12 @@ fun StrategyParamSlider(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.sdp, vertical = 8.sdp)
             .background(
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(12.sdp)
             )
-            .padding(12.dp)
+            .padding(12.sdp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -188,7 +192,7 @@ fun StrategyParamSlider(
                     inputText = raw
                     raw.toLongOrNull()?.coerceIn(min, max)?.let { onChanged(it) }
                 },
-                modifier = Modifier.width(96.dp),
+                modifier = Modifier.width(96.sdp),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -206,7 +210,7 @@ fun StrategyParamSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(description, style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 8.sdp),
                 textAlign = TextAlign.Center)
             Text("$max", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

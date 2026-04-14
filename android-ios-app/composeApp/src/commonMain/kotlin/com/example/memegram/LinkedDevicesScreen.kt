@@ -33,6 +33,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.Image
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,18 +90,18 @@ fun LinkedDevicesScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(16.sdp),
+            verticalArrangement = Arrangement.spacedBy(12.sdp)
         ) {
             // ── Add device ────────────────────────────────────────────
             item {
                 Button(
                     onClick = { vm.initAddDevice() },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.sdp)
                 ) {
                     Icon(Icons.Default.QrCode, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(8.sdp))
                     Text(s.addDeviceByQr)
                 }
             }
@@ -112,7 +113,7 @@ fun LinkedDevicesScreen(
                         s.pendingConfirmation,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 4.sdp)
                     )
                 }
                 items(pending) { reg ->
@@ -132,7 +133,7 @@ fun LinkedDevicesScreen(
                     s.myDevices,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.padding(vertical = 4.sdp)
                 )
             }
             items(devices) { device ->
@@ -182,7 +183,7 @@ private fun DeviceCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape    = RoundedCornerShape(12.dp),
+        shape    = RoundedCornerShape(12.sdp),
         colors   = CardDefaults.cardColors(
             containerColor = if (device.isCurrentDevice)
                 MaterialTheme.colorScheme.primaryContainer
@@ -190,7 +191,7 @@ private fun DeviceCard(
         )
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(16.sdp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -200,14 +201,14 @@ private fun DeviceCard(
                 tint = if (device.isCurrentDevice)
                     MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.sdp)
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(12.sdp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(device.name, fontWeight = FontWeight.SemiBold)
                     if (device.isCurrentDevice) {
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(6.sdp))
                         Badge { Text(thisDeviceLabel) }
                     }
                 }
@@ -263,17 +264,17 @@ private fun PendingDeviceCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().border(
-            1.dp,
+            1.sdp,
             MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-            RoundedCornerShape(12.dp)
+            RoundedCornerShape(12.sdp)
         ),
-        shape  = RoundedCornerShape(12.dp)
+        shape  = RoundedCornerShape(12.sdp)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(16.sdp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.DeviceUnknown, contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(8.sdp))
                 Column {
                     Text(registration.deviceName, fontWeight = FontWeight.Medium)
                     Text(
@@ -283,8 +284,8 @@ private fun PendingDeviceCard(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(12.sdp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.sdp)) {
                 OutlinedButton(
                     onClick = onReject,
                     modifier = Modifier.weight(1f),
@@ -325,29 +326,29 @@ private fun QrDialog(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(shape = RoundedCornerShape(16.dp)) {
+        Card(shape = RoundedCornerShape(16.sdp)) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(24.sdp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(addDeviceLabel, style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.sdp))
 
                 Image(
                     painter = rememberQrCodePainter(payload),
                     contentDescription = addDeviceLabel,
                     modifier = Modifier
-                        .size(220.dp)
-                        .background(Color.White, RoundedCornerShape(8.dp))
-                        .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                        .padding(8.dp)
+                        .size(220.sdp)
+                        .background(Color.White, RoundedCornerShape(8.sdp))
+                        .border(2.sdp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.sdp))
+                        .padding(8.sdp)
                 )
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(20.sdp))
                 HorizontalDivider()
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.sdp))
 
                 Text(
                     copyCodeHint,
@@ -355,16 +356,16 @@ private fun QrDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(10.sdp))
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(8.dp)
+                            RoundedCornerShape(8.sdp)
                         )
-                        .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                        .padding(start = 12.sdp, end = 4.sdp, top = 10.sdp, bottom = 10.sdp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -374,13 +375,13 @@ private fun QrDialog(
                         modifier = Modifier.weight(1f),
                         maxLines = 3
                     )
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(4.sdp))
                     IconButton(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(shortCode))
                             codeCopied = true
                         },
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(40.sdp)
                     ) {
                         Icon(
                             imageVector = if (codeCopied) Icons.Default.Check
@@ -388,7 +389,7 @@ private fun QrDialog(
                             contentDescription = copyCodeLabel,
                             tint = if (codeCopied) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.sdp)
                         )
                     }
                 }
@@ -398,11 +399,11 @@ private fun QrDialog(
                         codeCopiedLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 4.sdp)
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.sdp))
                 TextButton(onClick = onNavigateToScan) {
                     Text(scanQrInsteadLabel)
                 }

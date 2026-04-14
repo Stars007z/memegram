@@ -8,6 +8,9 @@ import com.example.memegram.audio.createAudioRecorder
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
 import com.example.memegram.data.network.ApiService
+import com.russhwolf.settings.Settings
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.utils.generateUuid
@@ -23,11 +26,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 
+@OptIn(ExperimentalEncodingApi::class)
 class ChatViewModel(
     private val api: ApiService,
     private val sessionManager: SessionManager,
     private val mlsManager: MlsManager,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val themePreferences: ThemePreferences,
+    private val settings: Settings
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -45,20 +51,45 @@ class ChatViewModel(
     private val _inputText        = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
-    private val _chatBgColor      = MutableStateFlow(Color(0xFFECECEC))
+    private val _chatBgColor      = MutableStateFlow(
+        themePreferences.getColor("chatbg", ThemePreferences.DefaultChatBg)
+    )
     val chatBgColor: StateFlow<Color> = _chatBgColor.asStateFlow()
 
-    private val _myBubbleColor    = MutableStateFlow(Color(0xFF4CAF50))
+    private val _myBubbleColor    = MutableStateFlow(
+        themePreferences.getColor("mybubble", ThemePreferences.DefaultMyBubble)
+    )
     val myBubbleColor: StateFlow<Color> = _myBubbleColor.asStateFlow()
 
-    private val _theirBubbleColor = MutableStateFlow(Color(0xFFFFFFFF))
+    private val _theirBubbleColor = MutableStateFlow(
+        themePreferences.getColor("theirbubble", ThemePreferences.DefaultTheirBubble)
+    )
     val theirBubbleColor: StateFlow<Color> = _theirBubbleColor.asStateFlow()
+
+    private val _chatBgImage = MutableStateFlow<ByteArray?>(
+        settings.getStringOrNull("appearance_chatbg_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
+    )
+    val chatBgImage: StateFlow<ByteArray?> = _chatBgImage.asStateFlow()
+
+    private val _myBubbleImage = MutableStateFlow<ByteArray?>(
+        settings.getStringOrNull("appearance_mybubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
+    )
+    val myBubbleImage: StateFlow<ByteArray?> = _myBubbleImage.asStateFlow()
+
+    private val _theirBubbleImage = MutableStateFlow<ByteArray?>(
+        settings.getStringOrNull("appearance_theirbubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
+    )
+    val theirBubbleImage: StateFlow<ByteArray?> = _theirBubbleImage.asStateFlow()
 
     private val _isLoading        = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _error            = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    /** Unread count at the moment the chat was opened (from the server). */
+    private val _initialUnreadCount = MutableStateFlow(0)
+    val initialUnreadCount: StateFlow<Int> = _initialUnreadCount.asStateFlow()
 
     var currentConversationId: String? = null
         private set
@@ -119,6 +150,7 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 val conv = api.getConversation(conversationId)
+                _initialUnreadCount.value = conv.unreadCount ?: 0
                 val isGroup = conv.type != "direct"
                 _isGroupChat.value = isGroup
 
@@ -187,24 +219,42 @@ class ChatViewModel(
                         }
                     }
 
-                    val (parsedType, parsedMediaId, content) = parseMlsPayload(text)
+                    val parsed = parseMlsPayload(text)
 
                     Message(
                         id           = existing?.id ?: msg.id.hashCode(),
                         serverId     = msg.id,
-                        text         = content,
+                        text         = parsed.content,
                         isOutgoing   = isSentByMe,
                         timestamp    = msg.createdAt * 1000L,
                         status       = MessageStatus.SENT,
-                        type         = if (parsedType != "text") parsedType else (existing?.type ?: "text"),
-                        mediaId      = parsedMediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
-                        senderUserId = msg.effectiveSenderId
+                        type         = if (parsed.type != "text") parsed.type else (existing?.type ?: "text"),
+                        mediaId      = parsed.mediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
+                        senderUserId = msg.effectiveSenderId,
+                        groupId      = parsed.groupId ?: existing?.groupId
                     )
                 }
 
                 _messageSenders.update { it + newSenders }
                 _replyContext.update { it + newReplyCtx }
                 chatRepository.saveMessages(uiMessages, conversationId)
+
+                if (sortedMessages.isNotEmpty()) {
+                    val serverIdSet = sortedMessages.map { it.id }.toSet()
+                    val oldestServerTs = sortedMessages.minOf { it.createdAt } * 1000L
+                    existingLocalMessages.forEach { local ->
+                        val sid = local.serverId
+                        if (sid.isNotBlank()
+                            && !sid.startsWith("temp_")
+                            && !sid.startsWith("system_")
+                            && local.timestamp >= oldestServerTs
+                            && sid !in serverIdSet
+                        ) {
+                            chatRepository.deleteMessageByServerId(sid)
+                        }
+                    }
+                }
+
                 mlsManager.flushState()
             }
         } catch (e: Exception) {
@@ -278,10 +328,7 @@ class ChatViewModel(
 
             "message_deleted" -> {
                 val msgId = data.messageId ?: return
-                val existing = _messages.value.find { it.serverId == msgId }
-                if (existing != null) {
-                    chatRepository.saveMessage(existing.copy(text = S.current.messageDeletedEmoji), convId)
-                }
+                chatRepository.deleteMessageByServerId(msgId)
             }
 
             "epoch_changed" -> syncMlsPending(convId)
@@ -355,6 +402,22 @@ class ChatViewModel(
             val localMessages  = chatRepository.getMessagesOnce(conversationId)
             val localServerIds = localMessages.map { it.serverId }.toSet()
 
+            if (serverMessages.isNotEmpty()) {
+                val serverIdSet = serverMessages.map { it.id }.toSet()
+                val oldestServerTs = serverMessages.minOf { it.createdAt } * 1000L
+                localMessages.forEach { local ->
+                    val sid = local.serverId
+                    if (sid.isNotBlank()
+                        && !sid.startsWith("temp_")
+                        && !sid.startsWith("system_")
+                        && local.timestamp >= oldestServerTs
+                        && sid !in serverIdSet
+                    ) {
+                        chatRepository.deleteMessageByServerId(sid)
+                    }
+                }
+            }
+
             val newMessages = serverMessages
                 .filter { it.id !in localServerIds }
                 .sortedBy { it.createdAt }
@@ -407,18 +470,19 @@ class ChatViewModel(
 
             mlsManager.flushState()
 
-            val (parsedType, parsedMediaId, content) = parseMlsPayload(plaintext)
+            val parsed = parseMlsPayload(plaintext)
 
             val msg = Message(
                 id           = msgId.hashCode(),
                 serverId     = msgId,
-                text         = content,
+                text         = parsed.content,
                 isOutgoing   = isOutgoing,
                 timestamp    = createdAt * 1000L,
                 status       = MessageStatus.SENT,
-                type         = if (parsedType != "text") parsedType else "text",
-                mediaId      = parsedMediaId.takeIf { it.isNotBlank() },
-                senderUserId = senderUserId
+                type         = if (parsed.type != "text") parsed.type else "text",
+                mediaId      = parsed.mediaId.takeIf { it.isNotBlank() },
+                senderUserId = senderUserId,
+                groupId      = parsed.groupId
             )
             chatRepository.saveMessage(msg, convId)
         }
@@ -497,8 +561,9 @@ class ChatViewModel(
                 attachments.isEmpty() -> sendTextMessageInternal(convId, text)
                 attachments.size == 1 -> sendPhotoMessageInternal(convId, attachments[0], caption = text)
                 else -> {
-                    sendPhotoMessageInternal(convId, attachments[0], caption = text)
-                    attachments.drop(1).forEach { sendPhotoMessageInternal(convId, it, caption = "") }
+                    val groupId = generateUuid()
+                    sendPhotoMessageInternal(convId, attachments[0], caption = text, groupId = groupId)
+                    attachments.drop(1).forEach { sendPhotoMessageInternal(convId, it, caption = "", groupId = groupId) }
                 }
             }
         }
@@ -543,7 +608,7 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun sendPhotoMessageInternal(convId: String, item: AttachItem, caption: String = "") {
+    private suspend fun sendPhotoMessageInternal(convId: String, item: AttachItem, caption: String = "", groupId: String? = null) {
         val now = Clock.System.now().toEpochMilliseconds()
         val previewBytes = runCatching { item.readUploadBytes() }.getOrNull()
         val replyTo = _replyingTo.value
@@ -553,7 +618,7 @@ class ChatViewModel(
             id = now.hashCode(), text = caption, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING,
             type = "image", localPreviewBytes = previewBytes,
-            senderUserId = myUserId
+            senderUserId = myUserId, groupId = groupId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -578,7 +643,8 @@ class ChatViewModel(
             api.uploadEncryptedBytesToUrl(initResp.uploadUrl, encrypted.encryptedBytes, mime)
             api.confirmMediaUpload(initResp.mediaId)
 
-            val mlsPayload    = "[image:${initResp.mediaId}]$caption"
+            val mlsPayload    = if (groupId != null) "[image:${initResp.mediaId}:$groupId]$caption"
+                                else "[image:${initResp.mediaId}]$caption"
             val ciphertextB64 = mlsManager.encrypt(convId, mlsPayload)
             mlsManager.flushState()
 
@@ -819,36 +885,42 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 api.deleteMessage(message.serverId, deleteForEveryone = true)
-                chatRepository.saveMessage(
-                    message.copy(text = S.current.messageDeleted, type = "text", mediaId = null),
-                    convId
-                )
+                chatRepository.deleteMessageByServerId(message.serverId)
             } catch (e: Exception) {
                 _error.value = S.current.deleteError(e.message ?: "")
             }
         }
     }
 
-    private fun parseMlsPayload(payload: String): Triple<String, String, String> {
+    private data class ParsedMlsPayload(
+        val type: String,
+        val mediaId: String,
+        val content: String,
+        val groupId: String? = null
+    )
+
+    private fun parseMlsPayload(payload: String): ParsedMlsPayload {
         if (payload.startsWith("[image:")) {
             val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return Triple("text", "", payload)
-            val mediaId = payload.substring(7, closeIdx)
+            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
+            val metaInfo = payload.substring(7, closeIdx).split(":")
+            val mediaId = metaInfo[0]
+            val groupId = if (metaInfo.size > 1) metaInfo[1] else null
             val caption = payload.substring(closeIdx + 1).trim()
-            return Triple("image", mediaId, caption)
+            return ParsedMlsPayload("image", mediaId, caption, groupId)
         }
         if (payload.startsWith("[voice:")) {
             val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return Triple("text", "", payload)
+            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
 
             val metaInfo = payload.substring(7, closeIdx).split(":")
             val mediaId = metaInfo[0]
             val waveform = if (metaInfo.size > 1) metaInfo[1] else ""
             val durationMs = payload.substring(closeIdx + 1).trim()
 
-            return Triple("voice", mediaId, "$durationMs|$waveform")
+            return ParsedMlsPayload("voice", mediaId, "$durationMs|$waveform")
         }
-        return Triple("text", "", payload)
+        return ParsedMlsPayload("text", "", payload)
     }
 
     override fun onCleared() {
@@ -861,4 +933,18 @@ class ChatViewModel(
         typingJob?.cancel()
         dbObserveJob?.cancel()
     }
+}
+
+/**
+ * In-memory cache for per-chat scroll positions.
+ * Survives navigation between screens but NOT app restart.
+ */
+object ChatScrollCache {
+    private val positions = mutableMapOf<String, Pair<Int, Int>>()
+
+    fun save(conversationId: String, index: Int, offset: Int) {
+        positions[conversationId] = index to offset
+    }
+
+    fun restore(conversationId: String): Pair<Int, Int>? = positions[conversationId]
 }

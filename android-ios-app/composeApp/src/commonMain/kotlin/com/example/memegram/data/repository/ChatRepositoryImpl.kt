@@ -132,7 +132,8 @@ class ChatRepositoryImpl(
                         encryptionMetadata = entity.encryptionMetadata,
                         localPreviewBytes  = entity.localPreviewBytes,
                         mediaUrl           = entity.mediaUrl,
-                        senderUserId       = entity.senderUserId
+                        senderUserId       = entity.senderUserId,
+                        groupId            = entity.groupId
                     )
 
                 }
@@ -153,13 +154,14 @@ class ChatRepositoryImpl(
                     realId, conversationId, message.text,
                     if (message.isOutgoing) 1L else 0L, message.timestamp, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
-                    message.localPreviewBytes, message.mediaUrl, now, message.senderUserId
+                    message.localPreviewBytes, message.mediaUrl, now, message.senderUserId,
+                    message.groupId
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
                     message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
-                    message.senderUserId, realId
+                    message.senderUserId, message.groupId, realId
                 )
                 runGarbageCollector(conversationId)
             }
@@ -188,7 +190,8 @@ class ChatRepositoryImpl(
                         mediaUrl           = message.mediaUrl,
                         lastAccessedAt     = now,
                         accessCount        = 1L,
-                        senderUserId       = message.senderUserId
+                        senderUserId       = message.senderUserId,
+                        groupId            = message.groupId
                     )
 
                 }
@@ -200,6 +203,12 @@ class ChatRepositoryImpl(
     override suspend fun deleteMessages(conversationId: String) {
         withContext(ioDispatcher) {
             chatQueries.deleteMessagesByConversation(conversationId)
+        }
+    }
+
+    override suspend fun deleteMessageByServerId(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.deleteMessageByServerId(serverId)
         }
     }
 
@@ -231,7 +240,8 @@ class ChatRepositoryImpl(
                         encryptionMetadata = entity.encryptionMetadata,
                         localPreviewBytes  = entity.localPreviewBytes,
                         mediaUrl           = entity.mediaUrl,
-                        senderUserId       = entity.senderUserId
+                        senderUserId       = entity.senderUserId,
+                        groupId            = entity.groupId
                     )
                 }
         }
