@@ -82,6 +82,7 @@ class ConversationHandler:
                             last_message_type=s.last_message_type or "",
                             unread_count=s.unread_count,
                             last_activity_at=int(s.last_activity_at),
+                            avatar_media_id=str(s.avatar_media_id) if s.avatar_media_id else "",
                         )
                         for s in result.items
                     ],
@@ -127,6 +128,80 @@ class ConversationHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.LeaveConversationResponse()
 
+    async def kick_member(self, request, context):
+        if not request.user_id or not request.conversation_id or not request.target_user_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id, conversation_id, and target_user_id are required")
+            return messaging_pb2.KickMemberResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.kick_member(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    target_user_id=uuid.UUID(request.target_user_id),
+                )
+                return messaging_pb2.KickMemberResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.KickMemberResponse()
+
+    async def update_member_role(self, request, context):
+        if not request.user_id or not request.conversation_id or not request.target_user_id or not request.new_role:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id, conversation_id, target_user_id, and new_role are required")
+            return messaging_pb2.UpdateMemberRoleResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.update_member_role(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    target_user_id=uuid.UUID(request.target_user_id),
+                    new_role=request.new_role,
+                )
+                return messaging_pb2.UpdateMemberRoleResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.UpdateMemberRoleResponse()
+
+    async def update_group_name(self, request, context):
+        if not request.user_id or not request.conversation_id or not request.name:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id, conversation_id, and name are required")
+            return messaging_pb2.UpdateGroupNameResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.update_group_name(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    name=request.name,
+                )
+                return messaging_pb2.UpdateGroupNameResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.UpdateGroupNameResponse()
+
+    async def update_group_avatar(self, request, context):
+        if not request.user_id or not request.conversation_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id and conversation_id are required")
+            return messaging_pb2.UpdateGroupAvatarResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                avatar_id = uuid.UUID(request.avatar_media_id) if request.avatar_media_id else None
+                success = await scope.conversation_service.update_group_avatar(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                    avatar_media_id=avatar_id,
+                )
+                return messaging_pb2.UpdateGroupAvatarResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.UpdateGroupAvatarResponse()
+
     @staticmethod
     def _to_response(result) -> messaging_pb2.ConversationResponse:
         return messaging_pb2.ConversationResponse(
@@ -146,6 +221,7 @@ class ConversationHandler:
                 cipher_suite=result.mls_group.cipher_suite,
             ) if result.mls_group else None,
             created_at=int(result.created_at),
+            avatar_media_id=str(result.avatar_media_id) if result.avatar_media_id else "",
         )
 
 

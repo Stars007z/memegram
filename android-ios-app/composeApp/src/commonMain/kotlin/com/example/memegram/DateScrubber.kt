@@ -16,7 +16,19 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.gallery.GallerySection
+import com.example.memegram.localization.S
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
 
 @Composable
 fun DateScrubber(
@@ -33,18 +45,18 @@ fun DateScrubber(
     var dragFraction by remember { mutableStateOf(0f) }
     var dragLabel    by remember { mutableStateOf("") }
 
-    BoxWithConstraints(modifier = modifier.width(40.dp)) {
+    BoxWithConstraints(modifier = modifier.width(40.sdp)) {
         val trackH = maxHeight
 
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(3.dp)
+                .width(3.sdp)
                 .background(
                     if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                     else Color.Gray.copy(alpha = 0.3f),
-                    RoundedCornerShape(2.dp)
+                    RoundedCornerShape(2.sdp)
                 )
         )
 
@@ -52,8 +64,8 @@ fun DateScrubber(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 0.dp, y = trackH * dragFraction - 6.dp)
-                    .size(12.dp)
+                    .offset(x = 0.sdp, y = trackH * dragFraction - 6.sdp)
+                    .size(12.sdp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
             )
         }
@@ -62,16 +74,16 @@ fun DateScrubber(
             Text(
                 text     = dragLabel,
                 color    = Color.White,
-                fontSize = 12.sp,
+                fontSize = 12.ssp,
                 maxLines = 1,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(
-                        x = (-46).dp,
-                        y = (trackH * dragFraction - 12.dp).coerceAtLeast(0.dp)
+                        x = (-46).sdp,
+                        y = (trackH * dragFraction - 12.sdp).coerceAtLeast(0.sdp)
                     )
-                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.sdp))
+                    .padding(horizontal = 8.sdp, vertical = 4.sdp)
             )
         }
 
@@ -101,5 +113,43 @@ fun DateScrubber(
                     )
                 }
         )
+    }
+}
+
+fun formatChatTimestamp(timestampMs: Long): String {
+    if (timestampMs <= 0L) return ""
+
+    val tz       = TimeZone.currentSystemDefault()
+    val msgLocal = Instant.fromEpochMilliseconds(timestampMs).toLocalDateTime(tz)
+    val nowLocal = Clock.System.now().toLocalDateTime(tz)
+
+    val today  = nowLocal.date
+    val msgDay = msgLocal.date
+
+    return when {
+        msgDay == today -> {
+            "${msgLocal.hour.toString().padStart(2, '0')}:" +
+                    msgLocal.minute.toString().padStart(2, '0')
+        }
+        msgDay >= today.minus(6, DateTimeUnit.DAY) -> {
+            when (msgLocal.dayOfWeek) {
+                DayOfWeek.MONDAY    -> S.current.mon
+                DayOfWeek.TUESDAY   -> S.current.tue
+                DayOfWeek.WEDNESDAY -> S.current.wed
+                DayOfWeek.THURSDAY  -> S.current.thu
+                DayOfWeek.FRIDAY    -> S.current.fri
+                DayOfWeek.SATURDAY  -> S.current.sat
+                DayOfWeek.SUNDAY    -> S.current.sun
+            }
+        }
+        msgDay.year == today.year -> {
+            "${msgDay.day.toString().padStart(2, '0')}." +
+                    msgDay.month.number.toString().padStart(2, '0')
+        }
+        else -> {
+            val yy = (msgDay.year % 100).toString().padStart(2, '0')
+            "${msgDay.day.toString().padStart(2, '0')}." +
+                    "${msgDay.month.number.toString().padStart(2, '0')}.$yy"
+        }
     }
 }

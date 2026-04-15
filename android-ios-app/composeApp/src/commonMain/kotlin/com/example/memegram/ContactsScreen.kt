@@ -21,16 +21,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.models.ContactEntry
+import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactsScreen(
     topBarColor: Color,
     onBack: () -> Unit,
-    onChatClick: (String) -> Unit,
+    onChatClick: (ChatModel) -> Unit,
     viewModel: ContactsViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val s = LocalStrings.current
     val contacts by viewModel.contacts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isAdding by viewModel.isAdding.collectAsState()
@@ -50,35 +55,52 @@ fun ContactsScreen(
         }
     }
 
-    // Диалог ошибки
+    val chatCreated by viewModel.chatCreated.collectAsState()
+
+    LaunchedEffect(chatCreated) {
+        val conversationId = chatCreated
+        if (conversationId != null) {
+            val chatName = viewModel.getPendingChatName() ?: s.chatFallback
+            viewModel.clearChatCreated()
+            viewModel.clearPendingChatName()
+            onChatClick(
+                ChatModel(
+                    id             = conversationId.hashCode(),
+                    conversationId = conversationId,
+                    name           = chatName,
+                    lastMessage    = "",
+                    timestamp      = 0L
+                )
+            )
+        }
+    }
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
         )
     }
 
-    // Диалог добавления контакта
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { if (!isAdding) showAddDialog = false },
-            title = { Text("Новый контакт") },
+            title = { Text(s.newContact) },
             text = {
                 Column {
                     Text(
-                        "Введите публичный ключ пользователя",
-                        fontSize = 13.sp,
+                        s.enterPublicKey,
+                        fontSize = 13.ssp,
                         color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = 12.sdp)
                     )
                     OutlinedTextField(
                         value = publicKeyInput,
                         onValueChange = { publicKeyInput = it },
-                        label = { Text("Публичный ключ") },
+                        label = { Text(s.publicKey) },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(12.sdp),
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isAdding,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -96,12 +118,12 @@ fun ContactsScreen(
                 ) {
                     if (isAdding) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.sdp),
+                            strokeWidth = 2.sdp,
                             color = Color.White
                         )
                     } else {
-                        Text("Добавить")
+                        Text(s.add)
                     }
                 }
             },
@@ -109,59 +131,58 @@ fun ContactsScreen(
                 TextButton(
                     onClick = { showAddDialog = false; publicKeyInput = "" },
                     enabled = !isAdding
-                ) { Text("Отмена") }
+                ) { Text(s.cancel) }
             }
         )
     }
 
-    // Диалог подтверждения удаления
     pendingRemoveId?.let { userId ->
         val name = contacts.find { it.contactUserId == userId }
             ?.profile?.username ?: (userId.take(8) + "...")
         AlertDialog(
             onDismissRequest = { pendingRemoveId = null },
-            title = { Text("Удалить контакт?") },
-            text = { Text("Удалить $name из контактов?") },
+            title = { Text(s.deleteContactTitle) },
+            text = { Text(s.deleteContactMessage(name)) },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.removeContact(userId); pendingRemoveId = null },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
-                ) { Text("Удалить") }
+                ) { Text(s.delete) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRemoveId = null }) { Text("Отмена") }
+                TextButton(onClick = { pendingRemoveId = null }) { Text(s.cancel) }
             }
         )
     }
 
-    // Диалог подтверждения блокировки
     pendingBlockId?.let { userId ->
         val name = contacts.find { it.contactUserId == userId }
             ?.profile?.username ?: (userId.take(8) + "...")
         AlertDialog(
             onDismissRequest = { pendingBlockId = null },
-            title = { Text("Заблокировать?") },
-            text = { Text("Заблокировать $name? Он будет удалён из контактов.") },
+            title = { Text(s.blockTitle) },
+            text = { Text(s.blockMessage(name)) },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.blockUser(userId); pendingBlockId = null },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
-                ) { Text("Заблокировать") }
+                ) { Text(s.blockAction) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingBlockId = null }) { Text("Отмена") }
+                TextButton(onClick = { pendingBlockId = null }) { Text(s.cancel) }
             }
         )
     }
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
-                title = { Text("Контакты") },
+                title = { Text(s.contactsTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
@@ -173,12 +194,13 @@ fun ContactsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     actionIconContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -199,22 +221,22 @@ fun ContactsScreen(
                         Icon(
                             Icons.Default.People,
                             contentDescription = null,
-                            modifier = Modifier.size(64.dp),
+                            modifier = Modifier.size(64.sdp),
                             tint = Color.LightGray
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(12.sdp))
                         Text(
-                            "Нет контактов",
+                            s.noContacts,
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.Gray
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(4.sdp))
                         Text(
-                            "Нажмите + чтобы добавить контакт\nпо публичному ключу",
-                            fontSize = 13.sp,
+                            s.addContactHint,
+                            fontSize = 13.ssp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp)
+                            modifier = Modifier.padding(horizontal = 32.sdp)
                         )
                     }
                 }
@@ -225,13 +247,13 @@ fun ContactsScreen(
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         if (favorites.isNotEmpty()) {
-                            item { SectionHeader("⭐ Избранные", topBarColor) }
+                            item { SectionHeader(s.favorites, topBarColor) }
                             items(favorites, key = { it.contactUserId }) { entry ->
                                 ContactItem(
                                     entry = entry,
                                     accentColor = topBarColor,
                                     onChatClick = {
-                                        onChatClick(entry.profile?.username ?: entry.contactUserId)
+                                        viewModel.startDirectChatWith(entry)
                                     },
                                     onFavoriteToggle = {
                                         viewModel.toggleFavorite(entry.contactUserId)
@@ -240,20 +262,20 @@ fun ContactsScreen(
                                     onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(start = 72.dp),
+                                    modifier = Modifier.padding(start = 72.sdp),
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             }
                         }
 
                         if (others.isNotEmpty()) {
-                            item { SectionHeader("Все контакты", topBarColor) }
+                            item { SectionHeader(s.allContacts, topBarColor) }
                             items(others, key = { it.contactUserId }) { entry ->
                                 ContactItem(
                                     entry = entry,
                                     accentColor = topBarColor,
                                     onChatClick = {
-                                        onChatClick(entry.profile?.username ?: entry.contactUserId)
+                                        viewModel.startDirectChatWith(entry)
                                     },
                                     onFavoriteToggle = {
                                         viewModel.toggleFavorite(entry.contactUserId)
@@ -262,7 +284,7 @@ fun ContactsScreen(
                                     onBlock = { pendingBlockId = entry.contactUserId }
                                 )
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(start = 72.dp),
+                                    modifier = Modifier.padding(start = 72.sdp),
                                     color = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             }
@@ -278,10 +300,10 @@ fun ContactsScreen(
 private fun SectionHeader(title: String, accentColor: Color) {
     Text(
         text = title,
-        fontSize = 12.sp,
+        fontSize = 12.ssp,
         fontWeight = FontWeight.Bold,
         color = accentColor,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier = Modifier.padding(horizontal = 16.sdp, vertical = 8.sdp)
     )
 }
 
@@ -297,58 +319,46 @@ private fun ContactItem(
     val displayName = entry.profile?.username
         ?.takeIf { it.isNotBlank() }
         ?: "@${entry.contactUserId.take(8)}"
+    val s = LocalStrings.current
     var showMenu by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.sdp, vertical = 10.sdp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Аватар
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(
-                    if (entry.isFavorite) accentColor.copy(alpha = 0.2f)
-                    else MaterialTheme.colorScheme.surfaceVariant
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = displayName.take(1).uppercase(),
-                color = if (entry.isFavorite) accentColor else Color.Gray,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-        }
+        AvatarImage(
+            mediaId = entry.profile?.avatarMediaId,
+            size = 46.sdp,
+            fallbackLetter = displayName.take(1).uppercase(),
+            backgroundColor = if (entry.isFavorite) accentColor.copy(alpha = 0.2f)
+                else MaterialTheme.colorScheme.surfaceVariant,
+            textColor = if (entry.isFavorite) accentColor else Color.Gray
+        )
 
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(14.sdp))
 
-        // Имя + bio
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = displayName,
                 fontWeight = FontWeight.Medium,
-                fontSize = 15.sp
+                fontSize = 15.ssp
             )
             entry.profile?.bio?.takeIf { it.isNotBlank() }?.let { bio ->
                 Text(
                     text = bio,
-                    fontSize = 12.sp,
+                    fontSize = 12.ssp,
                     color = Color.Gray,
                     maxLines = 1
                 )
             }
         }
 
-        // Кнопка чата
         IconButton(onClick = onChatClick) {
             Icon(Icons.Default.ChatBubbleOutline, null, tint = accentColor)
         }
 
-        // Меню
         Box {
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Default.MoreVert, null, tint = Color.Gray)
@@ -359,7 +369,7 @@ private fun ContactItem(
             ) {
                 DropdownMenuItem(
                     text = {
-                        Text(if (entry.isFavorite) "Убрать из избранного" else "В избранное")
+                        Text(if (entry.isFavorite) s.removeFromFavorites else s.addToFavorites)
                     },
                     leadingIcon = {
                         Icon(
@@ -371,7 +381,7 @@ private fun ContactItem(
                     onClick = { onFavoriteToggle(); showMenu = false }
                 )
                 DropdownMenuItem(
-                    text = { Text("Удалить", color = MaterialTheme.colorScheme.error) },
+                    text = { Text(s.delete, color = MaterialTheme.colorScheme.error) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.PersonRemove,
@@ -382,7 +392,7 @@ private fun ContactItem(
                     onClick = { onRemove(); showMenu = false }
                 )
                 DropdownMenuItem(
-                    text = { Text("Заблокировать", color = MaterialTheme.colorScheme.error) },
+                    text = { Text(s.blockAction, color = MaterialTheme.colorScheme.error) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Block,

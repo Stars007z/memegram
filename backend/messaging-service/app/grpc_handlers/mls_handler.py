@@ -110,6 +110,10 @@ class MlsHandler:
                 if request.removed_device_ids:
                     removed = [uuid.UUID(d) for d in request.removed_device_ids]
 
+                added_users = None
+                if request.added_user_ids:
+                    added_users = [uuid.UUID(u) for u in request.added_user_ids]
+
                 result = await scope.mls_service.commit_group_change(
                     user_id=uuid.UUID(request.user_id),
                     device_id=uuid.UUID(request.device_id),
@@ -119,6 +123,7 @@ class MlsHandler:
                     welcome_messages=welcomes,
                     ratchet_tree=request.ratchet_tree if request.ratchet_tree else None,
                     removed_device_ids=removed,
+                    added_user_ids=added_users,
                 )
                 return messaging_pb2.CommitGroupChangeResponse(
                     new_epoch=result.new_epoch,

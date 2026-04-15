@@ -41,6 +41,7 @@ Messaging-service — **единый сервис** (не дробим даль�
 | `id` | UUID PK | — |
 | `type` | VARCHAR(20) | `direct` / `group` |
 | `name` | VARCHAR(255) NULLABLE | Только для group |
+| `avatar_media_id` | UUID NULLABLE | ID ресурса в `item-storage-service` (`group_avatar`). Только для group |
 | `created_by_user_id` | UUID | — |
 | `last_message_id` | UUID NULLABLE | FK на `messages.id` (без constraint — circular) |
 | `last_activity_at` | TIMESTAMP | Для сортировки списка чатов |
@@ -161,9 +162,11 @@ Messaging-service — **единый сервис** (не дробим даль�
 | `commit_data` | BYTEA NOT NULL | Сериализованный MLS PublicMessage (Commit) |
 | `created_at` | TIMESTAMP | — |
 
-**Индексы:** INDEX(`conversation_id`, `epoch`)
+**Constraints:** UNIQUE(`conversation_id`, `epoch`)
 
 > Хранятся для синхронизации устройств, которые были оффлайн во время Commit. Устройство запрашивает все Commit'ы с момента своей последней известной эпохи.
+>
+> ⚠️ UniqueConstraint гарантирует, что для каждой эпохи в группе может существовать ровно один Commit. Это предотвращает race condition, когда несколько участников одновременно пытаются применить Commit к одной эпохе (например, два участника одновременно создают Remove Commit при `member_left`). Проигравший получает `ABORTED` и должен синхронизироваться.
 
 ---
 
@@ -173,9 +176,10 @@ Messaging-service — **единый сервис** (не дробим даль�
 messaging-service
 ├── PostgreSQL  (conversations, messages, mls_*, media_attachments)
 ├── Redis       (typing indicators, online presence, unread cache, pub/sub фан-аут)
-├── media-service    (presigned URLs для S3)
-├── contacts-service (IsBlocked при создании direct-чата)
-└── auth-service     (входящий вызов NotifyDeviceRevoked)
+├── media-service         (presigned URLs для S3)
+├── contacts-service      (IsBlocked при создании direct-чата)
+├── auth-service          (входящий вызов NotifyDeviceRevoked)
+└── item-storage-service  (хранение аватаров групп — только ссылка avatar_media_id)
 ```
 
 ---
@@ -276,6 +280,7 @@ messaging-service
 
 **Возврат:** `items[]` ConversationSummary:
 - `id`, `type`, `name?`
+- `avatar_media_id?` — ID аватарки группы из `item-storage-service` (только для `group`)
 - `last_message_type` — тип последнего сообщения (`text`/`image`/…), **не содержимое**
 - `unread_count: int` — из Redis-кеша или COUNT(*) по `messages`
 - `last_activity_at`
@@ -287,19 +292,119 @@ messaging-service
 
 **Вход:** `user_id`, `conversation_id`
 
-**Возврат:** `ConversationResponse { id, type, name, members[], mls_group: { current_epoch, cipher_suite } }`
+**Возврат:** `ConversationResponse { id, type, name, avatar_media_id?, members[], mls_group: { current_epoch, cipher_suite } }`
 
 ---
 
 #### `LeaveConversation(LeaveConversationRequest) → LeaveConversationResponse`
 Участник покидает группу.
 
-**Вход:** `user_id`, `device_id`, `conversation_id`, `commit_data: bytes` (MLS Remove Commit)
+**Вход:** `user_id`, `device_id`, `conversation_id`, `commit_data?: bytes` (optional, не используется)
 
 **Логика:**
 1. Проверка членства
-2. Вызов `CommitGroupChange` внутренне
-3. UPDATE `conversation_members.left_at = now()`
+2. UPDATE `conversation_members.left_at = now()`
+3. Redis PUBLISH событие `member_left: { user_id, conversation_id }` в канал чата
+
+**Возврат:** `success: bool`
+
+> ⚠️ **RFC 9420 §12.2:** Участник НЕ может закоммитить своё собственное удаление из MLS-группы. `leave_group()` в OpenMLS возвращает Proposal, а не Commit. Поэтому сервер НЕ вызывает `CommitGroupChange` при выходе.
+>
+> **Протокол выхода:**
+> 1. Уходящий клиент вызывает `leaveConversation()` → сервер помечает участника как ушедшего и публикует SSE `member_left`
+> 2. Клиент локально удаляет MLS-группу из OpenMLS storage (`group.delete()`) и очищает маппинги
+> 3. Оставшиеся участники, получив `member_left`, создают MLS Remove Commit через `remove_member_by_identity()` и отправляют его на сервер через `CommitGroupChange`
+> 4. Благодаря UniqueConstraint на `(conversation_id, epoch)`, только один Remove Commit будет принят; остальные получат `ABORTED` и синхронизируются
+>
+> **Rejoin:** При повторном добавлении участника в группу (через Welcome), `CommitGroupChange` обрабатывает `added_user_ids` с трёхсторонней логикой: если участник имеет запись с `left_at != NULL` — UPDATE (обнуление `left_at`), если активный — skip, если нет записи — INSERT.
+
+---
+
+#### `KickMember(KickMemberRequest) → KickMemberResponse`
+Администратор удаляет участника из группы (серверная часть — пометка + SSE-событие).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID — удаляемый участник
+
+**Логика:**
+1. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+2. Проверка, что `target_user_id != user_id` (для выхода — используй `LeaveConversation`)
+3. Проверка, что target — active member
+4. Нельзя кикнуть `owner`
+5. Admin может кикнуть только `member`; `owner` может кикнуть и `admin`, и `member`
+6. UPDATE `conversation_members.left_at = now()` для target
+7. Redis PUBLISH событие `member_kicked: { user_id, kicked_by }`
+
+**Возврат:** `success: bool`
+
+> **MLS Remove Commit:** После успешного kick серверная часть только помечает участника как ушедшего. Админ-клиент, получив успешный ответ, создаёт MLS Remove Commit через `removeMemberByIdentity()` и отправляет через `CommitGroupChange`. Это аналогично тому, как другие участники создают Remove Commit при `member_left`.
+
+---
+
+#### `UpdateMemberRole(UpdateMemberRoleRequest) → UpdateMemberRoleResponse`
+Изменение роли участника группы (promote/demote).
+
+**Вход:**
+- `user_id` UUID — вызывающий (admin/owner)
+- `conversation_id` UUID
+- `target_user_id` UUID
+- `new_role` string — `"admin"` или `"member"`
+
+**Логика:**
+1. Валидация `new_role` ∈ {`admin`, `member`}
+2. Проверка, что вызывающий — active member с ролью `owner` или `admin`
+3. Нельзя менять собственную роль
+4. Нельзя менять роль `owner`
+5. Только `owner` может снять `admin` → `member` (демоушн)
+6. UPDATE `conversation_members.role = new_role`
+7. Redis PUBLISH событие `role_changed: { user_id, new_role }`
+
+**Возврат:** `success: bool`
+
+---
+
+#### `UpdateGroupAvatar(UpdateGroupAvatarRequest) → UpdateGroupAvatarResponse`
+Обновление аватарки группового чата. Изображение предварительно загружается в `item-storage-service` с `item_type = group_avatar`.
+
+**Вход:**
+- `user_id` UUID — вызывающий (owner/admin)
+- `conversation_id` UUID
+- `avatar_media_id` UUID NULLABLE — `item_id` из `item-storage-service`; пустая строка для удаления аватарки
+
+**Логика:**
+1. Проверка что `conversation.type = group` → `FAILED_PRECONDITION`
+2. Проверка, что вызывающий — active member с ролью `owner` или `admin` → `PERMISSION_DENIED`
+3. UPDATE `conversations.avatar_media_id`
+4. Redis PUBLISH событие `group_avatar_changed: { avatar_media_id, changed_by }`
+
+**Возврат:** `success: bool`
+
+> **Загрузка аватарки (поток):**
+> 1. Клиент вызывает `item-storage-service.InitiateUpload(item_type="group_avatar", ...)` через оркестратор → получает `item_id` + presigned PUT URL
+> 2. Клиент загружает изображение в S3 по presigned URL
+> 3. Клиент вызывает `item-storage-service.ConfirmUpload(item_id)`
+> 4. Клиент вызывает `messaging-service.UpdateGroupAvatar(conversation_id, avatar_media_id=item_id)` через оркестратор
+>
+> Для отображения: клиент получает `avatar_media_id` из `GetConversations` / `GetConversation` и запрашивает presigned download URL через `item-storage-service.GetDownloadUrl`.
+
+---
+
+#### `UpdateGroupName(UpdateGroupNameRequest) → UpdateGroupNameResponse`
+Изменение названия группового чата.
+
+**Вход:**
+- `user_id` UUID — вызывающий (owner/admin)
+- `conversation_id` UUID
+- `name` string — новое название (1–255 символов)
+
+**Логика:**
+1. Валидация `name` — не пустая строка → `INVALID_ARGUMENT`
+2. Проверка что `conversation.type = group` → `FAILED_PRECONDITION`
+3. Проверка, что вызывающий — active member с ролью `owner` или `admin` → `PERMISSION_DENIED`
+4. UPDATE `conversations.name`
+5. Redis PUBLISH событие `group_name_changed: { name, changed_by }`
 
 **Возврат:** `success: bool`
 
@@ -403,7 +508,8 @@ Server-Streaming. Клиент держит стрим открытым для �
 - `message_edited: { message_id, new_mls_ciphertext, edited_at }`
 - `message_deleted: { message_id }`
 - `typing: { user_id, conversation_id, is_typing }`
-- `member_joined / member_left: { user_id, conversation_id }`
+- `member_joined: { user_id, conversation_id }`
+- `member_left: { user_id, conversation_id }` — триггер для оставшихся участников: получив это событие, один из них создаёт MLS Remove Commit и отправляет через `CommitGroupChange`
 - `epoch_changed: { conversation_id, new_epoch }` — триггер для синхронизации MLS
 
 **Логика:** Redis SUB на каналы `conv:{id}` для каждого из `conversation_ids`. При получении события — форвард в стрим.
@@ -428,11 +534,17 @@ Server-Streaming. Клиент держит стрим открытым для �
 **Логика:**
 1. Проверка прав: Add/Remove — только `owner`/`admin`; Update — любой `member`
 2. Оптимистичная проверка `current_epoch + 1 = new_epoch` → `ABORTED` при конфликте
-3. INSERT `mls_commit_messages`
+3. INSERT `mls_commit_messages` внутри SAVEPOINT (`session.begin_nested()`):
+   - При `IntegrityError` (UniqueConstraint на `conversation_id` + `epoch`) → `ABORTED` с сообщением об epoch conflict
+   - Клиент при получении `ABORTED` должен выполнить `clearPendingCommit()` + `syncGroupCommits()` для синхронизации
 4. INSERT `mls_welcome_messages` для каждого нового устройства (если Add)
 5. UPDATE `mls_groups.current_epoch = new_epoch`, `ratchet_tree`
-6. Если есть `removed_device_ids` — INSERT `conversation_members.left_at` для соответствующих user_id (если у пользователя не осталось активных устройств в группе)
-7. Redis PUBLISH событие `epoch_changed` в канал чата
+6. Обработка `added_user_ids` (трёхсторонняя логика для поддержки rejoin):
+   - Если участник имеет запись с `left_at != NULL` → UPDATE: обнуление `left_at`, обновление `joined_at` и `role`
+   - Если участник активен (`left_at IS NULL`) → skip
+   - Если записи нет → INSERT новый `conversation_member`
+7. Если есть `removed_device_ids` — UPDATE `conversation_members.left_at` для соответствующих user_id (если у пользователя не осталось активных устройств в группе)
+8. Redis PUBLISH событие `epoch_changed` в канал чата
 
 **Возврат:** `new_epoch: int64`, `committed_at: TIMESTAMP`
 

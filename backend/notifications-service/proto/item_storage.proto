@@ -1,0 +1,20 @@
+syntax = "proto3";
+package item_storage;
+
+// Minimal proto for item-storage-service client (GetDownloadUrl).
+// Only the RPCs / messages used by notifications-service are included.
+
+service ItemStorageService {
+    rpc GetDownloadUrl(GetDownloadUrlRequest) returns (GetDownloadUrlResponse);
+}
+
+message GetDownloadUrlRequest {
+    string item_id           = 1;
+    string requester_user_id = 2;
+}
+
+message GetDownloadUrlResponse {
+    string download_url = 1;
+    int64  expires_at   = 2;
+    string mime_type    = 3;
+}

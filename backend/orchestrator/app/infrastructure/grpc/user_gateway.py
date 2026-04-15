@@ -31,8 +31,8 @@ def _profile_from_response(profile) -> UserProfileResult:
         bio=profile.bio,
         last_active=last_active,
         is_deleted=profile.is_deleted,
-        avatar_data=None,
-        profile_background_data=None,
+        avatar_media_id=profile.avatar_media_id or None,
+        profile_background_media_id=profile.profile_background_media_id or None,
     )
 
 
@@ -49,6 +49,10 @@ def _settings_from_response(s) -> UserSettingsResult:
         except Exception:
             return getattr(s, field, "") or ""
 
+    def _opt_media_id(field: str) -> str | None:
+        val = _opt_str(field)
+        return val if val else None
+
     return UserSettingsResult(
         id=s.user_id,
         user_id=s.user_id,
@@ -62,9 +66,12 @@ def _settings_from_response(s) -> UserSettingsResult:
         top_bar_color=_opt_str("top_bar_color"),
         ringtone_vibration_strength=_opt_int("ringtone_vibration_strength"),
         notification_vibration_strength=_opt_int("notification_vibration_strength"),
-        chat_background_data=None,
-        ringtone_data=None,
-        notification_sound_data=None,
+        chat_background_media_id=_opt_media_id("chat_background_media_id"),
+        ringtone_media_id=_opt_media_id("ringtone_media_id"),
+        notification_sound_media_id=_opt_media_id("notification_sound"),
+        top_bar_media_id=_opt_media_id("top_bar_media_id"),
+        my_bubble_media_id=_opt_media_id("my_bubble_media_id"),
+        their_bubble_media_id=_opt_media_id("their_bubble_media_id"),
     )
 
 
@@ -164,6 +171,7 @@ class GrpcUserGateway(IUserGateway):
             "account_auto_delete_after_days", "profile_visible_to", "last_active_visible_to",
             "chat_background_media_id", "top_bar_color", "ringtone_media_id",
             "ringtone_vibration_strength", "notification_sound", "notification_vibration_strength",
+            "top_bar_media_id", "my_bubble_media_id", "their_bubble_media_id",
         ]
         for f in optional_fields:
             val = getattr(request, f, None)

@@ -17,6 +17,10 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +31,7 @@ fun PrivacyScreen(
     onAccountDeleted: () -> Unit,
     viewModel: PrivacyViewModel
 ) {
+    val s = LocalStrings.current
     val topBarTextColor       = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
     val profileVisibleTo      by viewModel.profileVisibleTo.collectAsState()
     val lastActiveVisibleTo   by viewModel.lastActiveVisibleTo.collectAsState()
@@ -47,84 +52,90 @@ fun PrivacyScreen(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text  = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
     }
 
     if (showProfileVisDialog) {
         PrivacyChoiceDialog(
-            title   = "Кто видит мой профиль",
-            options = PrivacyViewModel.visibilityOptions,
-            current = PrivacyViewModel.visibilityLabel(profileVisibleTo),
-            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it)); showProfileVisDialog = false },
-            onDismiss = { showProfileVisDialog = false }
+            title   = s.whoSeesProfile,
+            options = PrivacyViewModel.visibilityOptions(s),
+            current = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
+            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showProfileVisDialog = false },
+            onDismiss = { showProfileVisDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showLastActiveVisDialog) {
         PrivacyChoiceDialog(
-            title   = "Кто видит время активности",
-            options = PrivacyViewModel.visibilityOptions,
-            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo),
-            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it)); showLastActiveVisDialog = false },
-            onDismiss = { showLastActiveVisDialog = false }
+            title   = s.whoSeesLastSeen,
+            options = PrivacyViewModel.visibilityOptions(s),
+            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
+            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showLastActiveVisDialog = false },
+            onDismiss = { showLastActiveVisDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showAutoDeleteAccDialog) {
         PrivacyChoiceDialog(
-            title   = "Удалить аккаунт через",
-            options = PrivacyViewModel.autoDeleteOptions,
-            current = PrivacyViewModel.daysLabel(autoDeleteDays),
-            onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it)); showAutoDeleteAccDialog = false },
-            onDismiss = { showAutoDeleteAccDialog = false }
+            title   = s.deleteAccountAfter,
+            options = PrivacyViewModel.autoDeleteOptions(s),
+            current = PrivacyViewModel.daysLabel(autoDeleteDays, s),
+            onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it, s)); showAutoDeleteAccDialog = false },
+            onDismiss = { showAutoDeleteAccDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showAutoDeleteMsgDialog) {
         PrivacyChoiceDialog(
-            title   = "Авто-удаление сообщений",
-            options = listOf("Выкл", "1 день", "1 неделя", "1 месяц"),
-            current = autoDeleteMsgOption ?: "Выкл",
+            title   = s.autoDeleteMessages,
+            options = listOf(s.autoDeleteOff, s.autoDelete1Day, s.autoDelete1Week, s.autoDelete1Month),
+            current = autoDeleteMsgOption ?: s.autoDeleteOff,
             onSelect  = { autoDeleteMsgOption = it; showAutoDeleteMsgDialog = false },
-            onDismiss = { showAutoDeleteMsgDialog = false }
+            onDismiss = { showAutoDeleteMsgDialog = false },
+            cancelLabel = s.cancel
         )
     }
 
     if (showDeleteAccountDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteAccountDialog = false },
-            title = { Text("Удалить аккаунт?") },
-            text  = { Text("Это действие необратимо. Все данные будут удалены.") },
+            title = { Text(s.deleteAccountTitle) },
+            text  = { Text(s.deleteAccountWarning) },
             confirmButton = {
                 TextButton(
                     onClick = { showDeleteAccountDialog = false; viewModel.deleteAccount() },
                     colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Удалить") }
+                ) { Text(s.delete) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteAccountDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showDeleteAccountDialog = false }) { Text(s.cancel) }
             }
         )
     }
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
-                title = { Text("Конфиденциальность") },
+                title = { Text(s.privacyTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -132,72 +143,72 @@ fun PrivacyScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.sdp, vertical = 12.sdp),
+            verticalArrangement = Arrangement.spacedBy(8.sdp)
         ) {
-            SectionLabel("Контакты")
+            SectionLabel(s.contactsTitle)
             PrivacyItem(
-                title = "Чёрный список",
-                subtitle = "Управление",
+                title = s.blackList,
+                subtitle = s.manage,
                 accentColor = topBarColor, showArrow = true,
                 onClick = onBlackListClick
             )
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(4.sdp))
 
-            SectionLabel("Приватность")
+            SectionLabel(s.privacySection)
             PrivacyItem(
-                title = "Кто видит мой профиль",
-                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo),
+                title = s.whoSeesProfile,
+                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showProfileVisDialog = true }
             )
             PrivacyItem(
-                title = "Кто видит время активности",
-                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo),
+                title = s.whoSeesLastSeen,
+                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showLastActiveVisDialog = true }
             )
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(4.sdp))
 
-            SectionLabel("Авто-удаление")
+            SectionLabel(s.autoDeleteSection)
             PrivacyItem(
-                title = "Авто-удаление сообщений",
-                subtitle = autoDeleteMsgOption ?: "Выкл",
+                title = s.autoDeleteMessages,
+                subtitle = autoDeleteMsgOption ?: s.autoDeleteOff,
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteMsgDialog = true }
             )
             PrivacyItem(
-                title = "Удалить аккаунт через",
-                subtitle = PrivacyViewModel.daysLabel(autoDeleteDays),
+                title = s.deleteAccountAfter,
+                subtitle = PrivacyViewModel.daysLabel(autoDeleteDays, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteAccDialog = true }
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.sdp))
 
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable(enabled = !isLoading) {
                     showDeleteAccountDialog = true
                 },
-                shape = RoundedCornerShape(12.dp),
-                tonalElevation = 2.dp
+                shape = RoundedCornerShape(12.sdp),
+                tonalElevation = 2.sdp
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 16.sdp, vertical = 16.sdp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.sdp), strokeWidth = 2.sdp)
                     } else {
                         Text(
-                            "Удалить аккаунт",
+                            s.deleteAccountAction,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp
+                            fontSize = 15.ssp
                         )
                     }
                 }
@@ -212,7 +223,8 @@ private fun PrivacyChoiceDialog(
     options: List<String>,
     current: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    cancelLabel: String
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -224,26 +236,26 @@ private fun PrivacyChoiceDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(option) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.sdp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = current == option, onClick = { onSelect(option) })
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(8.sdp))
                         Text(option)
                     }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(cancelLabel) } }
     )
 }
 
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text, fontSize = 12.sp, color = Color(0xFF8E8E93), fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+        text, fontSize = 12.ssp, color = Color(0xFF8E8E93), fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
     )
 }
 
@@ -257,19 +269,19 @@ private fun PrivacyItem(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(12.sdp),
+        tonalElevation = 2.sdp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.sdp, vertical = 14.sdp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                Text(subtitle, fontSize = 13.sp, color = accentColor)
+                Text(title, fontSize = 15.ssp, fontWeight = FontWeight.Medium)
+                Text(subtitle, fontSize = 13.ssp, color = accentColor)
             }
             if (showArrow) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.Gray)
         }

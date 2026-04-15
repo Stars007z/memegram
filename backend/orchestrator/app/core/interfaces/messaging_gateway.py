@@ -38,6 +38,7 @@ class ConversationResult:
     members: list[ConversationMemberResult] = field(default_factory=list)
     mls_group: Optional[MlsGroupInfoResult] = None
     created_at: int = 0
+    avatar_media_id: str = ""
 
 
 @dataclass
@@ -48,6 +49,7 @@ class ConversationSummaryResult:
     last_message_type: str
     unread_count: int
     last_activity_at: int
+    avatar_media_id: str = ""
 
 
 @dataclass
@@ -207,6 +209,26 @@ class IMessagingGateway(ABC):
     @abstractmethod
     async def leave_conversation(
         self, user_id: str, device_id: str, conversation_id: str, commit_data: bytes,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def kick_member(
+        self, user_id: str, conversation_id: str, target_user_id: str,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def update_member_role(
+        self, user_id: str, conversation_id: str, target_user_id: str, new_role: str,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def update_group_avatar(
+        self, user_id: str, conversation_id: str, avatar_media_id: str,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def update_group_name(
+        self, user_id: str, conversation_id: str, name: str,
     ) -> bool: ...
 
     # Messages

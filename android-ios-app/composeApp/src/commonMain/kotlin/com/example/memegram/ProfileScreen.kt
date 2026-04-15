@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,23 +28,32 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.launch
+
+private enum class CropTarget { AVATAR, COVER }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     topBarColor: Color,
     onBack: () -> Unit,
+    onLogoutDone: () -> Unit,
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val s = LocalStrings.current
     val username      by viewModel.username.collectAsState()
     val bio           by viewModel.bio.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
     val error         by viewModel.error.collectAsState()
+    val message       by viewModel.message.collectAsState()
     val avatarBytes   by viewModel.avatarBytes.collectAsState()
     val coverBytes    by viewModel.coverBytes.collectAsState()
     val myPublicKey   by viewModel.myPublicKey.collectAsState()
@@ -53,38 +64,76 @@ fun ProfileScreen(
     val clipboardManager = LocalClipboardManager.current
     var keyCopied by remember { mutableStateOf(false) }
 
+    var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var cropTarget by remember { mutableStateOf<CropTarget?>(null) }
+
     val avatarPicker = rememberFilePickerLauncher(
         type = PickerType.Image, mode = PickerMode.Single
-    ) { file -> file?.let { scope.launch { viewModel.updateAvatar(it.readBytes()) } } }
+    ) { file -> file?.let { scope.launch {
+        val bytes = it.readBytes()
+        cropBytes = bytes
+        cropTarget = CropTarget.AVATAR
+    } } }
 
     val coverPicker = rememberFilePickerLauncher(
         type = PickerType.Image, mode = PickerMode.Single
-    ) { file -> file?.let { scope.launch { viewModel.updateCover(it.readBytes()) } } }
+    ) { file -> file?.let { scope.launch {
+        val bytes = it.readBytes()
+        cropBytes = bytes
+        cropTarget = CropTarget.COVER
+    } } }
 
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = viewModel::clearError,
-            title = { Text("Ошибка") },
+            title = { Text(s.error) },
             text  = { Text(msg) },
-            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text(s.ok) } }
         )
+    }
+
+    // Show crop screen as full-screen overlay
+    if (cropBytes != null && cropTarget != null) {
+        val ratio = when (cropTarget!!) {
+            CropTarget.AVATAR -> 1f
+            CropTarget.COVER -> 2.5f
+        }
+        ImageCropScreen(
+            imageBytes = cropBytes!!,
+            aspectRatio = ratio,
+            onCropped = { croppedBytes ->
+                when (cropTarget!!) {
+                    CropTarget.AVATAR -> viewModel.updateAvatar(croppedBytes)
+                    CropTarget.COVER -> viewModel.updateCover(croppedBytes)
+                }
+                cropBytes = null
+                cropTarget = null
+            },
+            onCancel = {
+                cropBytes = null
+                cropTarget = null
+            }
+        )
+        return
     }
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
-                title = { Text("Профиль") },
+                title = { Text(s.profileTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = topBarColor,
+                    containerColor = bgColor,
                     titleContentColor = topBarTextColor,
                     navigationIconContentColor = topBarTextColor
                 )
             )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -94,11 +143,10 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Обложка ──────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp)
+                    .aspectRatio(2.5f)
                     .clickable { coverPicker.launch() },
                 contentAlignment = Alignment.BottomEnd
             ) {
@@ -120,28 +168,27 @@ fun ProfileScreen(
                     ) {}
                 }
                 Surface(
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(10.sdp),
                     shape = CircleShape,
                     color = Color.Black.copy(alpha = 0.4f)
                 ) {
                     Icon(
                         Icons.Default.CameraAlt, null,
-                        modifier = Modifier.padding(7.dp).size(16.dp),
+                        modifier = Modifier.padding(7.sdp).size(16.sdp),
                         tint = Color.White
                     )
                 }
             }
 
-            // ── Аватар ───────────────────────────────────────────────────
             Box(
                 contentAlignment = Alignment.BottomEnd,
-                modifier = Modifier.offset(y = (-38).dp)
+                modifier = Modifier.offset(y = (-38).sdp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
+                        .size(80.sdp)
                         .clip(CircleShape)
-                        .border(3.dp, MaterialTheme.colorScheme.background, CircleShape)
+                        .border(3.sdp, MaterialTheme.colorScheme.background, CircleShape)
                         .clickable { avatarPicker.launch() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -161,7 +208,7 @@ fun ProfileScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
                                     username.take(1).uppercase(),
-                                    fontSize = 28.sp,
+                                    fontSize = 28.ssp,
                                     fontWeight = FontWeight.Bold,
                                     color = topBarTextColor
                                 )
@@ -172,33 +219,32 @@ fun ProfileScreen(
                 Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f)) {
                     Icon(
                         Icons.Default.CameraAlt, null,
-                        modifier = Modifier.padding(5.dp).size(13.dp),
+                        modifier = Modifier.padding(5.sdp).size(13.sdp),
                         tint = Color.White
                     )
                 }
             }
 
-            // ── Поля профиля ─────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-24).dp)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .offset(y = (-24).sdp)
+                    .padding(horizontal = 16.sdp),
+                verticalArrangement = Arrangement.spacedBy(12.sdp)
             ) {
                 OutlinedTextField(
                     value = usernameInput,
                     onValueChange = { usernameInput = it },
-                    label = { Text("Имя пользователя") },
+                    label = { Text(s.username) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(12.sdp),
                     trailingIcon = {
                         if (usernameInput != username) {
                             TextButton(
-                                onClick = { viewModel.updateUsername(usernameInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -206,18 +252,18 @@ fun ProfileScreen(
                 OutlinedTextField(
                     value = bioInput,
                     onValueChange = { bioInput = it },
-                    label = { Text("О себе") },
+                    label = { Text(s.aboutMe) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 90.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .heightIn(min = 90.sdp),
+                    shape = RoundedCornerShape(12.sdp),
                     maxLines = 5,
                     trailingIcon = {
                         if (bioInput != bio) {
                             TextButton(
-                                onClick = { viewModel.updateBio(bioInput) },
+                                onClick = { viewModel.updateProfile(newUsername = usernameInput, newBio = bioInput) },
                                 enabled = !isLoading
-                            ) { Text("Сохранить") }
+                            ) { Text(s.save) }
                         }
                     }
                 )
@@ -229,24 +275,40 @@ fun ProfileScreen(
                             keyCopied = true
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.sdp)
                     ) {
                         Icon(
                             if (keyCopied) Icons.Default.ContentCopy else Icons.Default.VpnKey,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.sdp)
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (keyCopied) "Скопировано!" else "Скопировать мой публичный ключ")
+                        Spacer(Modifier.width(8.sdp))
+                        Text(if (keyCopied) s.copied else s.copyMyPublicKey)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.sdp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.sdp))
+
+                Button(
+                    onClick = { viewModel.logout(onLogoutDone) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.sdp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.sdp))
+                    Spacer(Modifier.width(8.sdp))
+                    Text(s.logout)
                 }
 
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
-                            .size(26.dp),
-                        strokeWidth = 2.5.dp
+                            .size(26.sdp)
+                            .padding(top = 16.sdp),
+                        strokeWidth = 2.5f.sdp
                     )
                 }
             }

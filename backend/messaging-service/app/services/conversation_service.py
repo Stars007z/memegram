@@ -10,6 +10,7 @@ from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
 from app.repositories.message_repo import MessageRepository
 from app.repositories.mls_group_repo import MlsGroupRepository
+from app.repositories.mls_commit_repo import MlsCommitRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
 from app.services.interfaces.conversation_service import (
     ConversationListResult,
@@ -30,6 +31,7 @@ class ConversationServiceImpl(IConversationService):
         member_repo: MemberRepository,
         mls_group_repo: MlsGroupRepository,
         mls_welcome_repo: MlsWelcomeRepository,
+        commit_repo: MlsCommitRepository,
         message_repo: MessageRepository,
         contacts_client: IContactsClient,
         redis: aioredis.Redis,
@@ -39,6 +41,7 @@ class ConversationServiceImpl(IConversationService):
         self._members = member_repo
         self._mls_groups = mls_group_repo
         self._welcomes = mls_welcome_repo
+        self._commits = commit_repo
         self._messages = message_repo
         self._contacts = contacts_client
         self._redis = redis
@@ -69,7 +72,7 @@ class ConversationServiceImpl(IConversationService):
         initiator_member = await self._members.create({
             "conversation_id": conv.id,
             "user_id": initiator_user_id,
-            "role": "member",
+            "role": "owner",
         })
         recipient_member = await self._members.create({
             "conversation_id": conv.id,
@@ -81,7 +84,7 @@ class ConversationServiceImpl(IConversationService):
         await self._mls_groups.create({
             "id": conv.id,
             "mls_group_id": mls_group_id,
-            "current_epoch": 0,
+            "current_epoch": 1,
             "cipher_suite": 1,
         })
 
@@ -93,7 +96,7 @@ class ConversationServiceImpl(IConversationService):
             })
 
         return self._build_conversation_result(
-            conv, [initiator_member, recipient_member], epoch=0, cipher_suite=1,
+            conv, [initiator_member, recipient_member], epoch=1, cipher_suite=1,
         )
 
     # ── CreateGroup ─────────────────────────────────
@@ -179,6 +182,7 @@ class ConversationServiceImpl(IConversationService):
                 last_message_type=last_msg.type if last_msg else None,
                 unread_count=unread,
                 last_activity_at=conv.last_activity_at.timestamp(),
+                avatar_media_id=conv.avatar_media_id,
             ))
 
         next_cursor = None
@@ -225,11 +229,171 @@ class ConversationServiceImpl(IConversationService):
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
 
+        # Mark the member as left (no MLS epoch change here —
+        # a remaining member will create the Remove Commit per RFC 9420 §12.2).
         await self._members.update(member, {"left_at": datetime.utcnow()})
 
         await self._stream.publish_event(conversation_id, {
             "event_type": "member_left",
             "user_id": str(user_id),
+        })
+
+        return True
+
+    # ── KickMember ──────────────────────────────────
+
+    async def kick_member(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+    ) -> bool:
+        # Verify caller is an active admin/owner
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only admins can kick members")
+
+        # Cannot kick yourself (use leave instead)
+        if caller_user_id == target_user_id:
+            raise ValueError("INVALID_ARGUMENT: Cannot kick yourself — use leave instead")
+
+        # Verify target is an active member
+        target = await self._members.get_active_member(conversation_id, target_user_id)
+        if not target:
+            raise ValueError("NOT_FOUND: Target user is not an active member")
+
+        # Cannot kick the owner
+        if target.role == "owner":
+            raise ValueError("PERMISSION_DENIED: Cannot kick the group owner")
+
+        # Admins cannot kick other admins (only owner can)
+        if target.role == "admin" and caller.role != "owner":
+            raise ValueError("PERMISSION_DENIED: Only the owner can kick admins")
+
+        # Mark as left
+        await self._members.update(target, {"left_at": datetime.utcnow()})
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "member_kicked",
+            "user_id": str(target_user_id),
+            "kicked_by": str(caller_user_id),
+        })
+
+        return True
+
+    # ── UpdateMemberRole ────────────────────────────
+
+    async def update_member_role(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+        new_role: str,
+    ) -> bool:
+        if new_role not in ("admin", "member"):
+            raise ValueError("INVALID_ARGUMENT: Role must be 'admin' or 'member'")
+
+        # Verify caller is an active admin/owner
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only admins can change roles")
+
+        # Cannot change own role
+        if caller_user_id == target_user_id:
+            raise ValueError("INVALID_ARGUMENT: Cannot change your own role")
+
+        # Verify target is an active member
+        target = await self._members.get_active_member(conversation_id, target_user_id)
+        if not target:
+            raise ValueError("NOT_FOUND: Target user is not an active member")
+
+        # Cannot change owner's role
+        if target.role == "owner":
+            raise ValueError("PERMISSION_DENIED: Cannot change the owner's role")
+
+        # Only owner can demote admins
+        if target.role == "admin" and new_role == "member" and caller.role != "owner":
+            raise ValueError("PERMISSION_DENIED: Only the owner can demote admins")
+
+        # No-op if already that role
+        if target.role == new_role:
+            return True
+
+        await self._members.update_role(conversation_id, target_user_id, new_role)
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "role_changed",
+            "user_id": str(target_user_id),
+            "new_role": new_role,
+        })
+
+        return True
+
+    # ── UpdateGroupAvatar ───────────────────────────
+
+    async def update_group_avatar(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        avatar_media_id: Optional[uuid.UUID],
+    ) -> bool:
+        conv = await self._conversations.get_by_id(conversation_id)
+        if not conv:
+            raise ValueError("NOT_FOUND: Conversation not found")
+
+        if conv.type != "group":
+            raise ValueError("FAILED_PRECONDITION: Avatars are only supported for group conversations")
+
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only owner or admin can change the group avatar")
+
+        await self._conversations.update_avatar(conversation_id, avatar_media_id)
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "group_avatar_changed",
+            "avatar_media_id": str(avatar_media_id) if avatar_media_id else "",
+            "changed_by": str(caller_user_id),
+        })
+
+        return True
+
+    # ── UpdateGroupName ─────────────────────────────
+
+    async def update_group_name(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        name: str,
+    ) -> bool:
+        if not name or not name.strip():
+            raise ValueError("INVALID_ARGUMENT: Name must not be empty")
+
+        conv = await self._conversations.get_by_id(conversation_id)
+        if not conv:
+            raise ValueError("NOT_FOUND: Conversation not found")
+
+        if conv.type != "group":
+            raise ValueError("FAILED_PRECONDITION: Name can only be changed for group conversations")
+
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only owner or admin can change the group name")
+
+        await self._conversations.update_name(conversation_id, name.strip())
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "group_name_changed",
+            "name": name.strip(),
+            "changed_by": str(caller_user_id),
         })
 
         return True
@@ -285,4 +449,5 @@ class ConversationServiceImpl(IConversationService):
             ],
             mls_group=MlsGroupResult(current_epoch=epoch, cipher_suite=cipher_suite),
             created_at=conv.created_at.timestamp(),
+            avatar_media_id=conv.avatar_media_id,
         )

@@ -23,6 +23,17 @@ class MemberRepository(BaseRepository[ConversationMember]):
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
+    async def get_member(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> Optional[ConversationMember]:
+        """Get member regardless of left_at status (includes left members)."""
+        query = select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id == user_id,
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_active_members(
         self, conversation_id: uuid.UUID,
     ) -> list[ConversationMember]:
@@ -63,3 +74,13 @@ class MemberRepository(BaseRepository[ConversationMember]):
         )
         result = await self.session.execute(query)
         return result.scalar_one_or_none() is not None
+
+    async def update_role(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID, new_role: str,
+    ) -> Optional[ConversationMember]:
+        member = await self.get_active_member(conversation_id, user_id)
+        if not member:
+            return None
+        member.role = new_role
+        await self.session.flush()
+        return member

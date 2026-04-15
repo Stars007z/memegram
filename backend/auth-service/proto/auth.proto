@@ -76,7 +76,7 @@ message RefreshTokenRequest {
 message AuthResponse {
     string user_id        = 1;
     string device_id      = 2;
-    bool   is_primary     = 3;
+    string device_type    = 3;
     string access_token   = 4;
     string refresh_token  = 5;
     int64  expires_at     = 6;

@@ -1,12 +1,12 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 
 class UserProfileResponseSchema(BaseModel):
     id: str
     username: str
-    avatar_data: Optional[bytes] = None           # base64 в JSON автоматически
-    profile_background_data: Optional[bytes] = None
+    avatar_media_id: Optional[str] = None
+    profile_background_media_id: Optional[str] = None
     user_public_key: str
     bio: str
     last_active: int
@@ -34,12 +34,15 @@ class UserSettingsResponseSchema(BaseModel):
     account_auto_delete_after_days: int
     profile_visible_to: str
     last_active_visible_to: str
-    chat_background_data: Optional[bytes] = None
+    chat_background_media_id: Optional[str] = None
     top_bar_color: str
-    ringtone_data: Optional[bytes] = None
+    ringtone_media_id: Optional[str] = None
     ringtone_vibration_strength: int
-    notification_sound_data: Optional[bytes] = None
+    notification_sound_media_id: Optional[str] = None
     notification_vibration_strength: int
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 class UpdateUserSettingsRequestSchema(BaseModel):
@@ -56,6 +59,37 @@ class UpdateUserSettingsRequestSchema(BaseModel):
     ringtone_vibration_strength: Optional[int] = None
     notification_sound: Optional[str] = None
     notification_vibration_strength: Optional[int] = None
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
+
+
+# ── Settings sync (smart media caching) ──────────────────────────────
+
+
+class SyncSettingsRequestSchema(BaseModel):
+    """Client sends its locally cached media IDs.
+    Server compares them with current values and returns
+    download URLs only for items that changed."""
+    chat_background_media_id: Optional[str] = None
+    ringtone_media_id: Optional[str] = None
+    notification_sound_media_id: Optional[str] = None
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
+
+
+class MediaDownloadInfoSchema(BaseModel):
+    field: str
+    item_id: str
+    download_url: str
+    expires_at: int
+    mime_type: str
+
+
+class SyncSettingsResponseSchema(BaseModel):
+    settings: UserSettingsResponseSchema
+    media_updates: List[MediaDownloadInfoSchema] = []
 
 
 class UserHealthResponseSchema(BaseModel):
