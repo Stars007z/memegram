@@ -81,6 +81,22 @@ class ConversationRepository(BaseRepository[Conversation]):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def update_avatar(
+        self, conversation_id: uuid.UUID, avatar_media_id: uuid.UUID | None,
+    ) -> None:
+        conv = await self.get_by_id(conversation_id)
+        if conv:
+            conv.avatar_media_id = avatar_media_id
+            await self.session.flush()
+
+    async def update_name(
+        self, conversation_id: uuid.UUID, name: str,
+    ) -> None:
+        conv = await self.get_by_id(conversation_id)
+        if conv:
+            conv.name = name
+            await self.session.flush()
+
     async def update_last_message(
         self, conversation_id: uuid.UUID, message_id: uuid.UUID,
     ) -> None:

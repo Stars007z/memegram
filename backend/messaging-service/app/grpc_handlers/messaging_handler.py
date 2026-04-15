@@ -61,6 +61,12 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def UpdateMemberRole(self, request, context):
         return await self._conversations.update_member_role(request, context)
 
+    async def UpdateGroupAvatar(self, request, context):
+        return await self._conversations.update_group_avatar(request, context)
+
+    async def UpdateGroupName(self, request, context):
+        return await self._conversations.update_group_name(request, context)
+
     # ── Messages ────────────────────────────────────
 
     async def SendMessage(self, request, context):

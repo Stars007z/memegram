@@ -49,3 +49,5 @@ coverage.xml
 alembic/versions/*.pyc
 
 static/
+
+memegram-362c0-firebase-adminsdk-fbsvc-87eea9959e.json

@@ -23,6 +23,7 @@ class GrpcChannelManager:
             "messaging": settings.MESSAGING_GRPC_ADDRESS,
             "media": settings.MEDIA_GRPC_ADDRESS,
             "item_storage": settings.ITEM_STORAGE_GRPC_ADDRESS,
+            "notifications": settings.NOTIFICATIONS_GRPC_ADDRESS,
         }
         self._channels: dict[str, grpc.aio.Channel] = {}
 

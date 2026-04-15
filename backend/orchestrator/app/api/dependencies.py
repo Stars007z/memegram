@@ -8,6 +8,7 @@ from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.interfaces.messaging_gateway import IMessagingGateway
 from app.core.interfaces.media_gateway import IMediaGateway
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
+from app.core.interfaces.notifications_gateway import INotificationsGateway
 from app.core.session_context import SessionContext
 from app.core.use_cases.auth.register import RegisterUseCase
 from app.core.use_cases.auth.login_init import LoginInitUseCase
@@ -47,6 +48,10 @@ def get_media_gateway(request: Request) -> IMediaGateway:
 
 def get_item_storage_gateway(request: Request) -> IItemStorageGateway:
     return _container(request).item_storage_gateway
+
+
+def get_notifications_gateway(request: Request) -> INotificationsGateway:
+    return _container(request).notifications_gateway
 
 
 # ── Auth dependency ───────────────────────────────────────────────────

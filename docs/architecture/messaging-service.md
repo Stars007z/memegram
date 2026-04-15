@@ -41,6 +41,7 @@ Messaging-service — **единый сервис** (не дробим даль�
 | `id` | UUID PK | — |
 | `type` | VARCHAR(20) | `direct` / `group` |
 | `name` | VARCHAR(255) NULLABLE | Только для group |
+| `avatar_media_id` | UUID NULLABLE | ID ресурса в `item-storage-service` (`group_avatar`). Только для group |
 | `created_by_user_id` | UUID | — |
 | `last_message_id` | UUID NULLABLE | FK на `messages.id` (без constraint — circular) |
 | `last_activity_at` | TIMESTAMP | Для сортировки списка чатов |
@@ -175,9 +176,10 @@ Messaging-service — **единый сервис** (не дробим даль�
 messaging-service
 ├── PostgreSQL  (conversations, messages, mls_*, media_attachments)
 ├── Redis       (typing indicators, online presence, unread cache, pub/sub фан-аут)
-├── media-service    (presigned URLs для S3)
-├── contacts-service (IsBlocked при создании direct-чата)
-└── auth-service     (входящий вызов NotifyDeviceRevoked)
+├── media-service         (presigned URLs для S3)
+├── contacts-service      (IsBlocked при создании direct-чата)
+├── auth-service          (входящий вызов NotifyDeviceRevoked)
+└── item-storage-service  (хранение аватаров групп — только ссылка avatar_media_id)
 ```
 
 ---
@@ -278,6 +280,7 @@ messaging-service
 
 **Возврат:** `items[]` ConversationSummary:
 - `id`, `type`, `name?`
+- `avatar_media_id?` — ID аватарки группы из `item-storage-service` (только для `group`)
 - `last_message_type` — тип последнего сообщения (`text`/`image`/…), **не содержимое**
 - `unread_count: int` — из Redis-кеша или COUNT(*) по `messages`
 - `last_activity_at`
@@ -289,7 +292,7 @@ messaging-service
 
 **Вход:** `user_id`, `conversation_id`
 
-**Возврат:** `ConversationResponse { id, type, name, members[], mls_group: { current_epoch, cipher_suite } }`
+**Возврат:** `ConversationResponse { id, type, name, avatar_media_id?, members[], mls_group: { current_epoch, cipher_suite } }`
 
 ---
 
@@ -357,6 +360,51 @@ messaging-service
 5. Только `owner` может снять `admin` → `member` (демоушн)
 6. UPDATE `conversation_members.role = new_role`
 7. Redis PUBLISH событие `role_changed: { user_id, new_role }`
+
+**Возврат:** `success: bool`
+
+---
+
+#### `UpdateGroupAvatar(UpdateGroupAvatarRequest) → UpdateGroupAvatarResponse`
+Обновление аватарки группового чата. Изображение предварительно загружается в `item-storage-service` с `item_type = group_avatar`.
+
+**Вход:**
+- `user_id` UUID — вызывающий (owner/admin)
+- `conversation_id` UUID
+- `avatar_media_id` UUID NULLABLE — `item_id` из `item-storage-service`; пустая строка для удаления аватарки
+
+**Логика:**
+1. Проверка что `conversation.type = group` → `FAILED_PRECONDITION`
+2. Проверка, что вызывающий — active member с ролью `owner` или `admin` → `PERMISSION_DENIED`
+3. UPDATE `conversations.avatar_media_id`
+4. Redis PUBLISH событие `group_avatar_changed: { avatar_media_id, changed_by }`
+
+**Возврат:** `success: bool`
+
+> **Загрузка аватарки (поток):**
+> 1. Клиент вызывает `item-storage-service.InitiateUpload(item_type="group_avatar", ...)` через оркестратор → получает `item_id` + presigned PUT URL
+> 2. Клиент загружает изображение в S3 по presigned URL
+> 3. Клиент вызывает `item-storage-service.ConfirmUpload(item_id)`
+> 4. Клиент вызывает `messaging-service.UpdateGroupAvatar(conversation_id, avatar_media_id=item_id)` через оркестратор
+>
+> Для отображения: клиент получает `avatar_media_id` из `GetConversations` / `GetConversation` и запрашивает presigned download URL через `item-storage-service.GetDownloadUrl`.
+
+---
+
+#### `UpdateGroupName(UpdateGroupNameRequest) → UpdateGroupNameResponse`
+Изменение названия группового чата.
+
+**Вход:**
+- `user_id` UUID — вызывающий (owner/admin)
+- `conversation_id` UUID
+- `name` string — новое название (1–255 символов)
+
+**Логика:**
+1. Валидация `name` — не пустая строка → `INVALID_ARGUMENT`
+2. Проверка что `conversation.type = group` → `FAILED_PRECONDITION`
+3. Проверка, что вызывающий — active member с ролью `owner` или `admin` → `PERMISSION_DENIED`
+4. UPDATE `conversations.name`
+5. Redis PUBLISH событие `group_name_changed: { name, changed_by }`
 
 **Возврат:** `success: bool`
 

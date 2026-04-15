@@ -477,6 +477,105 @@ services:
       start_period: 20s
 
   # ─────────────────────────────────────────
+  # NOTIFICATIONS
+  # ─────────────────────────────────────────
+
+  notifications-postgres:
+    image: postgres:15-alpine
+    container_name: memegram-notifications-postgres
+    environment:
+      POSTGRES_USER: ${NOTIFICATIONS_DB_USER:-memegram}
+      POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${NOTIFICATIONS_DB_NAME:-notifications_db}
+    ports:
+      - "5438:5432"
+    volumes:
+      - notifications_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATIONS_DB_USER:-memegram} -d ${NOTIFICATIONS_DB_NAME:-notifications_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  notifications-redis:
+    image: redis:7-alpine
+    container_name: memegram-notifications-redis
+    ports:
+      - "6382:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+
+  notifications-service:
+    build:
+      context: ./backend/notifications-service
+      dockerfile: Dockerfile
+    container_name: memegram-notifications-service
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until pg_isready -h notifications-postgres -U ${NOTIFICATIONS_DB_USER:-memegram} -d ${NOTIFICATIONS_DB_NAME:-notifications_db}; do sleep 1; done &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting gRPC server...' &&
+        python -m app.main
+      "
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${NOTIFICATIONS_DB_USER:-memegram}:${NOTIFICATIONS_DB_PASSWORD:-changeme}@notifications-postgres:5432/${NOTIFICATIONS_DB_NAME:-notifications_db}
+      - GRPC_PORT=50057
+      - REDIS_URL=redis://notifications-redis:6379/0
+      - MESSAGING_REDIS_URL=redis://messaging-redis:6379/0
+      - STREAM_NAME=notifications:events
+      - CONSUMER_GROUP=notifications-cg
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      - FCM_PROJECT_ID=${FCM_PROJECT_ID:-}
+      - APNS_KEY_PATH=${APNS_KEY_PATH:-}
+      - APNS_KEY_ID=${APNS_KEY_ID:-}
+      - APNS_TEAM_ID=${APNS_TEAM_ID:-}
+      - APNS_BUNDLE_ID=${APNS_BUNDLE_ID:-com.memegram.app}
+      - APNS_USE_SANDBOX=${APNS_USE_SANDBOX:-true}
+      - MESSAGING_GRPC_HOST=messaging-service
+      - MESSAGING_GRPC_PORT=50054
+      - USER_GRPC_HOST=user-service
+      - USER_GRPC_PORT=50052
+      - ITEM_STORAGE_GRPC_HOST=item-storage-service
+      - ITEM_STORAGE_GRPC_PORT=50056
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    ports:
+      - "50057:50057"
+    depends_on:
+      notifications-postgres:
+        condition: service_healthy
+      notifications-redis:
+        condition: service_healthy
+      messaging-redis:
+        condition: service_healthy
+      messaging-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      item-storage-service:
+        condition: service_healthy
+    networks:
+      - memegram-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50057'); grpc.channel_ready_future(channel).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────
   # ORCHESTRATOR
   # ─────────────────────────────────────────
 
@@ -511,6 +610,9 @@ services:
       - ITEM_STORAGE_GRPC_HOST=item-storage-service
       - ITEM_STORAGE_GRPC_PORT=50056
       - ITEM_STORAGE_GRPC_TIMEOUT=10
+      - NOTIFICATIONS_GRPC_HOST=notifications-service
+      - NOTIFICATIONS_GRPC_PORT=50057
+      - NOTIFICATIONS_GRPC_TIMEOUT=10
       - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
       - REDIS_URL=redis://auth-redis:6379/0
     ports:
@@ -527,6 +629,8 @@ services:
       media-service:
         condition: service_healthy
       item-storage-service:
+        condition: service_healthy
+      notifications-service:
         condition: service_healthy
     networks:
       - memegram-backend
@@ -550,4 +654,5 @@ volumes:
   messaging_postgres_data:
   media_postgres_data:
   item_storage_postgres_data:
+  notifications_postgres_data:
   minio_data:
