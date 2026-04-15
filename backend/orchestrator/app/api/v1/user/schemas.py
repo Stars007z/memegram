@@ -5,8 +5,8 @@ from typing import Optional, List
 class UserProfileResponseSchema(BaseModel):
     id: str
     username: str
-    avatar_data: Optional[bytes] = None
-    profile_background_data: Optional[bytes] = None
+    avatar_media_id: Optional[str] = None
+    profile_background_media_id: Optional[str] = None
     user_public_key: str
     bio: str
     last_active: int
@@ -40,6 +40,9 @@ class UserSettingsResponseSchema(BaseModel):
     ringtone_vibration_strength: int
     notification_sound_media_id: Optional[str] = None
     notification_vibration_strength: int
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 class UpdateUserSettingsRequestSchema(BaseModel):
@@ -56,6 +59,9 @@ class UpdateUserSettingsRequestSchema(BaseModel):
     ringtone_vibration_strength: Optional[int] = None
     notification_sound: Optional[str] = None
     notification_vibration_strength: Optional[int] = None
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 # ── Settings sync (smart media caching) ──────────────────────────────
@@ -68,6 +74,9 @@ class SyncSettingsRequestSchema(BaseModel):
     chat_background_media_id: Optional[str] = None
     ringtone_media_id: Optional[str] = None
     notification_sound_media_id: Optional[str] = None
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 class MediaDownloadInfoSchema(BaseModel):

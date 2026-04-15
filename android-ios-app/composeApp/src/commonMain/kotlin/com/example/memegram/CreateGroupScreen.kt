@@ -17,12 +17,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.memegram.localization.LocalStrings
 import org.koin.compose.viewmodel.koinViewModel
+import com.example.memegram.utils.sdp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateGroupScreen(
     onBack: () -> Unit,
-    onGroupCreated: (String) -> Unit,
+    onGroupCreated: (String, String) -> Unit,
     vm: ContactsViewModel = koinViewModel()
 ) {
     val contacts by vm.contacts.collectAsState()
@@ -37,7 +38,7 @@ fun CreateGroupScreen(
     LaunchedEffect(createdChatId) {
         createdChatId?.let {
             vm.clearChatCreated()
-            onGroupCreated(it)
+            onGroupCreated(it, groupName)
         }
     }
 
@@ -70,7 +71,7 @@ fun CreateGroupScreen(
                 Text(
                     text = error!!,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(16.sdp)
                 )
             }
 
@@ -80,7 +81,7 @@ fun CreateGroupScreen(
                 label = { Text(s.groupName) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.sdp, vertical = 8.sdp),
                 singleLine = true,
                 enabled = !isCreating
             )
@@ -89,7 +90,7 @@ fun CreateGroupScreen(
                 text = s.membersSelected(selectedUserIds.size),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                modifier = Modifier.padding(start = 16.sdp, top = 16.sdp, bottom = 8.sdp)
             )
 
             if (isCreating) {
@@ -114,10 +115,10 @@ fun CreateGroupScreen(
                             headlineContent = { Text(name) },
                             leadingContent = {
                                 Surface(
-                                    modifier = Modifier.size(40.dp).clip(CircleShape),
+                                    modifier = Modifier.size(40.sdp).clip(CircleShape),
                                     color = MaterialTheme.colorScheme.secondaryContainer
                                 ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.padding(8.dp))
+                                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.padding(8.sdp))
                                 }
                             },
                             trailingContent = {

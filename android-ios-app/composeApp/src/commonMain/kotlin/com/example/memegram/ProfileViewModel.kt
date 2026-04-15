@@ -3,6 +3,7 @@ package com.example.memegram
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.models.InitiateItemUploadRequest
 import com.example.memegram.data.models.LogoutRequest
 import com.example.memegram.data.models.UpdateProfileRequest
 import com.example.memegram.data.network.ApiService
@@ -67,8 +68,48 @@ class ProfileViewModel(
     fun loadProfile() {
         viewModelScope.launch {
             _isLoading.value = true
-            userRepository.loadProfile().onFailure { _error.value = "Ошибка загрузки: ${it.message}" }
+
+            _avatarBytes.value = settings.getStringOrNull("profile_avatar")
+                ?.let { runCatching { Base64.decode(it) }.getOrNull() }
+            _coverBytes.value = settings.getStringOrNull("profile_cover")
+                ?.let { runCatching { Base64.decode(it) }.getOrNull() }
+
+            userRepository.loadProfile()
+                .onSuccess { profile ->
+                    profile.avatarMediaId?.let { mediaId ->
+                        if (settings.getStringOrNull("profile_avatar_media_id") != mediaId) {
+                            fetchAndCacheImage(mediaId, "avatar")
+                        }
+                    }
+                    profile.profileBackgroundMediaId?.let { mediaId ->
+                        if (settings.getStringOrNull("profile_cover_media_id") != mediaId) {
+                            fetchAndCacheImage(mediaId, "cover")
+                        }
+                    }
+                }
+                .onFailure { _error.value = "Error loading profile: ${it.message}" }
             _isLoading.value = false
+        }
+    }
+
+    private suspend fun fetchAndCacheImage(mediaId: String, type: String) {
+        try {
+            val downloadInfo = api.getItemDownloadUrl(mediaId)
+            val bytes = api.downloadBytesFromUrl(downloadInfo.downloadUrl)
+            when (type) {
+                "avatar" -> {
+                    _avatarBytes.value = bytes
+                    settings.putString("profile_avatar", Base64.encode(bytes))
+                    settings.putString("profile_avatar_media_id", mediaId)
+                }
+                "cover" -> {
+                    _coverBytes.value = bytes
+                    settings.putString("profile_cover", Base64.encode(bytes))
+                    settings.putString("profile_cover_media_id", mediaId)
+                }
+            }
+        } catch (e: Exception) {
+            println("ProfileVM: Failed to fetch $type image: ${e.message}")
         }
     }
 
@@ -81,21 +122,67 @@ class ProfileViewModel(
             )
 
             userRepository.updateProfile(request)
-                .onSuccess { _message.value = "Профиль успешно обновлен!" }
-                .onFailure { _error.value = "Ошибка сохранения: ${it.message}" }
+                .onSuccess { _message.value = "Profile updated!" }
+                .onFailure { _error.value = "Error saving: ${it.message}" }
 
             _isLoading.value = false
         }
     }
 
     fun updateAvatar(bytes: ByteArray) {
-        _avatarBytes.value = bytes
-        settings.putString("profile_avatar", Base64.encode(bytes))
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val mediaId = uploadImageToItemStorage(bytes, "avatar", "image/jpeg")
+                userRepository.updateProfile(UpdateProfileRequest(avatarMediaId = mediaId))
+                _avatarBytes.value = bytes
+                settings.putString("profile_avatar", Base64.encode(bytes))
+                settings.putString("profile_avatar_media_id", mediaId)
+                _message.value = "Avatar updated!"
+            } catch (e: Exception) {
+                _error.value = "Error uploading avatar: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     fun updateCover(bytes: ByteArray) {
-        _coverBytes.value = bytes
-        settings.putString("profile_cover", Base64.encode(bytes))
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val mediaId = uploadImageToItemStorage(bytes, "profile_background", "image/jpeg")
+                userRepository.updateProfile(UpdateProfileRequest(profileBackgroundMediaId = mediaId))
+                _coverBytes.value = bytes
+                settings.putString("profile_cover", Base64.encode(bytes))
+                settings.putString("profile_cover_media_id", mediaId)
+                _message.value = "Cover updated!"
+            } catch (e: Exception) {
+                _error.value = "Error uploading cover: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun uploadImageToItemStorage(
+        bytes: ByteArray,
+        itemType: String,
+        mimeType: String
+    ): String {
+        val initiateResp = api.initiateItemUpload(
+            InitiateItemUploadRequest(
+                itemType = itemType,
+                mimeType = mimeType,
+                sizeBytes = bytes.size.toLong()
+            )
+        )
+        api.uploadBytesToPresignedUrl(initiateResp.uploadUrl, bytes, mimeType)
+        val confirmResp = api.confirmItemUpload(initiateResp.itemId)
+        if (!confirmResp.success) {
+            throw Exception("Upload confirmation failed for item ${initiateResp.itemId}")
+        }
+        return initiateResp.itemId
     }
 
     fun clearCache() {
@@ -103,9 +190,9 @@ class ProfileViewModel(
             _isLoading.value = true
             try {
                 chatRepository.clearAllLocalData()
-                _message.value = "Локальный кэш сообщений очищен"
+                _message.value = "Local message cache cleared"
             } catch (e: Exception) {
-                _error.value = "Ошибка при очистке кэша: ${e.message}"
+                _error.value = "Error clearing cache: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
@@ -125,6 +212,8 @@ class ProfileViewModel(
                 mlsManager.clearAll()
                 settings.remove("profile_avatar")
                 settings.remove("profile_cover")
+                settings.remove("profile_avatar_media_id")
+                settings.remove("profile_cover_media_id")
                 sessionManager.clear()
 
                 _isLoading.value = false

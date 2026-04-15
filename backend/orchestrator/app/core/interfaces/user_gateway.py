@@ -7,8 +7,8 @@ from typing import Optional
 class UserProfileResult:
     id: str
     username: str
-    avatar_data: Optional[bytes] = None
-    profile_background_data: Optional[bytes] = None
+    avatar_media_id: Optional[str] = None
+    profile_background_media_id: Optional[str] = None
     user_public_key: str = ""
     bio: str = ""
     last_active: int = 0
@@ -32,6 +32,9 @@ class UserSettingsResult:
     ringtone_vibration_strength: int = 1
     notification_sound_media_id: Optional[str] = None
     notification_vibration_strength: int = 1
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 @dataclass
@@ -65,6 +68,9 @@ class UpdateUserSettingsRequest:
     ringtone_vibration_strength: Optional[int] = None
     notification_sound: Optional[str] = None
     notification_vibration_strength: Optional[int] = None
+    top_bar_media_id: Optional[str] = None
+    my_bubble_media_id: Optional[str] = None
+    their_bubble_media_id: Optional[str] = None
 
 
 @dataclass

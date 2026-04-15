@@ -461,6 +461,47 @@ class ApiService(
             noCache()
         }.body<GetMediaDownloadUrlResponse>()
 
+// ── Item Storage ──────────────────────────────────────────────────────────
+
+    suspend fun initiateItemUpload(request: InitiateItemUploadRequest): InitiateItemUploadResponse {
+        val response = client.post("$baseUrl/api/v1/item-storage/upload/initiate") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("initiateItemUpload: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
+
+    suspend fun uploadBytesToPresignedUrl(
+        uploadUrl: String,
+        bytes: ByteArray,
+        mimeType: String
+    ) {
+        val response = client.put(uploadUrl) {
+            header("Content-Type", mimeType)
+            setBody(bytes)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("uploadToPresignedUrl failed: ${response.status.value}")
+    }
+
+    suspend fun confirmItemUpload(itemId: String): ConfirmItemUploadResponse {
+        val response = client.post("$baseUrl/api/v1/item-storage/upload/$itemId/confirm") {
+            bearerAuth(token())
+        }
+        if (!response.status.isSuccess())
+            throw Exception("confirmItemUpload: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
+
+    suspend fun getItemDownloadUrl(itemId: String): ItemDownloadUrlResponse =
+        client.get("$baseUrl/api/v1/item-storage/$itemId/download") {
+            bearerAuth(token())
+            noCache()
+        }.body()
+
 // ── Devices ────────────────────────────────────────────────────
 
     suspend fun submitDeviceData(

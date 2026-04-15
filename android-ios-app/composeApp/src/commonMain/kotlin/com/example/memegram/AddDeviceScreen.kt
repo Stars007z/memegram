@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,7 +53,7 @@ fun AddDeviceScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(24.sdp),
             contentAlignment = Alignment.Center
         ) {
             when (step) {
@@ -63,13 +64,13 @@ fun AddDeviceScreen(
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(24.sdp))
 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.sdp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
@@ -79,14 +80,14 @@ fun AddDeviceScreen(
                             )
                         }
 
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(16.sdp))
                         Text(
                             s.pasteCodeHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(8.sdp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -101,7 +102,7 @@ fun AddDeviceScreen(
                                 singleLine = false,
                                 maxLines = 3
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(4.sdp))
                             IconButton(
                                 onClick = {
                                     clipboardManager.getText()?.text?.let {
@@ -117,7 +118,7 @@ fun AddDeviceScreen(
                             }
                         }
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(12.sdp))
                         Button(
                             onClick = { vm.onQrScanned(manualInput) },
                             enabled = manualInput.isNotBlank(),
@@ -131,7 +132,7 @@ fun AddDeviceScreen(
                 AddDeviceStep.SUBMITTING -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.sdp)
                     ) {
                         CircularProgressIndicator()
                         Text(s.sendingDeviceData)
@@ -141,7 +142,7 @@ fun AddDeviceScreen(
                 AddDeviceStep.WAITING_APPROVAL -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.sdp)
                     ) {
                         CircularProgressIndicator()
                         Text(
@@ -161,13 +162,13 @@ fun AddDeviceScreen(
                 AddDeviceStep.CONFIRMED -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.sdp)
                     ) {
                         Icon(
                             Icons.Default.CheckCircle,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(64.dp)
+                            modifier = Modifier.size(64.sdp)
                         )
                         Text(s.deviceAdded, style = MaterialTheme.typography.titleMedium)
                     }
@@ -176,13 +177,13 @@ fun AddDeviceScreen(
                 AddDeviceStep.REJECTED, AddDeviceStep.ERROR -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.sdp)
                     ) {
                         Icon(
                             Icons.Default.Error,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(64.dp)
+                            modifier = Modifier.size(64.sdp)
                         )
                         Text(
                             error ?: s.errorOccurred,

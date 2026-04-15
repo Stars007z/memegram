@@ -5,6 +5,8 @@ from app.core.interfaces.item_storage_gateway import (
     IItemStorageGateway,
     ItemStorageHealthResult,
     DownloadUrlResult,
+    InitiateUploadResult,
+    ConfirmUploadResult,
 )
 from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
@@ -57,3 +59,43 @@ class GrpcItemStorageGateway(IItemStorageGateway):
             expires_at=resp.expires_at,
             mime_type=resp.mime_type,
         )
+
+    async def initiate_upload(
+        self,
+        owner_user_id: str,
+        item_type: str,
+        mime_type: str,
+        size_bytes: int,
+    ) -> InitiateUploadResult:
+        try:
+            resp = await self._stub().InitiateUpload(
+                item_storage_pb2.InitiateUploadRequest(
+                    owner_user_id=owner_user_id,
+                    item_type=item_type,
+                    mime_type=mime_type,
+                    size_bytes=size_bytes,
+                ),
+                timeout=self._settings.ITEM_STORAGE_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return InitiateUploadResult(
+            item_id=resp.item_id,
+            upload_url=resp.upload_url,
+            expires_at=resp.expires_at,
+        )
+
+    async def confirm_upload(
+        self, owner_user_id: str, item_id: str,
+    ) -> ConfirmUploadResult:
+        try:
+            resp = await self._stub().ConfirmUpload(
+                item_storage_pb2.ConfirmUploadRequest(
+                    owner_user_id=owner_user_id,
+                    item_id=item_id,
+                ),
+                timeout=self._settings.ITEM_STORAGE_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return ConfirmUploadResult(success=resp.success)

@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,9 +42,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -71,6 +74,11 @@ import org.koin.compose.koinInject
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.LocalScreenWidthDp
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -87,6 +95,9 @@ fun ChatScreen(
     val chatBgColor    by viewModel.chatBgColor.collectAsState()
     val myBubbleColor  by viewModel.myBubbleColor.collectAsState()
     val theirBubbleColor by viewModel.theirBubbleColor.collectAsState()
+    val chatBgImage    by viewModel.chatBgImage.collectAsState()
+    val myBubbleImage  by viewModel.myBubbleImage.collectAsState()
+    val theirBubbleImage by viewModel.theirBubbleImage.collectAsState()
     val mediaCache by viewModel.mediaCache.collectAsState()
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
@@ -95,14 +106,15 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
 
+    val chatItems by remember { derivedStateOf { groupMessages(messages) } }
+
     val lastVisibleIncomingServerId by remember {
         derivedStateOf {
             val visible = listState.layoutInfo.visibleItemsInfo
-            if (visible.isEmpty()) return@derivedStateOf null
+            if (visible.isEmpty() || chatItems.isEmpty()) return@derivedStateOf null
             visible
-                .asReversed()
-                .mapNotNull { info -> messages.getOrNull(info.index) }
-                .firstOrNull { !it.isOutgoing && it.serverId.isNotBlank() }
+                .flatMap { info -> chatItems.getOrNull(info.index)?.allMessages ?: emptyList() }
+                .lastOrNull { !it.isOutgoing && it.serverId.isNotBlank() }
                 ?.serverId
         }
     }
@@ -114,8 +126,44 @@ fun ChatScreen(
         lastVisibleIncomingServerId?.let(viewModel::markMessagesRead)
     }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    var scrollRestored by remember { mutableStateOf(false) }
+    val initialUnreadCount by viewModel.initialUnreadCount.collectAsState()
+
+    LaunchedEffect(chatItems.size) {
+        if (chatItems.isEmpty()) return@LaunchedEffect
+        if (!scrollRestored) {
+            val convId = viewModel.currentConversationId
+            val saved = convId?.let { ChatScrollCache.restore(it) }
+            if (saved != null) {
+                listState.scrollToItem(saved.first.coerceAtMost(chatItems.lastIndex), saved.second)
+            } else if (initialUnreadCount > 0 && initialUnreadCount < messages.size) {
+                val lastReadMsgIdx = (messages.size - initialUnreadCount - 1).coerceAtLeast(0)
+                val lastReadMsg = messages[lastReadMsgIdx]
+                val chatItemIdx = chatItems.indexOfFirst { item ->
+                    item.allMessages.any { it.id == lastReadMsg.id }
+                }.coerceAtLeast(0)
+                listState.scrollToItem(chatItemIdx)
+            } else {
+                listState.scrollToItem(chatItems.lastIndex)
+            }
+            scrollRestored = true
+        } else {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            if (lastVisible != null && lastVisible.index >= chatItems.size - 3) {
+                listState.animateScrollToItem(chatItems.lastIndex)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val convId = viewModel.currentConversationId ?: return@onDispose
+            ChatScrollCache.save(
+                convId,
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset
+            )
+        }
     }
 
     var attachments by remember { mutableStateOf<List<AttachItem>>(emptyList()) }
@@ -126,6 +174,12 @@ fun ChatScreen(
     var galleryLoading by remember { mutableStateOf(false) }
     val gridState      = rememberLazyGridState()
     val gallerySections = remember(galleryThumbs) { buildGallerySections(galleryThumbs) }
+    val screenWidthDp = LocalScreenWidthDp.current
+    val defaultGridColumns = remember(screenWidthDp) {
+        (screenWidthDp / 120f).roundToInt().coerceIn(2, 6)
+    }
+    var gridColumns by remember(defaultGridColumns) { mutableIntStateOf(defaultGridColumns) }
+    var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
 
     LaunchedEffect(showAttachSheet, galleryLoader.isPermissionGranted) {
         if (showAttachSheet && galleryLoader.isPermissionGranted && galleryThumbs.isEmpty() && !galleryLoading) {
@@ -154,20 +208,26 @@ fun ChatScreen(
     var currentMatchIdx  by remember { mutableIntStateOf(0) }
     val searchFocus      = remember { FocusRequester() }
 
-    val searchMatches = remember(messages, searchQuery) {
+    val searchMatches = remember(chatItems, searchQuery) {
         if (searchQuery.isBlank()) emptyList()
-        else messages.mapIndexedNotNull { i, m ->
-            if (m.text.contains(searchQuery, ignoreCase = true)) i else null
+        else chatItems.mapIndexedNotNull { i, item ->
+            if (item.allMessages.any { it.text.contains(searchQuery, ignoreCase = true) }) i else null
         }
     }
     val currentMatchMsgId = remember(searchMatches, currentMatchIdx) {
-        if (searchMatches.isNotEmpty()) messages[searchMatches[currentMatchIdx]].id else -1
+        if (searchMatches.isNotEmpty()) {
+            val item = chatItems[searchMatches[currentMatchIdx]]
+            item.allMessages.firstOrNull { it.text.contains(searchQuery, ignoreCase = true) }?.id ?: -1
+        } else -1
     }
 
     LaunchedEffect(searchQuery)   { currentMatchIdx = if (searchMatches.isNotEmpty()) searchMatches.size - 1 else 0 }
     LaunchedEffect(isSearchMode)  { if (isSearchMode) searchFocus.requestFocus() else searchQuery = "" }
     LaunchedEffect(currentMatchIdx, searchMatches.size) {
-        if (searchMatches.isNotEmpty()) listState.animateScrollToItem(searchMatches[currentMatchIdx])
+        if (searchMatches.isNotEmpty()) {
+            val origIdx = searchMatches[currentMatchIdx]
+            listState.animateScrollToItem(origIdx)
+        }
     }
 
     var showMenu        by remember { mutableStateOf(false) }
@@ -178,6 +238,7 @@ fun ChatScreen(
     val isGroupChat by viewModel.isGroupChat.collectAsState()
     val messageSenders by viewModel.messageSenders.collectAsState()
     val memberProfiles by viewModel.memberProfiles.collectAsState()
+    val peerAvatarMediaId by viewModel.peerAvatarMediaId.collectAsState()
 
     val replyingTo by viewModel.replyingTo.collectAsState()
     val replyContext by viewModel.replyContext.collectAsState()
@@ -186,7 +247,7 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     var contextMenuMessage by remember { mutableStateOf<Message?>(null) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
-    var messageToDelete by remember { mutableStateOf<Message?>(null) }
+    var messagesToDelete by remember { mutableStateOf<List<Message>?>(null) }
 
     val recordState     by viewModel.recordState.collectAsState()
     val recordAmps      by viewModel.voiceAmplitudes.collectAsState()
@@ -203,7 +264,7 @@ fun ChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(460.dp)
+                    .height(460.sdp)
                     .navigationBarsPadding()
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -211,27 +272,27 @@ fun ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.sdp, vertical = 8.sdp),
                         verticalAlignment         = Alignment.CenterVertically,
                         horizontalArrangement     = Arrangement.SpaceBetween
                     ) {
                         Text(s.gallery, style = MaterialTheme.typography.titleMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.sdp)) {
                             OutlinedButton(
                                 onClick        = { filePicker.launch(); showAttachSheet = false },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                contentPadding = PaddingValues(horizontal = 12.sdp, vertical = 6.sdp)
                             ) {
-                                Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(s.file, fontSize = 13.sp)
+                                Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(16.sdp))
+                                Spacer(Modifier.width(4.sdp))
+                                Text(s.file, fontSize = 13.ssp)
                             }
                             OutlinedButton(
                                 onClick        = { imagePicker.launch(); showAttachSheet = false },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                contentPadding = PaddingValues(horizontal = 12.sdp, vertical = 6.sdp)
                             ) {
-                                Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(s.all, fontSize = 13.sp)
+                                Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.sdp))
+                                Spacer(Modifier.width(4.sdp))
+                                Text(s.all, fontSize = 13.ssp)
                             }
                         }
                     }
@@ -252,30 +313,70 @@ fun ChatScreen(
                                     modifier            = Modifier.align(Alignment.Center),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(48.dp), tint = Color.Gray)
-                                    Spacer(Modifier.height(8.dp))
+                                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(48.sdp), tint = Color.Gray)
+                                    Spacer(Modifier.height(8.sdp))
                                     Text(s.noGalleryAccess, color = Color.Gray)
-                                    Spacer(Modifier.height(8.dp))
+                                    Spacer(Modifier.height(8.sdp))
                                     Button(onClick = { imagePicker.launch(); showAttachSheet = false }) {
                                         Text(s.openGallery)
                                     }
                                 }
                             }
                             else -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val event = awaitPointerEvent(PointerEventPass.Final)
+                                                    val pressed = event.changes.filter { it.pressed }
+                                                    if (pressed.size >= 2) {
+                                                        event.changes.forEach { it.consume() }
+                                                        var prevDist = (pressed[0].position - pressed[1].position).getDistance()
+
+                                                        var tracking = true
+                                                        while (tracking) {
+                                                            val next = awaitPointerEvent(PointerEventPass.Final)
+                                                            val nextPressed = next.changes.filter { it.pressed }
+                                                            if (nextPressed.size >= 2) {
+                                                                next.changes.forEach { it.consume() }
+                                                                val dist = (nextPressed[0].position - nextPressed[1].position).getDistance()
+                                                                if (dist > 0f && prevDist > 0f) {
+                                                                    pinchAccumulatedScale *= (dist / prevDist)
+                                                                    if (pinchAccumulatedScale > 1.5f) {
+                                                                        gridColumns = (gridColumns - 1).coerceAtLeast(2)
+                                                                        pinchAccumulatedScale = 1f
+                                                                    } else if (pinchAccumulatedScale < 0.67f) {
+                                                                        gridColumns = (gridColumns + 1).coerceAtMost(6)
+                                                                        pinchAccumulatedScale = 1f
+                                                                    }
+                                                                }
+                                                                prevDist = dist
+                                                            } else {
+                                                                tracking = false
+                                                                pinchAccumulatedScale = 1f
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                ) {
                                 LazyVerticalGrid(
                                     state          = gridState,
-                                    columns        = GridCells.Fixed(3),
+                                    columns        = GridCells.Fixed(gridColumns),
                                     modifier       = Modifier
                                         .fillMaxSize()
-                                        .padding(end = 36.dp),
+                                        .padding(end = 36.sdp),
                                     contentPadding = PaddingValues(
-                                        start  = 2.dp,
-                                        top    = 2.dp,
-                                        end    = 2.dp,
-                                        bottom = if (pendingGallery.isNotEmpty()) 70.dp else 2.dp
+                                        start  = 2.sdp,
+                                        top    = 2.sdp,
+                                        end    = 2.sdp,
+                                        bottom = if (pendingGallery.isNotEmpty()) 70.sdp else 2.sdp
                                     ),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    verticalArrangement   = Arrangement.spacedBy(2.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(2.sdp),
+                                    verticalArrangement   = Arrangement.spacedBy(2.sdp)
                                 ) {
                                     items(galleryThumbs, key = { it.id }) { thumb ->
                                         val isSelected = thumb in pendingGallery
@@ -297,11 +398,12 @@ fun ChatScreen(
                                     sections   = gallerySections,
                                     totalItems = galleryThumbs.size,
                                     gridState  = gridState,
-                                    columns    = 3,
+                                    columns    = gridColumns,
                                     modifier   = Modifier
                                         .align(Alignment.CenterEnd)
                                         .fillMaxHeight()
                                 )
+                                }
                             }
                         }
                     }
@@ -313,7 +415,7 @@ fun ChatScreen(
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .padding(horizontal = 16.sdp, vertical = 10.sdp)
                     ) {
                         Button(
                             onClick  = {
@@ -325,8 +427,8 @@ fun ChatScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(18.sdp))
+                            Spacer(Modifier.width(8.sdp))
                             Text(s.attachNPhotos(pendingGallery.size))
                         }
                     }
@@ -397,15 +499,15 @@ fun ChatScreen(
             text = {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Box(
-                        modifier = Modifier.size(240.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.size(240.sdp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(chatName.take(1).uppercase(), color = Color.White, fontSize = 100.sp)
+                        Text(chatName.take(1).uppercase(), color = Color.White, fontSize = 100.ssp)
                     }
 
                     IconButton(
                         onClick = { showFullScreenAvatar = false },
-                        modifier = Modifier.align(Alignment.TopStart).padding(16.dp).statusBarsPadding()
+                        modifier = Modifier.align(Alignment.TopStart).padding(16.sdp).statusBarsPadding()
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
                     }
@@ -415,26 +517,27 @@ fun ChatScreen(
         )
     }
 
-    if (messageToDelete != null) {
+    if (messagesToDelete != null) {
         AlertDialog(
-            onDismissRequest = { messageToDelete = null },
+            onDismissRequest = { messagesToDelete = null },
             title = { Text(s.deleteMessageTitle) },
             text = { Text(s.deleteMessageText) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        messageToDelete?.let { viewModel.deleteMessage(it) }
-                        messageToDelete = null
+                        messagesToDelete?.forEach { viewModel.deleteMessage(it) }
+                        messagesToDelete = null
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text(s.deleteForAll) }
             },
-            dismissButton = { TextButton(onClick = { messageToDelete = null }) { Text(s.cancel) } }
+            dismissButton = { TextButton(onClick = { messagesToDelete = null }) { Text(s.cancel) } }
         )
     }
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = { if (isSearchMode) isSearchMode = false else onBack() }) {
@@ -447,19 +550,19 @@ fun ChatScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onProfileClick() }
-                            .padding(end = 16.dp)
+                            .padding(end = 16.sdp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(topBarTextColor.copy(alpha = 0.2f))
-                                .clickable { showFullScreenAvatar = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(chatName.take(1).uppercase(), color = topBarTextColor, fontSize = 16.sp)
+                        Box(modifier = Modifier.clickable { showFullScreenAvatar = true }) {
+                            AvatarImage(
+                                mediaId = if (!isGroupChat) peerAvatarMediaId else null,
+                                size = 36.sdp,
+                                fallbackLetter = chatName.take(1).uppercase(),
+                                backgroundColor = topBarTextColor.copy(alpha = 0.2f),
+                                textColor = topBarTextColor,
+                                textStyle = TextStyle(fontSize = 16.ssp)
+                            )
                         }
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(10.sdp))
                         Text(chatName, color = topBarTextColor)
                     }
                 },
@@ -485,16 +588,17 @@ fun ChatScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = topBarColor)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
             )
+            }
         },
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.sdp) {
                 Column {
                     if (attachments.isNotEmpty()) {
                         LazyRow(
-                            modifier = Modifier.fillMaxWidth().padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.fillMaxWidth().padding(8.sdp),
+                            horizontalArrangement = Arrangement.spacedBy(8.sdp)
                         ) {
                             items(attachments) { item -> AttachmentThumbnail(item) { attachments = attachments - item } }
                         }
@@ -506,15 +610,15 @@ fun ChatScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 12.sdp, vertical = 8.sdp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.Reply, null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.sdp)
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(8.sdp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     s.reply,
@@ -536,9 +640,9 @@ fun ChatScreen(
                             }
                             IconButton(
                                 onClick = { viewModel.clearReply() },
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.sdp)
                             ) {
-                                Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, null, modifier = Modifier.size(16.sdp))
                             }
                         }
                         HorizontalDivider()
@@ -547,43 +651,43 @@ fun ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                            .padding(horizontal = 4.sdp, vertical = 6.sdp)
                             .navigationBarsPadding(),
                         verticalAlignment = Alignment.Bottom
                     ) {
                         if (recordState != ChatViewModel.RecordState.IDLE) {
                             Row(
-                                modifier = Modifier.weight(1f).height(48.dp).padding(horizontal = 8.dp),
+                                modifier = Modifier.weight(1f).height(48.sdp).padding(horizontal = 8.sdp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 val alpha by animateFloatAsState(
                                     targetValue = if (recordState == ChatViewModel.RecordState.PAUSED) 0.3f else 1f,
                                     animationSpec = infiniteRepeatable(animation = tween(800), repeatMode = RepeatMode.Reverse)
                                 )
-                                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color.Red.copy(alpha = alpha)))
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(modifier = Modifier.size(10.sdp).clip(CircleShape).background(Color.Red.copy(alpha = alpha)))
+                                Spacer(modifier = Modifier.width(8.sdp))
 
                                 val sec = (recordDuration / 1000).toInt()
-                                Text("${sec / 60}:${(sec % 60).toString().padStart(2, '0')}", fontSize = 16.sp)
-                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("${sec / 60}:${(sec % 60).toString().padStart(2, '0')}", fontSize = 16.ssp)
+                                Spacer(modifier = Modifier.width(16.sdp))
 
                                 if (recordState == ChatViewModel.RecordState.HOLDING) {
-                                    Text(s.swipeToCancel, color = Color.Gray, fontSize = 14.sp)
+                                    Text(s.swipeToCancel, color = Color.Gray, fontSize = 14.ssp)
                                 } else {
                                     VoiceWaveform(
                                         amplitudes = recordAmps,
                                         progress = 1f,
-                                        modifier = Modifier.weight(1f).height(30.dp),
+                                        modifier = Modifier.weight(1f).height(30.sdp),
                                         playedColor = MaterialTheme.colorScheme.primary,
                                         unplayedColor = Color.Gray.copy(alpha = 0.3f)
                                     )
 
-                                    IconButton(onClick = { viewModel.cancelVoiceRecording() }, modifier = Modifier.size(32.dp)) {
+                                    IconButton(onClick = { viewModel.cancelVoiceRecording() }, modifier = Modifier.size(32.sdp)) {
                                         Icon(Icons.Default.Delete, null, tint = Color.Gray)
                                     }
                                     IconButton(
                                         onClick = { if (recordState == ChatViewModel.RecordState.PAUSED) viewModel.resumeVoiceRecording() else viewModel.pauseVoiceRecording() },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(32.sdp)
                                     ) {
                                         Icon(if (recordState == ChatViewModel.RecordState.PAUSED) Icons.Default.Mic else Icons.Default.Pause, null, tint = MaterialTheme.colorScheme.primary)
                                     }
@@ -594,7 +698,7 @@ fun ChatScreen(
                             OutlinedTextField(
                                 value = inputText, onValueChange = { viewModel.updateInput(it) },
                                 modifier = Modifier.weight(1f), placeholder = { Text(s.messagePlaceholder) },
-                                shape = RoundedCornerShape(24.dp), maxLines = 5
+                                shape = RoundedCornerShape(24.sdp), maxLines = 5
                             )
                             IconButton(onClick = { galleryLoader.requestPermission(); showAttachSheet = true }) {
                                 Icon(Icons.Default.AttachFile, null, tint = Color.Gray, modifier = Modifier.rotate(45f))
@@ -610,7 +714,7 @@ fun ChatScreen(
                         }
 
                         val buttonModifier = Modifier
-                            .size(48.dp)
+                            .size(48.sdp)
                             .clip(CircleShape)
                             .background(sendButtonBg)
                             .then(
@@ -708,214 +812,392 @@ fun ChatScreen(
                     .weight(1f)
                     .background(chatBgColor)
             ) {
+            val chatBgBitmap = remember(chatBgImage) {
+                chatBgImage?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+            }
+            if (chatBgBitmap != null) {
+                Image(
+                    bitmap = chatBgBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
             LazyColumn(
                 state          = listState,
-                modifier       = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
+                modifier       = Modifier.fillMaxSize().padding(horizontal = 12.sdp),
+                contentPadding = PaddingValues(vertical = 12.sdp),
+                verticalArrangement = Arrangement.spacedBy(8.sdp, Alignment.Bottom)
             ) {
-                items(messages, key = { it.id }) { message ->
-                    if (message.text.isBlank() && message.mediaId == null && message.localPreviewBytes == null) return@items
-                    val senderId = messageSenders[message.serverId]
-                    val profile = memberProfiles[senderId]
-                    val replyToServerId = replyContext[message.serverId]
-                    val replyToMessage = replyToServerId?.let { rid -> messages.find { it.serverId == rid } }
-                    val replyToSenderName = replyToMessage?.let { rm ->
-                        val replySenderId = messageSenders[rm.serverId]
-                        replySenderId?.let { memberProfiles[it]?.username }
-                    }
-                    val isDeleted = message.text == s.messageDeletedEmoji
-                        || message.text == s.messageDeleted
-                        || message.text == "🗑 Сообщение удалено"
-                        || message.text == "Сообщение удалено"
+                items(chatItems.size, key = { chatItems[it].stableKey }) { index ->
+                    val chatItem = chatItems[index]
 
-                    if (message.type == "system") {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = message.text,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
-                        }
-                        return@items
-                    }
+                    when (chatItem) {
+                        is ChatItem.Single -> {
+                            val message = chatItem.message
+                            if (message.text.isBlank() && message.mediaId == null && message.localPreviewBytes == null) return@items
+                            val senderId = messageSenders[message.serverId]
+                            val profile = memberProfiles[senderId]
+                            val replyToServerId = replyContext[message.serverId]
+                            val replyToMessage = replyToServerId?.let { rid -> messages.find { it.serverId == rid } }
+                            val replyToSenderName = replyToMessage?.let { rm ->
+                                val replySenderId = messageSenders[rm.serverId]
+                                replySenderId?.let { memberProfiles[it]?.username }
+                            }
 
-                    Box {
-                        if (isGroupChat && !message.isOutgoing) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 2.dp)
-                                    .pointerInput(message.id) {
-                                        detectTapGestures(
-                                            onLongPress = { offset ->
-                                                if (!isDeleted) {
-                                                    with(density) {
-                                                        contextMenuOffset = DpOffset(
-                                                            x = offset.x.toDp(),
-                                                            y = offset.y.toDp()
-                                                        )
-                                                    }
-                                                    contextMenuMessage = message
-                                                }
-                                            }
-                                        )
-                                    },
-                                horizontalArrangement = Arrangement.Start,
-                                verticalAlignment = Alignment.Bottom
-                            ) {
+                            if (message.type == "system") {
                                 Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.sdp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = profile?.username?.take(1)?.uppercase() ?: "?",
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
+                                        text = message.text,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                                RoundedCornerShape(12.sdp)
+                                            )
+                                            .padding(horizontal = 12.sdp, vertical = 4.sdp)
                                     )
                                 }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Column(horizontalAlignment = Alignment.Start) {
-                                    Text(
-                                        text = profile?.username ?: s.member,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-                                    )
-
-                                    MessageBubble(
-                                        message          = message,
-                                        myBubbleColor    = myBubbleColor,
-                                        theirBubbleColor = theirBubbleColor,
-                                        searchQuery      = searchQuery,
-                                        isCurrentMatch   = message.id == currentMatchMsgId,
-                                        mediaCache       = mediaCache,
-                                        onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
-                                        globalAudioPlayer = globalAudioPlayer,
-                                        chatName         = chatName,
-                                        replyToMessage   = replyToMessage,
-                                        replyToSenderName = replyToSenderName,
-                                        onReplyClick     = replyToMessage?.let { replied ->
-                                            {
-                                                val idx = messages.indexOfFirst { it.serverId == replied.serverId }
-                                                if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
-                                            }
-                                        }
-                                    )
-                                }
+                                return@items
                             }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .pointerInput(message.id) {
-                                        detectTapGestures(
-                                            onLongPress = { offset ->
-                                                if (!isDeleted) {
-                                                    with(density) {
-                                                        contextMenuOffset = DpOffset(
-                                                            x = offset.x.toDp(),
-                                                            y = offset.y.toDp()
-                                                        )
+
+                            Box {
+                                if (isGroupChat && !message.isOutgoing) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 2.sdp)
+                                            .pointerInput(message.id) {
+                                                detectTapGestures(
+                                                    onLongPress = { offset ->
+                                                        with(density) {
+                                                            contextMenuOffset = DpOffset(
+                                                                x = offset.x.toDp(),
+                                                                y = offset.y.toDp()
+                                                            )
+                                                        }
+                                                        contextMenuMessage = message
                                                     }
-                                                    contextMenuMessage = message
+                                                )
+                                            },
+                                        horizontalArrangement = Arrangement.Start,
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.sdp)
+                                        ) {
+                                            AvatarImage(
+                                                mediaId = profile?.avatarMediaId,
+                                                size = 36.sdp,
+                                                fallbackLetter = profile?.username?.take(1)?.uppercase() ?: "?",
+                                                backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                                textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                textStyle = TextStyle(fontSize = 14.ssp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.sdp))
+
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text(
+                                                text = profile?.username ?: s.member,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
+                                            )
+
+                                            MessageBubble(
+                                                message          = message,
+                                                myBubbleColor    = myBubbleColor,
+                                                theirBubbleColor = theirBubbleColor,
+                                                myBubbleImage    = myBubbleImage,
+                                                theirBubbleImage = theirBubbleImage,
+                                                searchQuery      = searchQuery,
+                                                isCurrentMatch   = message.id == currentMatchMsgId,
+                                                mediaCache       = mediaCache,
+                                                onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
+                                                globalAudioPlayer = globalAudioPlayer,
+                                                chatName         = chatName,
+                                                replyToMessage   = replyToMessage,
+                                                replyToSenderName = replyToSenderName,
+                                                onReplyClick     = replyToMessage?.let { replied ->
+                                                    {
+                                                        val idx = chatItems.indexOfFirst { item ->
+                                                            item.allMessages.any { it.serverId == replied.serverId }
+                                                        }
+                                                        if (idx >= 0) {
+                                                            coroutineScope.launch { listState.animateScrollToItem(idx) }
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(message.id) {
+                                                detectTapGestures(
+                                                    onLongPress = { offset ->
+                                                        with(density) {
+                                                            contextMenuOffset = DpOffset(
+                                                                x = offset.x.toDp(),
+                                                                y = offset.y.toDp()
+                                                            )
+                                                        }
+                                                        contextMenuMessage = message
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        MessageBubble(
+                                            message          = message,
+                                            myBubbleColor    = myBubbleColor,
+                                            theirBubbleColor = theirBubbleColor,
+                                            myBubbleImage    = myBubbleImage,
+                                            theirBubbleImage = theirBubbleImage,
+                                            searchQuery      = searchQuery,
+                                            isCurrentMatch   = message.id == currentMatchMsgId,
+                                            mediaCache       = mediaCache,
+                                            onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
+                                            globalAudioPlayer = globalAudioPlayer,
+                                            chatName         = chatName,
+                                            replyToMessage   = replyToMessage,
+                                            replyToSenderName = replyToSenderName,
+                                            onReplyClick     = replyToMessage?.let { replied ->
+                                                {
+                                                    val idx = chatItems.indexOfFirst { item ->
+                                                        item.allMessages.any { it.serverId == replied.serverId }
+                                                    }
+                                                    if (idx >= 0) {
+                                                        coroutineScope.launch { listState.animateScrollToItem(idx) }
+                                                    }
                                                 }
                                             }
                                         )
                                     }
-                            ) {
-                                MessageBubble(
-                                    message          = message,
-                                    myBubbleColor    = myBubbleColor,
-                                    theirBubbleColor = theirBubbleColor,
-                                    searchQuery      = searchQuery,
-                                    isCurrentMatch   = message.id == currentMatchMsgId,
-                                    mediaCache       = mediaCache,
-                                    onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
-                                    globalAudioPlayer = globalAudioPlayer,
-                                    chatName         = chatName,
-                                    replyToMessage   = replyToMessage,
-                                    replyToSenderName = replyToSenderName,
-                                    onReplyClick     = replyToMessage?.let { replied ->
-                                        {
-                                            val idx = messages.indexOfFirst { it.serverId == replied.serverId }
-                                            if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
-                                        }
+                                }
+
+                                DropdownMenu(
+                                    expanded = contextMenuMessage?.id == message.id,
+                                    onDismissRequest = { contextMenuMessage = null },
+                                    offset = contextMenuOffset
+                                ) {
+                                    val isImageMsg = message.type == "image" || message.localPreviewBytes != null
+                                    val hasText = message.text.isNotBlank() && message.type != "voice"
+
+                                    if (isImageMsg) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.saveToGallery) },
+                                            leadingIcon = { Icon(Icons.Default.Download, null) },
+                                            onClick = {
+                                                val mediaId = message.mediaId
+                                                contextMenuMessage = null
+                                                if (mediaId != null) {
+                                                    val bytes = mediaCache[mediaId]
+                                                    if (bytes != null) {
+                                                        coroutineScope.launch {
+                                                            saveImageToGallery(bytes, "memegram_$mediaId.jpg")
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
                                     }
-                                )
+
+                                    if (hasText) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.copyText) },
+                                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(message.text))
+                                                contextMenuMessage = null
+                                            }
+                                        )
+                                    }
+
+                                    DropdownMenuItem(
+                                        text = { Text(s.reply) },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null) },
+                                        onClick = {
+                                            viewModel.setReplyTo(message)
+                                            contextMenuMessage = null
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            messagesToDelete = listOf(message)
+                                            contextMenuMessage = null
+                                        }
+                                    )
+                                }
                             }
                         }
 
-                        DropdownMenu(
-                            expanded = contextMenuMessage?.id == message.id,
-                            onDismissRequest = { contextMenuMessage = null },
-                            offset = contextMenuOffset
-                        ) {
-                            val isImageMsg = message.type == "image" || message.localPreviewBytes != null
-                            val hasText = message.text.isNotBlank() && message.type != "voice"
+                        is ChatItem.Album -> {
+                            val albumMessages = chatItem.messages
+                            val firstMessage = albumMessages.first()
+                            val isOut = firstMessage.isOutgoing
+                            val senderId = messageSenders[firstMessage.serverId]
+                            val profile = memberProfiles[senderId]
 
-                            if (isImageMsg) {
-                                DropdownMenuItem(
-                                    text = { Text(s.saveToGallery) },
-                                    leadingIcon = { Icon(Icons.Default.Download, null) },
-                                    onClick = {
-                                        val mediaId = message.mediaId
-                                        contextMenuMessage = null
-                                        if (mediaId != null) {
-                                            val bytes = mediaCache[mediaId]
-                                            if (bytes != null) {
-                                                coroutineScope.launch {
-                                                    saveImageToGallery(bytes, "memegram_$mediaId.jpg")
+                            var showAlbumContextMenu by remember { mutableStateOf(false) }
+                            var albumContextOffset by remember { mutableStateOf(DpOffset.Zero) }
+
+                            Box {
+                                if (isGroupChat && !isOut) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 2.sdp)
+                                            .pointerInput(chatItem.groupId) {
+                                                detectTapGestures(
+                                                    onLongPress = { offset ->
+                                                        with(density) {
+                                                            albumContextOffset = DpOffset(
+                                                                x = offset.x.toDp(),
+                                                                y = offset.y.toDp()
+                                                            )
+                                                        }
+                                                        showAlbumContextMenu = true
+                                                    }
+                                                )
+                                            },
+                                        horizontalArrangement = Arrangement.Start,
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        Box(modifier = Modifier.size(36.sdp)) {
+                                            AvatarImage(
+                                                mediaId = profile?.avatarMediaId,
+                                                size = 36.sdp,
+                                                fallbackLetter = profile?.username?.take(1)?.uppercase() ?: "?",
+                                                backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                                textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                textStyle = TextStyle(fontSize = 14.ssp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.sdp))
+
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text(
+                                                text = profile?.username ?: s.member,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
+                                            )
+
+                                            AlbumBubble(
+                                                albumMessages = albumMessages,
+                                                isOutgoing = isOut,
+                                                myBubbleColor = myBubbleColor,
+                                                theirBubbleColor = theirBubbleColor,
+                                                myBubbleImage = myBubbleImage,
+                                                theirBubbleImage = theirBubbleImage,
+                                                mediaCache = mediaCache,
+                                                onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
+                                                searchQuery = searchQuery,
+                                                isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(chatItem.groupId) {
+                                                detectTapGestures(
+                                                    onLongPress = { offset ->
+                                                        with(density) {
+                                                            albumContextOffset = DpOffset(
+                                                                x = offset.x.toDp(),
+                                                                y = offset.y.toDp()
+                                                            )
+                                                        }
+                                                        showAlbumContextMenu = true
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        AlbumBubble(
+                                            albumMessages = albumMessages,
+                                            isOutgoing = isOut,
+                                            myBubbleColor = myBubbleColor,
+                                            theirBubbleColor = theirBubbleColor,
+                                            myBubbleImage = myBubbleImage,
+                                            theirBubbleImage = theirBubbleImage,
+                                            mediaCache = mediaCache,
+                                            onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
+                                            searchQuery = searchQuery,
+                                            isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = showAlbumContextMenu,
+                                    onDismissRequest = { showAlbumContextMenu = false },
+                                    offset = albumContextOffset
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(s.saveAllNPhotos(albumMessages.size)) },
+                                        leadingIcon = { Icon(Icons.Default.Download, null) },
+                                        onClick = {
+                                            showAlbumContextMenu = false
+                                            coroutineScope.launch {
+                                                albumMessages.forEach { msg ->
+                                                    val mid = msg.mediaId
+                                                    if (mid != null) {
+                                                        val bytes = mediaCache[mid]
+                                                        if (bytes != null) {
+                                                            saveImageToGallery(bytes, "memegram_$mid.jpg")
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                    )
+
+                                    val captionMsg = albumMessages.firstOrNull { it.text.isNotBlank() }
+                                    if (captionMsg != null) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.copyText) },
+                                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(captionMsg.text))
+                                                showAlbumContextMenu = false
+                                            }
+                                        )
                                     }
-                                )
-                            }
 
-                            if (hasText) {
-                                DropdownMenuItem(
-                                    text = { Text(s.copyText) },
-                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(message.text))
-                                        contextMenuMessage = null
-                                    }
-                                )
-                            }
+                                    DropdownMenuItem(
+                                        text = { Text(s.reply) },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null) },
+                                        onClick = {
+                                            viewModel.setReplyTo(firstMessage)
+                                            showAlbumContextMenu = false
+                                        }
+                                    )
 
-                            DropdownMenuItem(
-                                text = { Text(s.reply) },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null) },
-                                onClick = {
-                                    viewModel.setReplyTo(message)
-                                    contextMenuMessage = null
+                                    DropdownMenuItem(
+                                        text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            messagesToDelete = albumMessages
+                                            showAlbumContextMenu = false
+                                        }
+                                    )
                                 }
-                            )
-
-                            DropdownMenuItem(
-                                text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    messageToDelete = message
-                                    contextMenuMessage = null
-                                }
-                            )
+                            }
                         }
                     }
                 }
@@ -939,7 +1221,7 @@ fun GalleryGridItem(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(2.sdp))
             .clickable { onClick() }
     ) {
         if (bitmap != null) {
@@ -959,19 +1241,19 @@ fun GalleryGridItem(
 
         Box(
             modifier = Modifier
-                .padding(5.dp)
-                .size(24.dp)
+                .padding(5.sdp)
+                .size(24.sdp)
                 .clip(CircleShape)
                 .background(
                     if (isSelected) MaterialTheme.colorScheme.primary
                     else Color.Black.copy(alpha = 0.35f)
                 )
-                .border(1.5.dp, Color.White, CircleShape)
+                .border(1.5.sdp, Color.White, CircleShape)
                 .align(Alignment.TopEnd),
             contentAlignment = Alignment.Center
         ) {
             if (isSelected) {
-                Text(selNumber.toString(), color = Color.White, fontSize = 11.sp)
+                Text(selNumber.toString(), color = Color.White, fontSize = 11.ssp)
             }
         }
     }
@@ -993,8 +1275,8 @@ fun AttachmentThumbnail(item: AttachItem, onRemove: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .size(72.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(72.sdp)
+            .clip(RoundedCornerShape(8.sdp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
         if (bitmap != null) {
@@ -1010,20 +1292,20 @@ fun AttachmentThumbnail(item: AttachItem, onRemove: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
-                Text(item.name, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
+                Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, modifier = Modifier.size(28.sdp), tint = MaterialTheme.colorScheme.primary)
+                Text(item.name, fontSize = 9.ssp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.sdp))
             }
         }
         Box(
             modifier = Modifier
-                .size(20.dp)
+                .size(20.sdp)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.55f))
                 .align(Alignment.TopEnd)
                 .clickable { onRemove() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(12.dp))
+            Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(12.sdp))
         }
     }
 }
@@ -1042,6 +1324,8 @@ fun MessageBubble(
     message: Message,
     myBubbleColor: Color,
     theirBubbleColor: Color,
+    myBubbleImage: ByteArray? = null,
+    theirBubbleImage: ByteArray? = null,
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     mediaCache: Map<String, ByteArray> = emptyMap(),
@@ -1056,7 +1340,13 @@ fun MessageBubble(
     val s = LocalStrings.current
     val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
     else if (isOut) myBubbleColor else theirBubbleColor
-    val textColor   = if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
+    val bubbleImageBytes = if (isCurrentMatch) null
+    else if (isOut) myBubbleImage else theirBubbleImage
+    val bubbleImageBitmap = remember(bubbleImageBytes) {
+        bubbleImageBytes?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+    }
+    val textColor   = if (bubbleImageBitmap != null) Color.White
+    else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
     val timeText    = remember(message.timestamp) { formatMessageTime(message.timestamp) }
     val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
@@ -1082,41 +1372,51 @@ fun MessageBubble(
         verticalAlignment     = Alignment.Bottom
     ) {
         if (isOut && timeText.isNotEmpty()) {
-            Text(timeText, color = timeColor, fontSize = 11.sp,
-                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp))
+            Text(timeText, color = timeColor, fontSize = 11.ssp,
+                modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp))
         }
 
         Box(
             modifier = Modifier
-                .widthIn(max = 280.dp)
+                .widthIn(max = 280.sdp)
                 .clip(RoundedCornerShape(
-                    topStart    = 16.dp, topEnd = 16.dp,
-                    bottomStart = if (isOut) 16.dp else 4.dp,
-                    bottomEnd   = if (isOut) 4.dp else 16.dp
+                    topStart    = 16.sdp, topEnd = 16.sdp,
+                    bottomStart = if (isOut) 16.sdp else 4.sdp,
+                    bottomEnd   = if (isOut) 4.sdp else 16.sdp
                 ))
                 .background(bubbleColor)
-                .padding(
-                    horizontal = if (isImageMsg && !hasText) 0.dp else 12.dp,
-                    vertical   = if (isImageMsg && !hasText) 0.dp else 8.dp
-                )
         ) {
+            if (bubbleImageBitmap != null) {
+                Image(
+                    bitmap = bubbleImageBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Box(
+                modifier = Modifier.padding(
+                    horizontal = if (isImageMsg && !hasText) 0.sdp else 12.sdp,
+                    vertical   = if (isImageMsg && !hasText) 0.sdp else 8.sdp
+                )
+            ) {
             Column {
                 if (replyToMessage != null) {
                     Box(
                         modifier = Modifier
                             .padding(
-                                start = if (isImageMsg && !hasText) 8.dp else 0.dp,
-                                end = if (isImageMsg && !hasText) 8.dp else 0.dp,
-                                top = if (isImageMsg && !hasText) 8.dp else 0.dp,
-                                bottom = 4.dp
+                                start = if (isImageMsg && !hasText) 8.sdp else 0.sdp,
+                                end = if (isImageMsg && !hasText) 8.sdp else 0.sdp,
+                                top = if (isImageMsg && !hasText) 8.sdp else 0.sdp,
+                                bottom = 4.sdp
                             )
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(8.sdp))
                             .background(textColor.copy(alpha = 0.1f))
                             .then(
                                 if (onReplyClick != null) Modifier.clickable { onReplyClick() }
                                 else Modifier
                             )
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .padding(horizontal = 8.sdp, vertical = 6.sdp)
                     ) {
                         Column {
                             Text(
@@ -1172,11 +1472,11 @@ fun MessageBubble(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).width(200.dp)
+                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(200.sdp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(44.sdp)
                                 .clip(CircleShape)
                                 .background(textColor.copy(alpha = 0.15f))
                                 .clickable {
@@ -1201,24 +1501,24 @@ fun MessageBubble(
                             contentAlignment = Alignment.Center
                         ) {
                             if (cachedBytes == null) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = textColor, strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(20.sdp), color = textColor, strokeWidth = 2.sdp)
                             } else {
                                 Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.sdp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             VoiceWaveform(
                                 amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
                                 progress = currentProgress,
-                                modifier = Modifier.fillMaxWidth().height(24.dp),
+                                modifier = Modifier.fillMaxWidth().height(24.sdp),
                                 playedColor = textColor,
                                 unplayedColor = textColor.copy(alpha = 0.3f)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                            Spacer(modifier = Modifier.height(4.sdp))
+                            Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
                         }
                     }
                 } else if (isImageMsg) {
@@ -1229,41 +1529,41 @@ fun MessageBubble(
                             contentScale       = ContentScale.Crop,
                             modifier           = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 240.dp)
+                                .heightIn(max = 240.sdp)
                                 .clip(RoundedCornerShape(
-                                    topStart    = 16.dp, topEnd = 16.dp,
-                                    bottomStart = if (!hasText && isOut) 16.dp else if (!hasText) 4.dp else 0.dp,
-                                    bottomEnd   = if (!hasText && isOut) 4.dp else if (!hasText) 16.dp else 0.dp
+                                    topStart    = 16.sdp, topEnd = 16.sdp,
+                                    bottomStart = if (!hasText && isOut) 16.sdp else if (!hasText) 4.sdp else 0.sdp,
+                                    bottomEnd   = if (!hasText && isOut) 4.sdp else if (!hasText) 16.sdp else 0.sdp
                                 ))
                         )
                     } else {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp)
+                                .height(160.sdp)
                                 .background(bubbleColor.copy(alpha = 0.6f)),
                             contentAlignment = Alignment.Center
                         ) {
                             if (message.status == MessageStatus.SENDING) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(32.dp),
+                                    modifier = Modifier.size(32.sdp),
                                     color = textColor
                                 )
                             } else {
                                 Icon(
                                     Icons.Default.Image,
                                     contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
+                                    modifier = Modifier.size(40.sdp),
                                     tint = textColor.copy(alpha = 0.5f)
                                 )
                             }
                         }
                     }
-                    if (hasText) Spacer(Modifier.height(6.dp))
+                    if (hasText) Spacer(Modifier.height(6.sdp))
                 }
 
                 if (hasText) {
-                    val textMod = if (isImageMsg) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+                    val textMod = if (isImageMsg) Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp) else Modifier
                     val annotated = buildAnnotatedString {
                         if (searchQuery.isBlank()) {
                             append(message.text)
@@ -1288,21 +1588,22 @@ fun MessageBubble(
 
                 if (isOut && message.status != MessageStatus.SENT) {
                     val iconMod = if (isImageMsg)
-                        Modifier.padding(end = 8.dp, bottom = 4.dp).align(Alignment.End)
+                        Modifier.padding(end = 8.sdp, bottom = 4.sdp).align(Alignment.End)
                     else Modifier.align(Alignment.End)
                     Text(
                         text     = if (message.status == MessageStatus.SENDING) "⏳" else "❌",
-                        fontSize = 11.sp,
+                        fontSize = 11.ssp,
                         color    = textColor.copy(alpha = 0.6f),
                         modifier = iconMod
                     )
                 }
             }
+            }
         }
 
         if (!isOut && timeText.isNotEmpty()) {
-            Text(timeText, color = timeColor, fontSize = 11.sp,
-                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+            Text(timeText, color = timeColor, fontSize = 11.ssp,
+                modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp))
         }
     }
 }
@@ -1315,16 +1616,19 @@ fun VoiceWaveform(
     playedColor: Color,
     unplayedColor: Color
 ) {
+    val barWidthDp = 3.sdp
+    val spacingDp = 2.sdp
+    val minBarHeightDp = 4.sdp
     Canvas(modifier = modifier) {
-        val barWidth = 3.dp.toPx()
-        val spacing = 2.dp.toPx()
+        val barWidth = barWidthDp.toPx()
+        val spacing = spacingDp.toPx()
         val maxBars = (size.width / (barWidth + spacing)).toInt()
 
         val displayAmps = if (amplitudes.size > maxBars) amplitudes.takeLast(maxBars) else amplitudes
         val startX = 0f
 
         displayAmps.forEachIndexed { index, amp ->
-            val barHeight = maxOf(4.dp.toPx(), (amp / 9f) * size.height)
+            val barHeight = maxOf(minBarHeightDp.toPx(), (amp / 9f) * size.height)
             val x = startX + index * (barWidth + spacing)
             val isPlayed = (index.toFloat() / displayAmps.size) <= progress
 
@@ -1334,6 +1638,427 @@ fun VoiceWaveform(
                 size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2, barWidth / 2)
             )
+        }
+    }
+}
+
+sealed class ChatItem {
+    data class Single(val message: Message) : ChatItem()
+    data class Album(val messages: List<Message>, val groupId: String) : ChatItem()
+
+    val allMessages: List<Message>
+        get() = when (this) {
+            is Single -> listOf(message)
+            is Album -> messages
+        }
+
+    val stableKey: Int
+        get() = when (this) {
+            is Single -> message.id
+            is Album -> groupId.hashCode()
+        }
+}
+
+fun groupMessages(messages: List<Message>): List<ChatItem> {
+    if (messages.isEmpty()) return emptyList()
+    val result = mutableListOf<ChatItem>()
+    val buffer = mutableListOf<Message>()
+    var currentGroupId: String? = null
+
+    fun flushBuffer() {
+        if (buffer.isEmpty()) return
+        if (buffer.size == 1) {
+            result += ChatItem.Single(buffer.first())
+        } else {
+            result += ChatItem.Album(buffer.toList(), currentGroupId!!)
+        }
+        buffer.clear()
+        currentGroupId = null
+    }
+
+    for (msg in messages) {
+        val gid = msg.groupId
+        if (gid != null && msg.type == "image") {
+            if (gid == currentGroupId) {
+                buffer += msg
+            } else {
+                flushBuffer()
+                currentGroupId = gid
+                buffer += msg
+            }
+        } else {
+            flushBuffer()
+            result += ChatItem.Single(msg)
+        }
+    }
+    flushBuffer()
+    return result
+}
+
+@Composable
+fun AlbumBubble(
+    albumMessages: List<Message>,
+    isOutgoing: Boolean,
+    myBubbleColor: Color,
+    theirBubbleColor: Color,
+    myBubbleImage: ByteArray? = null,
+    theirBubbleImage: ByteArray? = null,
+    mediaCache: Map<String, ByteArray> = emptyMap(),
+    onLoadMedia: (String, String?) -> Unit = { _, _ -> },
+    searchQuery: String = "",
+    isCurrentMatch: Boolean = false
+) {
+    val s = LocalStrings.current
+    val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
+    else if (isOutgoing) myBubbleColor else theirBubbleColor
+    val bubbleImageBytes = if (isCurrentMatch) null
+    else if (isOutgoing) myBubbleImage else theirBubbleImage
+    val bubbleImageBitmap = remember(bubbleImageBytes) {
+        bubbleImageBytes?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+    }
+    val textColor = if (bubbleImageBitmap != null) Color.White
+    else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
+    val timeText = remember(albumMessages.lastOrNull()?.timestamp) {
+        formatMessageTime(albumMessages.lastOrNull()?.timestamp ?: 0L)
+    }
+    val timeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+
+    val caption = albumMessages.firstOrNull { it.text.isNotBlank() && it.status != MessageStatus.FAILED }?.text
+
+    val photoBitmaps = albumMessages.map { msg ->
+        val cachedBytes = msg.mediaId?.let { mediaCache[it] }
+        val bitmap = remember(msg.localPreviewBytes, cachedBytes) {
+            (cachedBytes ?: msg.localPreviewBytes)?.let {
+                runCatching { it.decodeToImageBitmap() }.getOrNull()
+            }
+        }
+        val mediaId = msg.mediaId
+        val encMeta = msg.encryptionMetadata
+        LaunchedEffect(mediaId) {
+            if (mediaId != null && cachedBytes == null && msg.localPreviewBytes == null) {
+                onLoadMedia(mediaId, encMeta)
+            }
+        }
+        bitmap
+    }
+
+    val hasCaption = !caption.isNullOrBlank()
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isOutgoing) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        if (isOutgoing && timeText.isNotEmpty()) {
+            Text(
+                timeText, color = timeColor, fontSize = 11.ssp,
+                modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .widthIn(max = 280.sdp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 16.sdp, topEnd = 16.sdp,
+                        bottomStart = if (isOutgoing) 16.sdp else 4.sdp,
+                        bottomEnd = if (isOutgoing) 4.sdp else 16.sdp
+                    )
+                )
+                .background(bubbleColor)
+        ) {
+            if (bubbleImageBitmap != null) {
+                Image(
+                    bitmap = bubbleImageBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Column {
+                AlbumPhotoGrid(
+                    bitmaps = photoBitmaps,
+                    messages = albumMessages,
+                    bubbleColor = bubbleColor,
+                    textColor = textColor,
+                    hasCaption = hasCaption,
+                    isOutgoing = isOutgoing
+                )
+
+                if (hasCaption) {
+                    val annotated = buildAnnotatedString {
+                        if (searchQuery.isBlank()) {
+                            append(caption!!)
+                        } else {
+                            val lower = caption!!.lowercase()
+                            val lowerQ = searchQuery.lowercase()
+                            var pos = 0
+                            while (pos < caption.length) {
+                                val idx = lower.indexOf(lowerQ, pos)
+                                if (idx == -1) { append(caption.substring(pos)); break }
+                                append(caption.substring(pos, idx))
+                                withStyle(SpanStyle(background = Color(0xFFFFD60A))) {
+                                    append(caption.substring(idx, idx + searchQuery.length))
+                                }
+                                pos = idx + searchQuery.length
+                            }
+                        }
+                    }
+                    Text(
+                        text = annotated,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp)
+                    )
+                }
+
+                if (isOutgoing) {
+                    val anyNotSent = albumMessages.any { it.status != MessageStatus.SENT }
+                    if (anyNotSent) {
+                        val anySending = albumMessages.any { it.status == MessageStatus.SENDING }
+                        Text(
+                            text = if (anySending) "⏳" else "❌",
+                            fontSize = 11.ssp,
+                            color = textColor.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .padding(end = 8.sdp, bottom = 4.sdp)
+                                .align(Alignment.End)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!isOutgoing && timeText.isNotEmpty()) {
+            Text(
+                timeText, color = timeColor, fontSize = 11.ssp,
+                modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumPhotoGrid(
+    bitmaps: List<ImageBitmap?>,
+    messages: List<Message>,
+    bubbleColor: Color,
+    textColor: Color,
+    hasCaption: Boolean,
+    isOutgoing: Boolean
+) {
+    val spacing = 2.sdp
+    val count = bitmaps.size
+
+    val topStart = 16.sdp
+    val topEnd = 16.sdp
+    val bottomStart = if (!hasCaption && isOutgoing) 16.sdp else if (!hasCaption) 4.sdp else 0.sdp
+    val bottomEnd = if (!hasCaption && isOutgoing) 4.sdp else if (!hasCaption) 16.sdp else 0.sdp
+
+    when (count) {
+        0 -> {}
+        1 -> {
+            AlbumPhotoCell(
+                bitmap = bitmaps[0],
+                message = messages[0],
+                bubbleColor = bubbleColor,
+                textColor = textColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.sdp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = topStart, topEnd = topEnd,
+                            bottomStart = bottomStart, bottomEnd = bottomEnd
+                        )
+                    )
+            )
+        }
+        2 -> {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                AlbumPhotoCell(
+                    bitmap = bitmaps[0], message = messages[0],
+                    bubbleColor = bubbleColor, textColor = textColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .aspectRatio(0.8f)
+                        .clip(RoundedCornerShape(topStart = topStart, bottomStart = bottomStart))
+                )
+                AlbumPhotoCell(
+                    bitmap = bitmaps[1], message = messages[1],
+                    bubbleColor = bubbleColor, textColor = textColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .aspectRatio(0.8f)
+                        .clip(RoundedCornerShape(topEnd = topEnd, bottomEnd = bottomEnd))
+                )
+            }
+        }
+        3 -> {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[0], message = messages[0],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(topStart = topStart))
+                    )
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[1], message = messages[1],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(topEnd = topEnd))
+                    )
+                }
+                AlbumPhotoCell(
+                    bitmap = bitmaps[2], message = messages[2],
+                    bubbleColor = bubbleColor, textColor = textColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(2f)
+                        .clip(RoundedCornerShape(bottomStart = bottomStart, bottomEnd = bottomEnd))
+                )
+            }
+        }
+        4 -> {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[0], message = messages[0],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(topStart = topStart))
+                    )
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[1], message = messages[1],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(topEnd = topEnd))
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[2], message = messages[2],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(bottomStart = bottomStart))
+                    )
+                    AlbumPhotoCell(
+                        bitmap = bitmaps[3], message = messages[3],
+                        bubbleColor = bubbleColor, textColor = textColor,
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(bottomEnd = bottomEnd))
+                    )
+                }
+            }
+        }
+        else -> {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+                val rows = bitmaps.chunked(2)
+                rows.forEachIndexed { rowIdx, rowBitmaps ->
+                    val isFirstRow = rowIdx == 0
+                    val isLastRow = rowIdx == rows.lastIndex
+                    if (rowBitmaps.size == 2) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(spacing)
+                        ) {
+                            val msgIdx = rowIdx * 2
+                            AlbumPhotoCell(
+                                bitmap = rowBitmaps[0], message = messages[msgIdx],
+                                bubbleColor = bubbleColor, textColor = textColor,
+                                modifier = Modifier.weight(1f).aspectRatio(1f).clip(
+                                    RoundedCornerShape(
+                                        topStart = if (isFirstRow) topStart else 0.sdp,
+                                        bottomStart = if (isLastRow) bottomStart else 0.sdp
+                                    )
+                                )
+                            )
+                            AlbumPhotoCell(
+                                bitmap = rowBitmaps[1], message = messages[msgIdx + 1],
+                                bubbleColor = bubbleColor, textColor = textColor,
+                                modifier = Modifier.weight(1f).aspectRatio(1f).clip(
+                                    RoundedCornerShape(
+                                        topEnd = if (isFirstRow) topEnd else 0.sdp,
+                                        bottomEnd = if (isLastRow) bottomEnd else 0.sdp
+                                    )
+                                )
+                            )
+                        }
+                    } else {
+                        val msgIdx = rowIdx * 2
+                        AlbumPhotoCell(
+                            bitmap = rowBitmaps[0], message = messages[msgIdx],
+                            bubbleColor = bubbleColor, textColor = textColor,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(2f).clip(
+                                RoundedCornerShape(
+                                    bottomStart = bottomStart,
+                                    bottomEnd = bottomEnd
+                                )
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumPhotoCell(
+    bitmap: ImageBitmap?,
+    message: Message,
+    bubbleColor: Color,
+    textColor: Color,
+    modifier: Modifier
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().background(bubbleColor.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (message.status == MessageStatus.SENDING) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.sdp),
+                        color = textColor,
+                        strokeWidth = 2.sdp
+                    )
+                } else if (message.status != MessageStatus.FAILED) {
+                    Icon(
+                        Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.sdp),
+                        tint = textColor.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+        if (message.status == MessageStatus.FAILED) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("❌", fontSize = 20.ssp)
+            }
         }
     }
 }

@@ -20,10 +20,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.AppStrings
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 private fun roleDisplayName(role: String, s: AppStrings): String = when (role) {
     "owner" -> s.roleOwner
@@ -40,6 +41,7 @@ fun GroupProfileScreen(
     onBack: () -> Unit,
     onLeaveSuccess: () -> Unit,
     onNavigateToChat: (conversationId: String, chatName: String) -> Unit = { _, _ -> },
+    onNavigateToUserProfile: (userId: String, username: String) -> Unit = { _, _ -> },
     viewModel: GroupProfileViewModel,
     contactsViewModel: ContactsViewModel
 ) {
@@ -221,12 +223,13 @@ fun GroupProfileScreen(
                                 modifier = Modifier.clickable { selectedContactId = contact.contactUserId },
                                 headlineContent = { Text(name) },
                                 leadingContent = {
-                                    Box(
-                                        modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(name.take(1).uppercase(), color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                    }
+                                    AvatarImage(
+                                        mediaId = contact.profile?.avatarMediaId,
+                                        size = 36.sdp,
+                                        fallbackLetter = name.take(1).uppercase(),
+                                        backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 },
                                 trailingContent = {
                                     RadioButton(selected = isSelected, onClick = null)
@@ -256,6 +259,7 @@ fun GroupProfileScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(s.groupInfo, color = topBarTextColor) },
                 navigationIcon = {
@@ -263,8 +267,9 @@ fun GroupProfileScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = topBarColor)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
             )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -272,16 +277,16 @@ fun GroupProfileScreen(
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.sdp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
-                    modifier = Modifier.size(100.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.size(100.sdp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(groupName.take(1).uppercase(), color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+                    Text(groupName.take(1).uppercase(), color = Color.White, fontSize = 48.ssp, fontWeight = FontWeight.Bold)
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.sdp))
                 Text(groupName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(s.membersCount(members.size), color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
             }
@@ -300,20 +305,20 @@ fun GroupProfileScreen(
                 modifier = Modifier.clickable { showLeaveConfirm = true }
             )
 
-            HorizontalDivider(thickness = 8.dp, color = MaterialTheme.colorScheme.surfaceVariant)
+            HorizontalDivider(thickness = 8.sdp, color = MaterialTheme.colorScheme.surfaceVariant)
 
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
                 placeholder = { Text(s.searchMembers) },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.sdp),
                 singleLine = true,
                 shape = CircleShape
             )
 
             if (isLoading && members.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().padding(16.sdp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             } else {
@@ -324,20 +329,20 @@ fun GroupProfileScreen(
                             headlineContent = { Text(member.user.username ?: s.noName) },
                             supportingContent = { Text(roleDisplayName(member.role, s)) },
                             leadingContent = {
-                                Box(
-                                    modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = (member.user.username ?: "?").take(1).uppercase(),
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                AvatarImage(
+                                    mediaId = member.user.avatarMediaId,
+                                    size = 40.sdp,
+                                    fallbackLetter = (member.user.username ?: "?").take(1).uppercase(),
+                                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
                             },
                             modifier = if (canInteract) {
                                 Modifier.combinedClickable(
-                                    onClick = {},
+                                    onClick = {
+                                        val name = member.user.username ?: s.noName
+                                        onNavigateToUserProfile(member.user.id, name)
+                                    },
                                     onLongClick = { contextMenuMember = member }
                                 )
                             } else Modifier

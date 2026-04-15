@@ -53,6 +53,9 @@ message UserSettings {
   int32  ringtone_vibration_strength   = 13;
   string notification_sound            = 14; // UUID, optional
   int32  notification_vibration_strength = 15;
+  string top_bar_media_id              = 16; // UUID, optional
+  string my_bubble_media_id            = 17; // UUID, optional
+  string their_bubble_media_id         = 18; // UUID, optional
 }
 
 
@@ -118,6 +121,9 @@ message UpdateUserSettingsRequest {
   optional int32  ringtone_vibration_strength     = 12;
   optional string notification_sound              = 13;
   optional int32  notification_vibration_strength = 14;
+  optional string top_bar_media_id                = 15;
+  optional string my_bubble_media_id              = 16;
+  optional string their_bubble_media_id           = 17;
 }
 
 message UserSettingsResponse {

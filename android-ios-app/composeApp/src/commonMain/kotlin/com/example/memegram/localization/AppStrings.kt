@@ -2,13 +2,6 @@ package com.example.memegram.localization
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/**
- * All user-facing strings in the app.
- * Two implementations: [RuStrings] and [EnStrings].
- *
- * - In @Composable functions use `val s = LocalStrings.current`
- * - In ViewModels / plain Kotlin use `S.current`
- */
 interface AppStrings {
 
     // ── Common ────────────────────────────────────────────────────────
@@ -42,6 +35,7 @@ interface AppStrings {
     val settingsContacts: String
     val settingsLinkedDevices: String
     val settingsLanguage: String
+    val darkTheme: String
 
     // ── Chats list ───────────────────────────────────────────────────
     val searchPlaceholder: String
@@ -90,6 +84,7 @@ interface AppStrings {
     val messageDeleted: String
     val member: String
     val saveToGallery: String
+    fun saveAllNPhotos(count: Int): String
     val copyText: String
     val you: String
     val interlocutor: String
@@ -235,6 +230,14 @@ interface AppStrings {
     val myMessageColor: String
     val otherMessageColor: String
     val chooseColor: String
+    val colorPickerPresets: String
+    val colorPickerCustom: String
+    val colorPickerHex: String
+    val themeSection: String
+    val selectColor: String
+    val cropTitle: String
+    val setPhoto: String
+    val colorOrPhoto: String
 
     // ── Storage ──────────────────────────────────────────────────────
     val dataAndStorageTitle: String
@@ -348,6 +351,7 @@ object RuStrings : AppStrings {
     override val settingsContacts = "Контакты"
     override val settingsLinkedDevices = "Связанные устройства"
     override val settingsLanguage = "Язык"
+    override val darkTheme = "Тёмная тема"
 
     // Chats list
     override val searchPlaceholder = "Поиск..."
@@ -397,6 +401,7 @@ object RuStrings : AppStrings {
     override val messageDeleted = "Сообщение удалено"
     override val member = "Участник"
     override val saveToGallery = "Сохранить в галерею"
+    override fun saveAllNPhotos(count: Int) = "Сохранить все $count фото"
     override val copyText = "Копировать текст"
     override val you = "Вы"
     override val interlocutor = "Собеседник"
@@ -536,13 +541,21 @@ object RuStrings : AppStrings {
     override val appearanceTitle = "Внешний вид"
     override val preview = "Предпросмотр"
     override val chatPreview = "Чат"
-    override val previewMessage1 = "Привет! Как дела?"
-    override val previewMessage2 = "Всё супер, тестирую Compose!"
+    override val previewMessage1 = "Привет! Пойдём обедать сегодня?"
+    override val previewMessage2 = "Давай! Встречаемся в 12 \uD83D\uDE0A"
     override val topBarColor = "Цвет верхней панели"
     override val chatBgColor = "Цвет фона чата"
     override val myMessageColor = "Цвет моих сообщений"
     override val otherMessageColor = "Цвет чужих сообщений"
     override val chooseColor = "Выберите цвет"
+    override val colorPickerPresets = "Готовые"
+    override val colorPickerCustom = "Пользовательский"
+    override val colorPickerHex = "HEX"
+    override val themeSection = "Тема"
+    override val selectColor = "Выбрать"
+    override val cropTitle = "Обрезка фото"
+    override val setPhoto = "Фото"
+    override val colorOrPhoto = "Цвет / Фото"
 
     // Storage
     override val dataAndStorageTitle = "Данные и память"
@@ -657,6 +670,7 @@ object EnStrings : AppStrings {
     override val settingsContacts = "Contacts"
     override val settingsLinkedDevices = "Linked Devices"
     override val settingsLanguage = "Language"
+    override val darkTheme = "Dark theme"
 
     // Chats list
     override val searchPlaceholder = "Search..."
@@ -706,6 +720,7 @@ object EnStrings : AppStrings {
     override val messageDeleted = "Message deleted"
     override val member = "Member"
     override val saveToGallery = "Save to gallery"
+    override fun saveAllNPhotos(count: Int) = "Save all $count photos"
     override val copyText = "Copy text"
     override val you = "You"
     override val interlocutor = "Contact"
@@ -845,13 +860,21 @@ object EnStrings : AppStrings {
     override val appearanceTitle = "Appearance"
     override val preview = "Preview"
     override val chatPreview = "Chat"
-    override val previewMessage1 = "Hey! How are you?"
-    override val previewMessage2 = "Great, testing Compose!"
+    override val previewMessage1 = "Hey! Want to grab lunch today?"
+    override val previewMessage2 = "Sure! See you at noon \uD83D\uDE0A"
     override val topBarColor = "Top bar color"
     override val chatBgColor = "Chat background color"
     override val myMessageColor = "My message color"
     override val otherMessageColor = "Other message color"
     override val chooseColor = "Choose color"
+    override val colorPickerPresets = "Presets"
+    override val colorPickerCustom = "Custom"
+    override val colorPickerHex = "HEX"
+    override val themeSection = "Theme"
+    override val selectColor = "Select"
+    override val cropTitle = "Crop photo"
+    override val setPhoto = "Photo"
+    override val colorOrPhoto = "Color / Photo"
 
     // Storage
     override val dataAndStorageTitle = "Data and Storage"
@@ -930,14 +953,8 @@ object EnStrings : AppStrings {
     override val create = "Create"
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Composition local for @Composable access
-// ═══════════════════════════════════════════════════════════════════════
 val LocalStrings = staticCompositionLocalOf<AppStrings> { EnStrings }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Global singleton for ViewModel / non-composable access
-// ═══════════════════════════════════════════════════════════════════════
 object S {
     var current: AppStrings = EnStrings
 }

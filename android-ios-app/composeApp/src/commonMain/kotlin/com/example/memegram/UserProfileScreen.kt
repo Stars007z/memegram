@@ -1,6 +1,8 @@
 package com.example.memegram
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -14,10 +16,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
+import com.example.memegram.utils.ImageTopAppBarBox
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +40,8 @@ fun UserProfileScreen(
     val profile by viewModel.userProfile.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val message by viewModel.actionMessage.collectAsState()
+    val avatarBytes by viewModel.avatarBytes.collectAsState()
+    val coverBytes by viewModel.coverBytes.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(userId) {
@@ -52,6 +60,7 @@ fun UserProfileScreen(
 
     Scaffold(
         topBar = {
+            ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
                 title = { Text(displayUsername, color = topBarTextColor) },
                 navigationIcon = {
@@ -59,8 +68,9 @@ fun UserProfileScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = topBarTextColor)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = topBarColor)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
             )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -72,46 +82,111 @@ fun UserProfileScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            Spacer(Modifier.height(32.dp))
-
             Box(
-                modifier = Modifier.size(120.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiary),
+                modifier = Modifier.fillMaxWidth().aspectRatio(2.5f),
                 contentAlignment = Alignment.Center
             ) {
-                Text(displayUsername.take(1).uppercase(), color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Bold)
+                if (coverBytes != null) {
+                    val bitmap = remember(coverBytes) {
+                        runCatching { coverBytes!!.decodeToImageBitmap() }.getOrNull()
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap, contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {}
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {}
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text(displayUsername, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.offset(y = (-40).sdp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(100.sdp)
+                        .clip(CircleShape)
+                        .border(3.sdp, MaterialTheme.colorScheme.background, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (avatarBytes != null) {
+                        val bitmap = remember(avatarBytes) {
+                            runCatching { avatarBytes!!.decodeToImageBitmap() }.getOrNull()
+                        }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap, contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.tertiary) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.tertiary) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
 
-            Spacer(Modifier.height(8.dp))
-            Text(displayBio, color = Color.Gray, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                displayUsername,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.offset(y = (-24).sdp)
+            )
 
-            Spacer(Modifier.height(32.dp))
+            Text(
+                displayBio,
+                color = Color.Gray,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.offset(y = (-16).sdp)
+            )
+
+            Spacer(Modifier.height(16.sdp))
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.sdp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledIconButton(
                         onClick = { profile?.userPublicKey?.let { onStartChat(it) } },
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(56.sdp)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Message, null)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(8.sdp))
                     Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledTonalIconButton(
                         onClick = { viewModel.addToContacts() },
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(56.sdp)
                     ) {
                         Icon(Icons.Default.PersonAdd, null)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(8.sdp))
                     Text(s.addToContactsButton, style = MaterialTheme.typography.bodySmall)
                 }
             }
