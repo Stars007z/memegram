@@ -16,6 +16,7 @@ class Conversation(Base):
     )
     type: Mapped[str] = mapped_column(String(20), nullable=False)  # direct / group
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_media_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     last_message_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     last_activity_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

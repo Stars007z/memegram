@@ -22,7 +22,7 @@
 | `user_id` | UUID | Владелец (FK на user-service, без constraint) |
 | `client_device_id` | VARCHAR(255) UNIQUE | Внешний идентификатор, предоставленный клиентом при регистрации |
 | `device_name` | VARCHAR(255) | Человекочитаемое название |
-| `device_type` | VARCHAR(50) | `primary` / `secondary` |
+| `device_type` | VARCHAR(50) | `primary` / `secondary` / `admin` |
 | `is_active` | BOOLEAN | Активно ли устройство |
 | `identity_key_pub` | BYTEA NOT NULL | Ed25519 публичный ключ (верификация подписи) |
 | `init_key_pub` | BYTEA NOT NULL | Публичный ключ инициализации (MLS/key exchange) |
@@ -35,9 +35,9 @@
 > который вернул сервер при регистрации. Метод `get_device_by_id()` делает lookup по
 > первичному ключу `id`, а не по полю `client_device_id`.
 
-> **Про `device_type`:** тип `admin` исключён из схемы — нет определённого flow
-> его присвоения. Если понадобится расширенный доступ, нужно отдельно
-> описать механизм повышения прав.
+> **Про `device_type`:** тип `admin` присваивается при регистрации с инвайтом,
+> у которого `is_admin = true`. Админ-инвайты создаются только через прямой
+> доступ к БД. API `CreateInvite` всегда создаёт инвайты с `is_admin = false`.
 
 ### `sessions`
 | Колонка | Тип | Описание |
@@ -58,6 +58,7 @@
 | `is_used` | BOOLEAN | Использован ли |
 | `used_by_user_id` | UUID | Кем использован |
 | `expires_at` | TIMESTAMP | Срок действия |
+| `is_admin` | BOOLEAN | Админ-инвайт (при регистрации создаёт device_type='admin') |
 
 ### `device_registration`
 Временная таблица для flow добавления нового устройства.
@@ -74,12 +75,12 @@
 **Логика:**
 1. Валидация инвайта (существование, не использован, не просрочен)
 2. Генерация `user_id` (UUID) и `device_uuid` (UUID)
-3. Создание записи в `devices` (device_type = "primary")
+3. Создание записи в `devices` (device_type = "admin" если invite.is_admin, иначе "primary")
 4. Генерация JWT access + refresh токенов
 5. Создание сессии
 6. Пометка инвайта как использованного
 
-**Возврат:** `user_id`, `device_id` (= `devices.id`), `is_primary`,
+**Возврат:** `user_id`, `device_id` (= `devices.id`), `device_type`,
 `access_token`, `refresh_token`, `expires_at`
 
 
@@ -111,7 +112,7 @@
 6. Обновление `devices.last_seen` (и `device_name` если передан)
 7. Генерация токенов, создание сессии
 
-**Возврат:** `user_id`, `device_id`, `is_primary`, `access_token`, `refresh_token`, `expires_at`
+**Возврат:** `user_id`, `device_id`, `device_type`, `access_token`, `refresh_token`, `expires_at`
 
 ---
 
@@ -125,7 +126,7 @@
 4. Генерация новых access + refresh токенов
 5. Создание новой сессии
 
-**Возврат:** `user_id`, `device_id`, `is_primary`, `access_token`, `refresh_token`, `expires_at`
+**Возврат:** `user_id`, `device_id`, `device_type`, `access_token`, `refresh_token`, `expires_at`
 
 ---
 
@@ -156,6 +157,9 @@
 
 ### `CreateInvite(CreateInviteRequest) → CreateInviteResponse`
 **Вход:** `expires_in_days` (1–365), `created_by_device_id?`
+
+**Контроль доступа:** Только `device_type = "admin"` (проверяется в оркестраторе).
+Инвайты, созданные через API, всегда имеют `is_admin = false`.
 
 **Возврат:** `code`, `created_at`, `expires_at`, `is_used`, `message`
 

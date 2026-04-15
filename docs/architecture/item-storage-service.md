@@ -26,7 +26,7 @@ Item-storage-service отвечает за хранение пользовате
 
 | Категория | Примеры |
 |-----------|---------|
-| Аватары | `avatar` (публичный) |
+| Аватары | `avatar` (публичный), `group_avatar` (публичный) |
 | Медиа профиля | `profile_background` (публичный) |
 | Медиа настроек | `chat_background` (приватный, только владелец) |
 | Аудио | `notification_sound`, `ringtone` (приватный, только владелец) |
@@ -34,7 +34,7 @@ Item-storage-service отвечает за хранение пользовате
 **Что сервис НЕ делает:**
 - Не хранит E2E-зашифрованные сообщения или вложения чатов — это зона `media-service`
 - Не выдаёт данные без проверки прав `requester_user_id`
-- Не управляет профилем пользователя — только бинарными ресурсами; метаданные (`avatar_media_id`, `ringtone_media_id` и т.д.) хранятся в `user-service`
+- Не управляет профилем пользователя — только бинарными ресурсами; метаданные (`avatar_media_id`, `ringtone_media_id` и т.д.) хранятся в `user-service`; `group_avatar` ссылка хранится в `messaging-service` (поле `conversations.avatar_media_id`)
 
 ---
 
@@ -43,6 +43,7 @@ Item-storage-service отвечает за хранение пользовате
 | Тип ресурса | Кто может скачать |
 |-------------|-------------------|
 | `avatar` | Любой аутентифицированный пользователь |
+| `group_avatar` | Любой аутентифицированный пользователь |
 | `profile_background` | Любой аутентифицированный пользователь |
 | `chat_background` | Только владелец (`owner_user_id = requester_user_id`) |
 | `notification_sound` | Только владелец |
@@ -101,6 +102,7 @@ items/{owner_user_id}/{item_type}/{item_id}
 | `item_type` | Допустимые MIME | Максимальный размер |
 |-------------|-----------------|---------------------|
 | `avatar` | `image/jpeg`, `image/png`, `image/webp` | 5 МБ |
+| `group_avatar` | `image/jpeg`, `image/png`, `image/webp` | 5 МБ |
 | `profile_background` | `image/jpeg`, `image/png`, `image/webp` | 10 МБ |
 | `chat_background` | `image/jpeg`, `image/png`, `image/webp` | 10 МБ |
 | `notification_sound` | `audio/ogg`, `audio/mpeg`, `audio/aac` | 1 МБ |

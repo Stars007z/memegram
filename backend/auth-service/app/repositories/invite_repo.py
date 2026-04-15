@@ -46,6 +46,7 @@ class InviteRepository(BaseRepository[Invite]):
             "created_at": now,
             "expires_at": expires_at,
             "is_used": False,
+            "is_admin": False,
             "created_by_admin_device_id": created_by_admin_device_id,
         })
 

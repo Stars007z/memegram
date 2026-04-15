@@ -47,6 +47,7 @@ def _conversation_from_proto(r) -> ConversationResult:
     return ConversationResult(
         id=r.id, type=r.type, name=r.name,
         members=members, mls_group=mls_group, created_at=r.created_at,
+        avatar_media_id=r.avatar_media_id,
     )
 
 
@@ -225,6 +226,7 @@ class GrpcMessagingGateway(IMessagingGateway):
                     last_message_type=i.last_message_type,
                     unread_count=i.unread_count,
                     last_activity_at=i.last_activity_at,
+                    avatar_media_id=i.avatar_media_id,
                 )
                 for i in resp.items
             ],
@@ -286,6 +288,38 @@ class GrpcMessagingGateway(IMessagingGateway):
                     conversation_id=conversation_id,
                     target_user_id=target_user_id,
                     new_role=new_role,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
+
+    async def update_group_avatar(
+        self, user_id: str, conversation_id: str, avatar_media_id: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().UpdateGroupAvatar(
+                messaging_pb2.UpdateGroupAvatarRequest(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    avatar_media_id=avatar_media_id,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
+
+    async def update_group_name(
+        self, user_id: str, conversation_id: str, name: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().UpdateGroupName(
+                messaging_pb2.UpdateGroupNameRequest(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    name=name,
                 ),
                 timeout=self._timeout,
             )

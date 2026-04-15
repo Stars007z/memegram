@@ -25,6 +25,7 @@ class ConversationResult:
     members: list[MemberResult]
     mls_group: Optional[MlsGroupResult]
     created_at: float
+    avatar_media_id: Optional[uuid.UUID] = None
 
 
 @dataclass
@@ -35,6 +36,7 @@ class ConversationSummaryResult:
     last_message_type: Optional[str]
     unread_count: int
     last_activity_at: float
+    avatar_media_id: Optional[uuid.UUID] = None
 
 
 @dataclass
@@ -108,5 +110,23 @@ class IConversationService(ABC):
         conversation_id: uuid.UUID,
         target_user_id: uuid.UUID,
         new_role: str,
+    ) -> bool:
+        ...
+
+    @abstractmethod
+    async def update_group_avatar(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        avatar_media_id: Optional[uuid.UUID],
+    ) -> bool:
+        ...
+
+    @abstractmethod
+    async def update_group_name(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        name: str,
     ) -> bool:
         ...

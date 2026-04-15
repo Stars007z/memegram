@@ -1,0 +1,23 @@
+syntax = "proto3";
+package user;
+
+// Minimal proto for user-service client (GetUsersBatch).
+// Only the RPCs / messages used by notifications-service are included.
+
+service UserService {
+    rpc GetUsersBatch(GetUsersBatchRequest) returns (GetUsersBatchResponse);
+}
+
+message GetUsersBatchRequest {
+    repeated string user_ids = 1;
+}
+
+message GetUsersBatchResponse {
+    message UserInfo {
+        string user_id         = 1;
+        string display_name    = 2;
+        string username        = 3;
+        string avatar_media_id = 4;
+    }
+    repeated UserInfo users = 1;
+}

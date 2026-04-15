@@ -57,7 +57,7 @@ class CreateInviteRequestSchema(BaseModel):
 class AuthResponseSchema(BaseModel):
     user_id: str
     device_id: str
-    is_primary: bool
+    device_type: str
     access_token: str
     refresh_token: str
     expires_at: int
