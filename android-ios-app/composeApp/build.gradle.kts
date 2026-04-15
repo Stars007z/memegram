@@ -49,6 +49,7 @@ kotlin {
             implementation(libs.sqldelight.android.driver)
             implementation(libs.sqlcipher.android)
             implementation(libs.androidx.security.crypto.ktx)
+	    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.3")
         }
 
         commonMain.dependencies {

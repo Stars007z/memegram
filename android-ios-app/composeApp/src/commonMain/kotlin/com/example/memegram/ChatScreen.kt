@@ -79,6 +79,14 @@ import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
 import com.example.memegram.utils.LocalScreenWidthDp
 import kotlin.math.roundToInt
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.material.icons.outlined.GTranslate
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import com.example.memegram.translation.TranslationManager
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -103,6 +111,11 @@ fun ChatScreen(
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
     val audioPlaybackState by globalAudioPlayer.state.collectAsState()
+
+    val translations         by viewModel.translations.collectAsState()
+    val transcriptions       by viewModel.transcriptions.collectAsState()
+    val translatingMessages  by viewModel.translatingMessages.collectAsState()
+    val transcribingMessages by viewModel.transcribingMessages.collectAsState()
 
     val listState = rememberLazyListState()
 
@@ -934,7 +947,15 @@ fun ChatScreen(
                                                             coroutineScope.launch { listState.animateScrollToItem(idx) }
                                                         }
                                                     }
-                                                }
+                                                },
+                                                translations = translations,
+                                                translatingMessages = translatingMessages,
+                                                transcriptions = transcriptions,
+                                                transcribingMessages = transcribingMessages,
+                                                onTranslate = { viewModel.translateMessage(it) },
+                                                onDismissTranslation = { viewModel.dismissTranslation(it) },
+                                                onTranscribe = { viewModel.transcribeVoiceMessage(it) },
+                                                onDismissTranscription = { viewModel.dismissTranscription(it) }
                                             )
                                         }
                                     }
@@ -979,7 +1000,15 @@ fun ChatScreen(
                                                         coroutineScope.launch { listState.animateScrollToItem(idx) }
                                                     }
                                                 }
-                                            }
+                                            },
+                                            translations = translations,
+                                            translatingMessages = translatingMessages,
+                                            transcriptions = transcriptions,
+                                            transcribingMessages = transcribingMessages,
+                                            onTranslate = { viewModel.translateMessage(it) },
+                                            onDismissTranslation = { viewModel.dismissTranslation(it) },
+                                            onTranscribe = { viewModel.transcribeVoiceMessage(it) },
+                                            onDismissTranscription = { viewModel.dismissTranscription(it) }
                                         )
                                     }
                                 }
@@ -1017,6 +1046,35 @@ fun ChatScreen(
                                             leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                                             onClick = {
                                                 clipboardManager.setText(AnnotatedString(message.text))
+                                                contextMenuMessage = null
+                                            }
+                                        )
+                                    }
+
+                                    // ── Translate ────────────────────────
+                                    if (hasText) {
+                                        val msgKey = message.stableKey()
+                                        val alreadyTranslated = translations.containsKey(msgKey)
+
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (alreadyTranslated) s.showOriginal
+                                                    else s.translate
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Outlined.GTranslate, null,
+                                                    modifier = Modifier.size(20.sdp)
+                                                )
+                                            },
+                                            onClick = {
+                                                if (alreadyTranslated) {
+                                                    viewModel.dismissTranslation(message)
+                                                } else {
+                                                    viewModel.translateMessage(message)
+                                                }
                                                 contextMenuMessage = null
                                             }
                                         )
@@ -1334,7 +1392,16 @@ fun MessageBubble(
     chatName: String = "",
     replyToMessage: Message? = null,
     replyToSenderName: String? = null,
-    onReplyClick: (() -> Unit)? = null
+    onReplyClick: (() -> Unit)? = null,
+    // ── Новые параметры для перевода/расшифровки ──
+    translations: Map<String, String> = emptyMap(),
+    translatingMessages: Set<String> = emptySet(),
+    transcriptions: Map<String, String> = emptyMap(),
+    transcribingMessages: Set<String> = emptySet(),
+    onTranslate: (Message) -> Unit = {},
+    onDismissTranslation: (Message) -> Unit = {},
+    onTranscribe: (Message) -> Unit = {},
+    onDismissTranscription: (Message) -> Unit = {}
 ) {
     val isOut       = message.isOutgoing
     val s = LocalStrings.current
@@ -1470,55 +1537,137 @@ fun MessageBubble(
                         totalText
                     }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(200.sdp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.sdp)
-                                .clip(CircleShape)
-                                .background(textColor.copy(alpha = 0.15f))
-                                .clickable {
-                                    if (isPlaying) {
-                                        globalAudioPlayer?.pause()
-                                    } else if (isPaused) {
-                                        globalAudioPlayer?.resume()
-                                    } else {
-                                        val bytes = cachedBytes
-                                        val mid = message.mediaId
-                                        if (bytes != null && mid != null && globalAudioPlayer != null) {
-                                            globalAudioPlayer.play(
-                                                bytes = bytes,
-                                                mediaId = mid,
-                                                chatName = chatName,
-                                                durationMs = durationMs,
-                                                waveform = parsedAmps
-                                            )
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
+                    // ── ОБЁРТКА Column для расшифровки ──
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(220.sdp)
                         ) {
-                            if (cachedBytes == null) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.sdp), color = textColor, strokeWidth = 2.sdp)
-                            } else {
-                                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
+                            // Play/Pause кнопка
+                            Box(
+                                modifier = Modifier
+                                    .size(44.sdp)
+                                    .clip(CircleShape)
+                                    .background(textColor.copy(alpha = 0.15f))
+                                    .clickable {
+                                        if (isPlaying) {
+                                            globalAudioPlayer?.pause()
+                                        } else if (isPaused) {
+                                            globalAudioPlayer?.resume()
+                                        } else {
+                                            val bytes = cachedBytes
+                                            val mid = message.mediaId
+                                            if (bytes != null && mid != null && globalAudioPlayer != null) {
+                                                globalAudioPlayer.play(
+                                                    bytes = bytes,
+                                                    mediaId = mid,
+                                                    chatName = chatName,
+                                                    durationMs = durationMs,
+                                                    waveform = parsedAmps
+                                                )
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (cachedBytes == null) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.sdp), color = textColor, strokeWidth = 2.sdp)
+                                } else {
+                                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.sdp))
+
+                            // Waveform + время
+                            Column(modifier = Modifier.weight(1f)) {
+                                VoiceWaveform(
+                                    amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
+                                    progress = currentProgress,
+                                    modifier = Modifier.fillMaxWidth().height(24.sdp),
+                                    playedColor = textColor,
+                                    unplayedColor = textColor.copy(alpha = 0.3f)
+                                )
+                                Spacer(modifier = Modifier.height(4.sdp))
+                                Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
+                            }
+
+                            // ── КНОПКА →A (TRANSCRIBE) ──────────────────
+                            val voiceKey = message.stableKey()
+                            val isTranscribingThis = transcribingMessages.contains(voiceKey)
+                            val hasTranscription = transcriptions.containsKey(voiceKey)
+
+                            Spacer(Modifier.width(4.sdp))
+
+                            if (cachedBytes != null) {
+                                if (isTranscribingThis) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.sdp),
+                                        strokeWidth = 2.sdp,
+                                        color = textColor.copy(alpha = 0.7f)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.sdp)
+                                            .clip(RoundedCornerShape(6.sdp))
+                                            .background(
+                                                if (hasTranscription)
+                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                                else
+                                                    textColor.copy(alpha = 0.1f)
+                                            )
+                                            .clickable {
+                                                if (hasTranscription) {
+                                                    onDismissTranscription(message)
+                                                } else {
+                                                    onTranscribe(message)
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "→A",
+                                            fontSize = 11.ssp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (hasTranscription)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                textColor.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.sdp))
+                        // ── РАСШИФРОВКА ПОД WAVEFORM ─────────────────────
+                        val voiceKey2 = message.stableKey()
+                        val transcriptionText = transcriptions[voiceKey2]
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            VoiceWaveform(
-                                amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
-                                progress = currentProgress,
-                                modifier = Modifier.fillMaxWidth().height(24.sdp),
-                                playedColor = textColor,
-                                unplayedColor = textColor.copy(alpha = 0.3f)
-                            )
-                            Spacer(modifier = Modifier.height(4.sdp))
-                            Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
+                        AnimatedVisibility(
+                            visible = transcriptionText != null,
+                            enter = expandVertically(),
+                            exit  = shrinkVertically()
+                        ) {
+                            if (transcriptionText != null) {
+                                Column(
+                                    modifier = Modifier.padding(
+                                        start = 12.sdp, end = 12.sdp, bottom = 8.sdp
+                                    )
+                                ) {
+                                    HorizontalDivider(
+                                        color = textColor.copy(alpha = 0.15f),
+                                        modifier = Modifier.padding(vertical = 4.sdp)
+                                    )
+                                    Text(
+                                        text = transcriptionText,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontStyle = FontStyle.Italic
+                                        ),
+                                        color = textColor.copy(alpha = 0.85f)
+                                    )
+                                }
+                            }
                         }
                     }
                 } else if (isImageMsg) {
@@ -1584,6 +1733,55 @@ fun MessageBubble(
                     }
                     Text(text = annotated, color = textColor,
                         style = MaterialTheme.typography.bodyLarge, modifier = textMod)
+                }
+
+                // ── Translation result ───────────────────────────────────
+                if (hasText) {
+                    val msgKey = message.stableKey()
+                    val isTranslatingThis = translatingMessages.contains(msgKey)
+                    val translatedText = translations[msgKey]
+
+                    AnimatedVisibility(
+                        visible = isTranslatingThis || translatedText != null,
+                        enter = expandVertically(),
+                        exit  = shrinkVertically()
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.sdp),
+                                color = textColor.copy(alpha = 0.2f)
+                            )
+                            if (isTranslatingThis) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(bottom = 4.sdp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.sdp),
+                                        strokeWidth = 1.5.sdp,
+                                        color = textColor.copy(alpha = 0.6f)
+                                    )
+                                    Spacer(Modifier.width(6.sdp))
+                                    Text(
+                                        text = s.translating,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = textColor.copy(alpha = 0.6f)
+                                    )
+                                }
+                            } else if (translatedText != null) {
+                                Text(
+                                    text = translatedText,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontStyle = FontStyle.Italic
+                                    ),
+                                    color = textColor,
+                                    modifier = Modifier.padding(vertical = 2.sdp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (isOut && message.status != MessageStatus.SENT) {
@@ -2062,3 +2260,5 @@ private fun AlbumPhotoCell(
         }
     }
 }
+
+private fun Message.stableKey(): String = serverId.ifBlank { id.toString() }

@@ -20,6 +20,7 @@ import com.example.memegram.data.gallery.readUploadBytes
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
 import com.example.memegram.localization.S
+import com.example.memegram.translation.TranslationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -33,7 +34,8 @@ class ChatViewModel(
     private val mlsManager: MlsManager,
     private val chatRepository: ChatRepository,
     private val themePreferences: ThemePreferences,
-    private val settings: Settings
+    private val settings: Settings,
+    val translationManager: TranslationManager
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -126,6 +128,68 @@ class ChatViewModel(
     /** Map messageServerId → replyToServerId, populated from server data. */
     private val _replyContext = MutableStateFlow<Map<String, String>>(emptyMap())
     val replyContext: StateFlow<Map<String, String>> = _replyContext.asStateFlow()
+
+    // ── Translation & Transcription ──────────────────────────────────────
+    private val _translations = MutableStateFlow<Map<String, String>>(emptyMap())
+    val translations: StateFlow<Map<String, String>> = _translations.asStateFlow()
+
+    private val _transcriptions = MutableStateFlow<Map<String, String>>(emptyMap())
+    val transcriptions: StateFlow<Map<String, String>> = _transcriptions.asStateFlow()
+
+    private val _translatingMessages = MutableStateFlow<Set<String>>(emptySet())
+    val translatingMessages: StateFlow<Set<String>> = _translatingMessages.asStateFlow()
+
+    private val _transcribingMessages = MutableStateFlow<Set<String>>(emptySet())
+    val transcribingMessages: StateFlow<Set<String>> = _transcribingMessages.asStateFlow()
+
+    private fun Message.stableKey(): String = serverId.ifBlank { id.toString() }
+
+    fun translateMessage(message: Message) {
+        val key = message.stableKey()
+        if (_translations.value.containsKey(key)) return
+        if (_translatingMessages.value.contains(key)) return
+
+        viewModelScope.launch {
+            _translatingMessages.update { it + key }
+            try {
+                val result = translationManager.translate(message.text)
+                _translations.update { it + (key to result) }
+            } catch (e: Exception) {
+                _translations.update { it + (key to "⚠️ ${e.message}") }
+            } finally {
+                _translatingMessages.update { it - key }
+            }
+        }
+    }
+
+    fun transcribeVoiceMessage(message: Message) {
+        val key = message.stableKey()
+        if (_transcriptions.value.containsKey(key)) return
+        if (_transcribingMessages.value.contains(key)) return
+
+        val mediaId = message.mediaId ?: return
+        val audioBytes = _mediaCache.value[mediaId] ?: return
+
+        viewModelScope.launch {
+            _transcribingMessages.update { it + key }
+            try {
+                val result = translationManager.transcribeAudio(audioBytes)
+                _transcriptions.update { it + (key to result) }
+            } catch (e: Exception) {
+                _transcriptions.update { it + (key to "⚠️ ${e.message}") }
+            } finally {
+                _transcribingMessages.update { it - key }
+            }
+        }
+    }
+
+    fun dismissTranslation(message: Message) {
+        _translations.update { it - message.stableKey() }
+    }
+
+    fun dismissTranscription(message: Message) {
+        _transcriptions.update { it - message.stableKey() }
+    }
 
     private var recordTimerJob: Job? = null
     private var rawAmplitudes = mutableListOf<Int>()
@@ -925,6 +989,7 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        translationManager.release()
         if (ActiveChatCoordinator.conversationId == currentConversationId) {
             ActiveChatCoordinator.conversationId = null
         }

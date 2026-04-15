@@ -44,6 +44,8 @@ val appModule = module {
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
 
+    // Translation — provided by platformModule() (platform-specific)
+
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)
     viewModelOf(::ChatViewModel)

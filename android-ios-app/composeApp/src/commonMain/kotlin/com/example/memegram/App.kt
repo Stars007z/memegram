@@ -1,5 +1,6 @@
 package com.example.memegram
 
+import com.example.memegram.di.platformModule
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -108,7 +109,7 @@ fun App() {
         LibsodiumInitializer.initializeWithCallback { }
     }
     KoinApplication(configuration = koinConfiguration {
-        modules(appModule)
+        modules(appModule, platformModule())
     }) {
         val themeViewModel = koinViewModel<ThemeViewModel>()
         val topBarColor by themeViewModel.topBarColor.collectAsState()

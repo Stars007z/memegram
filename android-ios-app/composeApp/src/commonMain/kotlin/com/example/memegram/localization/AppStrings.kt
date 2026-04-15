@@ -86,6 +86,16 @@ interface AppStrings {
     val saveToGallery: String
     fun saveAllNPhotos(count: Int): String
     val copyText: String
+    val translate: String
+    val translating: String
+    val transcribe: String
+    val transcribing: String
+    val translationError: String
+    val transcriptionNotAvailable: String
+    val translationNotAvailable: String
+    val transcriptionResult: String
+    val showOriginal: String
+    val copyTranslation: String
     val you: String
     val interlocutor: String
 
@@ -403,6 +413,16 @@ object RuStrings : AppStrings {
     override val saveToGallery = "Сохранить в галерею"
     override fun saveAllNPhotos(count: Int) = "Сохранить все $count фото"
     override val copyText = "Копировать текст"
+    override val translate = "Перевести"
+    override val translating = "Перевод…"
+    override val transcribe = "Расшифровать"
+    override val transcribing = "Расшифровка…"
+    override val translationError = "Ошибка перевода"
+    override val transcriptionNotAvailable = "Расшифровка недоступна"
+    override val translationNotAvailable = "Перевод недоступен"
+    override val transcriptionResult = "Расшифровка"
+    override val showOriginal = "Оригинал"
+    override val copyTranslation = "Копировать перевод"
     override val you = "Вы"
     override val interlocutor = "Собеседник"
 
@@ -722,6 +742,16 @@ object EnStrings : AppStrings {
     override val saveToGallery = "Save to gallery"
     override fun saveAllNPhotos(count: Int) = "Save all $count photos"
     override val copyText = "Copy text"
+    override val translate = "Translate"
+    override val translating = "Translating…"
+    override val transcribe = "Transcribe"
+    override val transcribing = "Transcribing…"
+    override val translationError = "Translation error"
+    override val transcriptionNotAvailable = "Transcription not available"
+    override val translationNotAvailable = "Translation not available"
+    override val transcriptionResult = "Transcription"
+    override val showOriginal = "Show original"
+    override val copyTranslation = "Copy translation"
     override val you = "You"
     override val interlocutor = "Contact"
 

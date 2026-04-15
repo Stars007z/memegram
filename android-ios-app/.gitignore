@@ -19,3 +19,4 @@ captures
 node_modules/
 mls-rust/target/
 mls-rust/Cargo.lock
+composeApp/src/androidMain/assets
