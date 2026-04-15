@@ -64,7 +64,7 @@ class GrpcAuthGateway(IAuthGateway):
         return AuthResult(
             user_id=response.user_id,
             device_id=response.device_id,
-            is_primary=response.is_primary,
+            device_type=response.device_type,
             access_token=response.access_token,
             refresh_token=response.refresh_token,
             expires_at=response.expires_at,
@@ -100,7 +100,7 @@ class GrpcAuthGateway(IAuthGateway):
         return AuthResult(
             user_id=response.user_id,
             device_id=response.device_id,
-            is_primary=response.is_primary,
+            device_type=response.device_type,
             access_token=response.access_token,
             refresh_token=response.refresh_token,
             expires_at=response.expires_at,

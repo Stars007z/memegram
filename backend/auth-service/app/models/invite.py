@@ -17,3 +17,4 @@ class Invite(Base):
     used_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     used_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_by_admin_device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

@@ -85,6 +85,7 @@ class ConversationResponseSchema(BaseModel):
     members: List[ConversationMemberSchema]
     mls_group: Optional[MlsGroupInfoSchema] = None
     created_at: int
+    avatar_media_id: str = ""
 
 
 class ConversationSummarySchema(BaseModel):
@@ -94,6 +95,7 @@ class ConversationSummarySchema(BaseModel):
     last_message_type: str
     unread_count: int
     last_activity_at: int
+    avatar_media_id: str = ""
 
 
 class GetConversationsResponseSchema(BaseModel):
@@ -115,6 +117,14 @@ class KickMemberResponseSchema(BaseModel):
 
 class UpdateMemberRoleRequestSchema(BaseModel):
     new_role: str = Field(..., pattern=r"^(admin|member)$", description="'admin' or 'member'")
+
+
+class UpdateGroupAvatarRequestSchema(BaseModel):
+    avatar_media_id: str = Field(default="", description="item-storage-service item_id; empty to remove")
+
+
+class UpdateGroupNameRequestSchema(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
 
 
 class UpdateMemberRoleResponseSchema(BaseModel):

@@ -182,6 +182,7 @@ class ConversationServiceImpl(IConversationService):
                 last_message_type=last_msg.type if last_msg else None,
                 unread_count=unread,
                 last_activity_at=conv.last_activity_at.timestamp(),
+                avatar_media_id=conv.avatar_media_id,
             ))
 
         next_cursor = None
@@ -332,6 +333,71 @@ class ConversationServiceImpl(IConversationService):
 
         return True
 
+    # ── UpdateGroupAvatar ───────────────────────────
+
+    async def update_group_avatar(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        avatar_media_id: Optional[uuid.UUID],
+    ) -> bool:
+        conv = await self._conversations.get_by_id(conversation_id)
+        if not conv:
+            raise ValueError("NOT_FOUND: Conversation not found")
+
+        if conv.type != "group":
+            raise ValueError("FAILED_PRECONDITION: Avatars are only supported for group conversations")
+
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only owner or admin can change the group avatar")
+
+        await self._conversations.update_avatar(conversation_id, avatar_media_id)
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "group_avatar_changed",
+            "avatar_media_id": str(avatar_media_id) if avatar_media_id else "",
+            "changed_by": str(caller_user_id),
+        })
+
+        return True
+
+    # ── UpdateGroupName ─────────────────────────────
+
+    async def update_group_name(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        name: str,
+    ) -> bool:
+        if not name or not name.strip():
+            raise ValueError("INVALID_ARGUMENT: Name must not be empty")
+
+        conv = await self._conversations.get_by_id(conversation_id)
+        if not conv:
+            raise ValueError("NOT_FOUND: Conversation not found")
+
+        if conv.type != "group":
+            raise ValueError("FAILED_PRECONDITION: Name can only be changed for group conversations")
+
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+        if caller.role not in ("owner", "admin"):
+            raise ValueError("PERMISSION_DENIED: Only owner or admin can change the group name")
+
+        await self._conversations.update_name(conversation_id, name.strip())
+
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "group_name_changed",
+            "name": name.strip(),
+            "changed_by": str(caller_user_id),
+        })
+
+        return True
+
     # ── Helpers ──────────────────────────────────────
 
     async def _check_blocks_both_ways(
@@ -383,4 +449,5 @@ class ConversationServiceImpl(IConversationService):
             ],
             mls_group=MlsGroupResult(current_epoch=epoch, cipher_suite=cipher_suite),
             created_at=conv.created_at.timestamp(),
+            avatar_media_id=conv.avatar_media_id,
         )

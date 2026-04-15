@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     ITEM_STORAGE_GRPC_PORT: int = 50056
     ITEM_STORAGE_GRPC_TIMEOUT: float = 10.0
 
+    NOTIFICATIONS_GRPC_HOST: str = "localhost"
+    NOTIFICATIONS_GRPC_PORT: int = 50057
+    NOTIFICATIONS_GRPC_TIMEOUT: float = 10.0
+
     AUTO_DELETE_CRON_HOUR: int = 3
     AUTO_DELETE_CRON_MINUTE: int = 0
 
@@ -62,6 +66,10 @@ class Settings(BaseSettings):
     @property
     def ITEM_STORAGE_GRPC_ADDRESS(self) -> str:
         return f"{self.ITEM_STORAGE_GRPC_HOST}:{self.ITEM_STORAGE_GRPC_PORT}"
+
+    @property
+    def NOTIFICATIONS_GRPC_ADDRESS(self) -> str:
+        return f"{self.NOTIFICATIONS_GRPC_HOST}:{self.NOTIFICATIONS_GRPC_PORT}"
 
 
 settings = Settings()

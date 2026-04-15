@@ -1,0 +1,39 @@
+syntax = "proto3";
+package notifications;
+
+service NotificationsService {
+    rpc RegisterPushToken(RegisterPushTokenRequest)     returns (RegisterPushTokenResponse);
+    rpc UnregisterPushToken(UnregisterPushTokenRequest) returns (UnregisterPushTokenResponse);
+    rpc HealthCheck(HealthCheckRequest)                 returns (HealthCheckResponse);
+}
+
+message RegisterPushTokenRequest {
+    string user_id    = 1;
+    string device_id  = 2;
+    string platform   = 3;
+    string push_token = 4;
+}
+
+message RegisterPushTokenResponse {
+    bool success = 1;
+}
+
+message UnregisterPushTokenRequest {
+    string user_id   = 1;
+    string device_id = 2;
+}
+
+message UnregisterPushTokenResponse {
+    bool success = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+    string status       = 1;
+    string db_status    = 2;
+    string redis_status = 3;
+    string fcm_status   = 4;
+    string apns_status  = 5;
+    string version      = 6;
+}

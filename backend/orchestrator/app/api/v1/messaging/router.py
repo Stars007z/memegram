@@ -23,6 +23,8 @@ from app.api.v1.messaging.schemas import (
     KickMemberResponseSchema,
     UpdateMemberRoleRequestSchema,
     UpdateMemberRoleResponseSchema,
+    UpdateGroupAvatarRequestSchema,
+    UpdateGroupNameRequestSchema,
     SendMessageRequestSchema,
     SendMessageResponseSchema,
     MessageEntrySchema,
@@ -71,6 +73,7 @@ def _conv_to_schema(r):
             for m in r.members
         ],
         mls_group=mls, created_at=r.created_at,
+        avatar_media_id=r.avatar_media_id,
     )
 
 
@@ -204,6 +207,7 @@ async def get_conversations(
                 last_message_type=i.last_message_type,
                 unread_count=i.unread_count,
                 last_activity_at=i.last_activity_at,
+                avatar_media_id=i.avatar_media_id,
             )
             for i in result.items
         ],
@@ -278,6 +282,42 @@ async def update_member_role(
         new_role=body.new_role,
     )
     return UpdateMemberRoleResponseSchema(success=success)
+
+
+@router.patch(
+    "/conversations/{conversation_id}/avatar",
+    response_model=SuccessResponseSchema,
+)
+async def update_group_avatar(
+    conversation_id: str,
+    body: UpdateGroupAvatarRequestSchema,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.update_group_avatar(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        avatar_media_id=body.avatar_media_id,
+    )
+    return SuccessResponseSchema(success=success)
+
+
+@router.patch(
+    "/conversations/{conversation_id}/name",
+    response_model=SuccessResponseSchema,
+)
+async def update_group_name(
+    conversation_id: str,
+    body: UpdateGroupNameRequestSchema,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.update_group_name(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        name=body.name,
+    )
+    return SuccessResponseSchema(success=success)
 
 
 # ── Messages ──────────────────────────────────────────────────────────

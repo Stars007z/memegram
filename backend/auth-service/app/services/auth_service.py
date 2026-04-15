@@ -40,12 +40,15 @@ class AuthService:
         user_id = uuid.uuid4()
         device_uuid = uuid.uuid4()
 
+        # Admin invite creates admin device, otherwise primary
+        device_type = "admin" if invite.is_admin else "primary"
+
         await self.device_repo.create({
             "id": device_uuid,
             "user_id": user_id,
             "client_device_id": device_id,   # store client identifier separately
             "device_name": device_name,
-            "device_type": "primary",
+            "device_type": device_type,
             "is_active": True,
             "identity_key_pub": identity_key_pub,
             "init_key_pub": init_key_pub,
@@ -55,7 +58,7 @@ class AuthService:
         access_token, refresh_token, expires_at, refresh_expires_at = self._generate_tokens(
             user_id=str(user_id),
             device_id=str(device_uuid),
-            is_primary=True,
+            device_type=device_type,
         )
 
         await self.session_repo.create({
@@ -71,7 +74,7 @@ class AuthService:
         return {
             "user_id": str(user_id),
             "device_id": str(device_uuid),
-            "is_primary": True,
+            "device_type": device_type,
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_at": int(expires_at.timestamp()),
@@ -139,7 +142,7 @@ class AuthService:
         access_token, refresh_token, expires_at, refresh_expires_at = self._generate_tokens(
             user_id=str(device.user_id),
             device_id=str(device.id),
-            is_primary=(device.device_type == "primary"),
+            device_type=device.device_type,
         )
 
         await self.session_repo.create({
@@ -153,7 +156,7 @@ class AuthService:
         return {
             "user_id": str(device.user_id),
             "device_id": str(device.id),
-            "is_primary": (device.device_type == "primary"),
+            "device_type": device.device_type,
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_at": int(expires_at.timestamp()),
@@ -181,7 +184,7 @@ class AuthService:
         access_token, new_refresh_token, expires_at, refresh_expires_at = self._generate_tokens(
             user_id=str(device.user_id),
             device_id=str(device.id),
-            is_primary=(device.device_type == "primary"),
+            device_type=device.device_type,
         )
 
         await self.session_repo.create({
@@ -195,7 +198,7 @@ class AuthService:
         return {
             "user_id": str(device.user_id),
             "device_id": str(device.id),
-            "is_primary": (device.device_type == "primary"),
+            "device_type": device.device_type,
             "access_token": access_token,
             "refresh_token": new_refresh_token,
             "expires_at": int(expires_at.timestamp()),
@@ -249,7 +252,7 @@ class AuthService:
         }
 
     def _generate_tokens(
-        self, user_id: str, device_id: str, is_primary: bool
+        self, user_id: str, device_id: str, device_type: str
     ) -> tuple[str, str, datetime, datetime]:
         expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
         refresh_expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
@@ -257,7 +260,7 @@ class AuthService:
         base_payload = {
             "sub": user_id,
             "device_id": device_id,
-            "is_primary": is_primary,
+            "device_type": device_type,
         }
         access_token = jwt.encode(
             {**base_payload, "type": "access", "exp": expires_at},

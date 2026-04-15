@@ -10,6 +10,7 @@ from app.api.dependencies import (
     get_auth_gateway,
     get_current_session,
     get_user_gateway,
+    require_device_type,
 )
 from app.api.v1.auth.schemas import (
     RegisterRequestSchema,
@@ -106,10 +107,10 @@ async def health_check(
 @router.post("/invite", response_model=CreateInviteResponseSchema, status_code=201)
 async def create_invite(
     body: CreateInviteRequestSchema,
-    session: SessionContext = Depends(get_current_session),
+    session: SessionContext = Depends(require_device_type("admin")),
     use_case: CreateInviteUseCase = Depends(get_create_invite_use_case),
 ) -> CreateInviteResponseSchema:
-    """Any authenticated user can create an invite. created_by_device_id is set to the caller's device."""
+    """Only admin devices can create invites. created_by_device_id is set to the caller's device."""
     result = await use_case.execute(
         expires_in_days=body.expires_in_days,
         created_by_device_id=session.device_id,

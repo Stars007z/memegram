@@ -1,0 +1,21 @@
+syntax = "proto3";
+package messaging;
+
+// Minimal proto for messaging-service client (GetConversationMembers).
+// Only the RPCs / messages used by notifications-service are included.
+
+service MessagingService {
+    rpc GetConversationMembers(GetConversationMembersRequest) returns (GetConversationMembersResponse);
+}
+
+message GetConversationMembersRequest {
+    string conversation_id = 1;
+}
+
+message GetConversationMembersResponse {
+    message MemberInfo {
+        string user_id = 1;
+        string role    = 2;
+    }
+    repeated MemberInfo members = 1;
+}
