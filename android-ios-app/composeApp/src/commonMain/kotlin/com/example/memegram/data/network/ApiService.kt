@@ -70,6 +70,17 @@ class ApiService(
         return response.body()
     }
 
+    suspend fun createInvite(request: CreateInviteRequest): CreateInviteResponse {
+        val response = client.post("$baseUrl/api/v1/auth/invite") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("CreateInvite: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
+
 // ── User ──────────────────────────────────────────────────────────────────
 
     suspend fun getMe(): UserProfileResponse =
@@ -405,6 +416,30 @@ class ApiService(
         }
         if (!response.status.isSuccess()) {
             throw Exception("updateMemberRole failed ${response.status.value}: ${response.bodyAsText()}")
+        }
+        return response.body()
+    }
+
+    suspend fun updateGroupName(conversationId: String, request: UpdateGroupNameRequest): SuccessResponse {
+        val response = client.patch("$baseUrl/api/v1/messaging/conversations/$conversationId/name") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            throw Exception("updateGroupName failed ${response.status.value}: ${response.bodyAsText()}")
+        }
+        return response.body()
+    }
+
+    suspend fun updateGroupAvatar(conversationId: String, request: UpdateGroupAvatarRequest): SuccessResponse {
+        val response = client.patch("$baseUrl/api/v1/messaging/conversations/$conversationId/avatar") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess()) {
+            throw Exception("updateGroupAvatar failed ${response.status.value}: ${response.bodyAsText()}")
         }
         return response.body()
     }

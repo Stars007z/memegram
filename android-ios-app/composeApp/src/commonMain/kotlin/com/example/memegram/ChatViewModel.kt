@@ -20,6 +20,8 @@ import com.example.memegram.data.gallery.readUploadBytes
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
 import com.example.memegram.localization.S
+import com.example.memegram.translation.TranslationService
+import com.example.memegram.translation.TranslationSettings
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -33,7 +35,10 @@ class ChatViewModel(
     private val mlsManager: MlsManager,
     private val chatRepository: ChatRepository,
     private val themePreferences: ThemePreferences,
-    private val settings: Settings
+    private val settings: Settings,
+    private val translationService: TranslationService,
+    private val translationSettings: TranslationSettings,
+    private val blockedUsersCache: BlockedUsersCache
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -93,11 +98,24 @@ class ChatViewModel(
 
     var currentConversationId: String? = null
         private set
-    var peerUserId: String? = null
-        private set
+    private val _peerUserId = MutableStateFlow<String?>(null)
+    var peerUserId: String?
+        get() = _peerUserId.value
+        private set(value) { _peerUserId.value = value }
 
     private val _peerAvatarMediaId = MutableStateFlow<String?>(null)
     val peerAvatarMediaId: StateFlow<String?> = _peerAvatarMediaId.asStateFlow()
+
+    fun setInitialPeerAvatar(mediaId: String) {
+        if (_peerAvatarMediaId.value == null) {
+            _peerAvatarMediaId.value = mediaId
+        }
+    }
+
+    val isPeerBlocked: StateFlow<Boolean> = combine(
+        _peerUserId, blockedUsersCache.blockedIds
+    ) { peerId, ids -> peerId != null && peerId in ids }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val audioRecorder = createAudioRecorder()
     private var myUserId: String? = null
@@ -119,11 +137,9 @@ class ChatViewModel(
     private val _voiceDurationMs = MutableStateFlow(0L)
     val voiceDurationMs: StateFlow<Long> = _voiceDurationMs.asStateFlow()
 
-    /** The message being replied to (Telegram-style reply bar). */
     private val _replyingTo = MutableStateFlow<Message?>(null)
     val replyingTo: StateFlow<Message?> = _replyingTo.asStateFlow()
 
-    /** Map messageServerId → replyToServerId, populated from server data. */
     private val _replyContext = MutableStateFlow<Map<String, String>>(emptyMap())
     val replyContext: StateFlow<Map<String, String>> = _replyContext.asStateFlow()
 
@@ -155,6 +171,8 @@ class ChatViewModel(
                 _isGroupChat.value = isGroup
 
                 if (isGroup) {
+                    _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+
                     conv.members.forEach { member ->
                         if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
                             launch {
@@ -396,6 +414,14 @@ class ChatViewModel(
                         _peerAvatarMediaId.value = profile.avatarMediaId
                     }
                 } catch (_: Exception) {}
+            } else if (_isGroupChat.value) {
+                try {
+                    val conv = api.getConversation(conversationId)
+                    val serverAvatar = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+                    if (serverAvatar != _peerAvatarMediaId.value) {
+                        _peerAvatarMediaId.value = serverAvatar
+                    }
+                } catch (_: Exception) {}
             }
 
             val serverMessages = api.getMessages(conversationId)
@@ -485,6 +511,37 @@ class ChatViewModel(
                 groupId      = parsed.groupId
             )
             chatRepository.saveMessage(msg, convId)
+            val MAX_AUTO_TRANSLATE_LENGTH = 300
+            if (!isOutgoing && parsed.type == "text" && parsed.content.isNotBlank()
+                && parsed.content.length <= MAX_AUTO_TRANSLATE_LENGTH) {
+                val appLang = settings.getString("app_language", "en")
+                if (translationSettings.autoTranslateEnabled.value) {
+                    viewModelScope.launch {
+                        try {
+                            val detected = translationService.identifyLanguage(parsed.content)
+                            val targetLang = translationSettings.getEffectiveTargetLang(appLang)
+                            println("MemegramDebug [AutoTranslate]: detected=$detected appLang=$appLang targetLang=$targetLang text='${parsed.content.take(40)}'")
+
+                            val shouldTranslate = when {
+                                detected == null -> true
+                                else -> translationSettings.shouldAutoTranslate(detected, appLang)
+                            }
+
+                            if (shouldTranslate) {
+                                val result = translationService.translate(parsed.content, detected, targetLang)
+                                println("MemegramDebug [AutoTranslate]: result='${result.translatedText.take(40)}' srcLang=${result.detectedSourceLang}")
+                                if (result.translatedText != parsed.content) {
+                                    chatRepository.updateMessageTranslation(
+                                        msgId, result.translatedText, result.detectedSourceLang
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            println("MemegramDebug [AutoTranslate]: Error translating msgId=$msgId: ${e.message}")
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -554,6 +611,10 @@ class ChatViewModel(
         val convId = currentConversationId ?: return
         val text = _inputText.value.trim()
         if (text.isBlank() && attachments.isEmpty()) return
+        if (isPeerBlocked.value) {
+            _error.value = S.current.userBlockedSendError
+            return
+        }
         _inputText.value = ""
 
         viewModelScope.launch {
@@ -682,6 +743,10 @@ class ChatViewModel(
     }
 
     fun sendVoiceMessageInternal(convId: String, recordResult: AudioRecordResult) {
+        if (isPeerBlocked.value) {
+            _error.value = S.current.userBlockedSendError
+            return
+        }
         println("MemegramDebug [Voice]: Старт sendVoiceMessageInternal для $convId")
         val now = Clock.System.now().toEpochMilliseconds()
 
@@ -879,6 +944,42 @@ class ChatViewModel(
     fun setReplyTo(message: Message?) { _replyingTo.value = message }
     fun clearReply() { _replyingTo.value = null }
 
+
+    fun translateMessage(message: Message, forcedSourceLang: String? = null) {
+        viewModelScope.launch {
+            try {
+                val appLang = settings.getString("app_language", "en")
+                val targetLang = translationSettings.getEffectiveTargetLang(appLang)
+                val textToTranslate = if (message.isTranslated) message.originalText ?: message.text else message.text
+                println("MemegramDebug [Translate]: text='${textToTranslate.take(50)}' src=$forcedSourceLang tgt=$targetLang")
+                val result = translationService.translate(textToTranslate, forcedSourceLang, targetLang)
+                println("MemegramDebug [Translate]: result='${result.translatedText.take(50)}' detectedLang=${result.detectedSourceLang}")
+                if (result.translatedText != textToTranslate) {
+                    chatRepository.updateMessageTranslation(
+                        message.serverId, result.translatedText, result.detectedSourceLang
+                    )
+                } else {
+                    _error.value = S.current.translationNotAvailable
+                }
+            } catch (e: Exception) {
+                println("MemegramDebug [Translate]: Error: ${e.message}")
+                _error.value = S.current.translationNotAvailable
+            }
+        }
+    }
+
+    fun revertTranslation(message: Message) {
+        viewModelScope.launch {
+            chatRepository.revertMessageTranslation(message.serverId)
+        }
+    }
+
+    fun showCachedTranslation(message: Message) {
+        viewModelScope.launch {
+            chatRepository.showCachedTranslation(message.serverId)
+        }
+    }
+
     fun deleteMessage(message: Message) {
         val convId = currentConversationId ?: return
         if (message.serverId.isBlank()) return
@@ -923,6 +1024,32 @@ class ChatViewModel(
         return ParsedMlsPayload("text", "", payload)
     }
 
+    // ───────────────────────── Block / Unblock ─────────────────────────
+
+    fun blockPeer() {
+        val peerId = peerUserId ?: return
+        viewModelScope.launch {
+            try {
+                api.blockUser(com.example.memegram.data.models.BlockUserRequest(peerId))
+                blockedUsersCache.add(peerId)
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun unblockPeer() {
+        val peerId = peerUserId ?: return
+        viewModelScope.launch {
+            try {
+                api.unblockUser(peerId)
+                blockedUsersCache.remove(peerId)
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         if (ActiveChatCoordinator.conversationId == currentConversationId) {
@@ -935,10 +1062,6 @@ class ChatViewModel(
     }
 }
 
-/**
- * In-memory cache for per-chat scroll positions.
- * Survives navigation between screens but NOT app restart.
- */
 object ChatScrollCache {
     private val positions = mutableMapOf<String, Pair<Int, Int>>()
 

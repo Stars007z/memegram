@@ -61,15 +61,18 @@ fun ContactsScreen(
         val conversationId = chatCreated
         if (conversationId != null) {
             val chatName = viewModel.getPendingChatName() ?: s.chatFallback
+            val avatarMediaId = viewModel.getPendingChatAvatarMediaId()
             viewModel.clearChatCreated()
             viewModel.clearPendingChatName()
+            viewModel.clearPendingChatAvatarMediaId()
             onChatClick(
                 ChatModel(
                     id             = conversationId.hashCode(),
                     conversationId = conversationId,
                     name           = chatName,
                     lastMessage    = "",
-                    timestamp      = 0L
+                    timestamp      = 0L,
+                    avatarMediaId  = avatarMediaId
                 )
             )
         }

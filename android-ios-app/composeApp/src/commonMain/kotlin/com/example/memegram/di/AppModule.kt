@@ -17,6 +17,9 @@ import com.example.memegram.data.repository.UserRepositoryImpl
 import com.example.memegram.database.AppDatabase
 import com.example.memegram.audio.GlobalAudioPlayer
 import com.example.memegram.mls.MlsManager
+import com.example.memegram.translation.TranslationService
+import com.example.memegram.translation.TranslationSettings
+import com.example.memegram.translation.createTranslationService
 import com.russhwolf.settings.Settings
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
@@ -43,6 +46,9 @@ val appModule = module {
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
+    single { BlockedUsersCache(get()) }
+    single<TranslationService> { createTranslationService() }
+    single { TranslationSettings(get()) }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)

@@ -133,7 +133,11 @@ class ChatRepositoryImpl(
                         localPreviewBytes  = entity.localPreviewBytes,
                         mediaUrl           = entity.mediaUrl,
                         senderUserId       = entity.senderUserId,
-                        groupId            = entity.groupId
+                        groupId            = entity.groupId,
+                        originalText       = entity.originalText,
+                        translatedText     = entity.translatedText,
+                        translatedFromLang = entity.translatedFromLang,
+                        isTranslated       = entity.isTranslated == 1L
                     )
 
                 }
@@ -155,13 +159,16 @@ class ChatRepositoryImpl(
                     if (message.isOutgoing) 1L else 0L, message.timestamp, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
                     message.localPreviewBytes, message.mediaUrl, now, message.senderUserId,
-                    message.groupId
+                    message.groupId,
+                    message.originalText, message.translatedText, message.translatedFromLang,
+                    if (message.isTranslated) 1L else 0L
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
                     message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
-                    message.senderUserId, message.groupId, realId
+                    message.senderUserId, message.groupId,
+                    realId
                 )
                 runGarbageCollector(conversationId)
             }
@@ -191,9 +198,19 @@ class ChatRepositoryImpl(
                         lastAccessedAt     = now,
                         accessCount        = 1L,
                         senderUserId       = message.senderUserId,
-                        groupId            = message.groupId
+                        groupId            = message.groupId,
+                        originalText       = message.originalText,
+                        translatedText     = message.translatedText,
+                        translatedFromLang = message.translatedFromLang,
+                        isTranslated       = if (message.isTranslated) 1L else 0L
                     )
-
+                    chatQueries.updateExistingMessage(
+                        message.text, message.status.name,
+                        message.type, message.mediaId, message.encryptionMetadata,
+                        message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
+                        message.senderUserId, message.groupId,
+                        realId
+                    )
                 }
                 runGarbageCollector(conversationId)
             }
@@ -241,7 +258,11 @@ class ChatRepositoryImpl(
                         localPreviewBytes  = entity.localPreviewBytes,
                         mediaUrl           = entity.mediaUrl,
                         senderUserId       = entity.senderUserId,
-                        groupId            = entity.groupId
+                        groupId            = entity.groupId,
+                        originalText       = entity.originalText,
+                        translatedText     = entity.translatedText,
+                        translatedFromLang = entity.translatedFromLang,
+                        isTranslated       = entity.isTranslated == 1L
                     )
                 }
         }
@@ -251,6 +272,30 @@ class ChatRepositoryImpl(
         return withContext(ioDispatcher) {
             val messages = chatQueries.selectMessagesByConversation(conversationId).executeAsList()
             messages.lastOrNull()?.text
+        }
+    }
+
+    // ── Translation ──────────────────────────────────────────────────
+
+    override suspend fun updateMessageTranslation(
+        serverId: String,
+        translatedText: String,
+        fromLang: String
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageTranslation(translatedText, translatedText, fromLang, serverId)
+        }
+    }
+
+    override suspend fun revertMessageTranslation(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.revertMessageTranslation(serverId)
+        }
+    }
+
+    override suspend fun showCachedTranslation(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.showCachedTranslation(serverId)
         }
     }
 

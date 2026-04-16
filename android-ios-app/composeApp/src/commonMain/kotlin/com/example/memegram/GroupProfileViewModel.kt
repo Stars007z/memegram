@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.CommitGroupChangeRequest
 import com.example.memegram.data.models.DeviceWelcome
+import com.example.memegram.data.models.InitiateItemUploadRequest
 import com.example.memegram.data.models.LeaveConversationRequest
+import com.example.memegram.data.models.UpdateGroupAvatarRequest
+import com.example.memegram.data.models.UpdateGroupNameRequest
 import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
@@ -27,9 +30,14 @@ class GroupProfileViewModel(
 
     private val _members = MutableStateFlow<List<GroupMemberUI>>(emptyList())
 
-    /** The current user's role in this group (owner/admin/member). */
     private val _myRole = MutableStateFlow("member")
     val myRole: StateFlow<String> = _myRole.asStateFlow()
+
+    private val _groupName = MutableStateFlow("")
+    val groupName: StateFlow<String> = _groupName.asStateFlow()
+
+    private val _groupAvatarMediaId = MutableStateFlow<String?>(null)
+    val groupAvatarMediaId: StateFlow<String?> = _groupAvatarMediaId.asStateFlow()
 
     val currentUserId: String
         get() = sessionManager.getUserId() ?: ""
@@ -53,6 +61,9 @@ class GroupProfileViewModel(
             _isLoading.value = true
             try {
                 val conv = api.getConversation(conversationId)
+                _groupName.value = conv.name ?: ""
+                _groupAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+
                 val loadedMembers = mutableListOf<GroupMemberUI>()
 
                 for (member in conv.members) {
@@ -221,6 +232,57 @@ class GroupProfileViewModel(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun updateGroupName(conversationId: String, newName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                api.updateGroupName(conversationId, UpdateGroupNameRequest(name = newName))
+                _groupName.value = newName
+            } catch (e: Exception) {
+                _error.value = "Failed to update group name: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun updateGroupAvatar(conversationId: String, bytes: ByteArray) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val mediaId = uploadImageToItemStorage(bytes, "avatar", "image/jpeg")
+                api.updateGroupAvatar(conversationId, UpdateGroupAvatarRequest(avatarMediaId = mediaId))
+                _groupAvatarMediaId.value = mediaId
+            } catch (e: Exception) {
+                _error.value = "Failed to update group avatar: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun uploadImageToItemStorage(
+        bytes: ByteArray,
+        itemType: String,
+        mimeType: String
+    ): String {
+        val initiateResp = api.initiateItemUpload(
+            InitiateItemUploadRequest(
+                itemType = itemType,
+                mimeType = mimeType,
+                sizeBytes = bytes.size.toLong()
+            )
+        )
+        api.uploadBytesToPresignedUrl(initiateResp.uploadUrl, bytes, mimeType)
+        val confirmResp = api.confirmItemUpload(initiateResp.itemId)
+        if (!confirmResp.success) {
+            throw Exception("Upload confirmation failed for item ${initiateResp.itemId}")
+        }
+        return initiateResp.itemId
     }
 
     fun leaveGroup(conversationId: String, onSuccess: () -> Unit) {
