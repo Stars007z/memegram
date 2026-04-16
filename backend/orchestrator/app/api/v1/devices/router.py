@@ -1,7 +1,8 @@
 import base64
 import dataclasses
-import logging
 from typing import Optional
+
+from app.logging_config import get_logger
 
 from fastapi import APIRouter, Depends
 
@@ -39,7 +40,7 @@ from app.core.interfaces.auth_gateway import IAuthGateway
 from app.core.interfaces.messaging_gateway import IMessagingGateway
 from app.core.session_context import SessionContext
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -224,7 +225,11 @@ async def revoke_device(
                 revoked_device_id=device_id,
             )
         except Exception:
-            logger.warning("Failed to notify messaging service about device revocation %s", device_id)
+            logger.warning(
+                        "device.revoke.notify_failed",
+                        revoked_device_id=device_id,
+                        user_id=session.user_id,
+                    )
 
     return RevokeDeviceResponseSchema(**dataclasses.asdict(result))
 
@@ -322,6 +327,10 @@ async def bulk_revoke_devices(
                     revoked_device_id=revoked_id,
                 )
             except Exception:
-                logger.warning("Failed to notify messaging about device revocation %s", revoked_id)
+                logger.warning(
+                        "device.bulk_revoke.notify_failed",
+                        revoked_device_id=revoked_id,
+                        user_id=session.user_id,
+                    )
 
     return BulkRevokeDevicesResponseSchema(**dataclasses.asdict(result))

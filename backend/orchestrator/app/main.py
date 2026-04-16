@@ -1,10 +1,10 @@
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.logging_config import setup_logging, get_logger
 from app.config import settings
 from app.container import Container
 from app.api.v1.router import v1_router
@@ -15,8 +15,10 @@ from app.exceptions.handlers import (
     validation_error_handler,
     permission_denied_handler,
 )
+from app.middleware.logging_middleware import LoggingMiddleware
 
-logger = logging.getLogger(__name__)
+setup_logging()
+logger = get_logger(__name__)
 
 
 async def _auto_delete_task(container: Container) -> None:
@@ -34,13 +36,24 @@ async def _auto_delete_task(container: Container) -> None:
         if target <= now:
             target += timedelta(days=1)
         wait_secs = (target - now).total_seconds()
-        logger.info("Next auto-delete run in %.0f s (at %s UTC)", wait_secs, target.isoformat())
+        logger.info(
+            "auto_delete.scheduled",
+            wait_seconds=round(wait_secs),
+            next_run=target.isoformat(),
+        )
         await asyncio.sleep(wait_secs)
         try:
             result = await container.user_gateway.check_and_process_auto_delete()
-            logger.info("Auto-delete completed: deleted %d users", result.deleted_count)
+            logger.info(
+                "auto_delete.completed",
+                deleted_count=result.deleted_count,
+            )
         except Exception as exc:
-            logger.error("Auto-delete failed: %s", exc)
+            logger.error(
+                "auto_delete.failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
 
 @asynccontextmanager
@@ -48,11 +61,14 @@ async def lifespan(app: FastAPI):
     container = Container(settings)
     app.state.container = container
     task = asyncio.create_task(_auto_delete_task(container))
+    logger.info("service.started", port=8000)
     try:
         yield
     finally:
+        logger.info("service.shutting_down")
         task.cancel()
         await container.close()
+        logger.info("service.stopped")
 
 
 app = FastAPI(
@@ -61,6 +77,8 @@ app = FastAPI(
     debug=settings.DEBUG,
     lifespan=lifespan,
 )
+
+app.add_middleware(LoggingMiddleware)
 
 app.include_router(v1_router)
 

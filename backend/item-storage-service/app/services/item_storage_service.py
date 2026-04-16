@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.storage_item import StorageItem
 from app.infrastructure import s3_client
 from app.config import settings
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 ITEM_TYPE_CONFIG: dict[str, dict] = {
@@ -106,6 +109,14 @@ class ItemStorageService:
         )
         expires_at = int((_now() + timedelta(seconds=settings.PRESIGNED_UPLOAD_TTL)).timestamp())
 
+        logger.info(
+            "item.upload.initiated",
+            item_id=str(item_id),
+            owner_user_id=owner_user_id,
+            item_type=item_type,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+        )
         return str(item_id), upload_url, expires_at
 
     # ── ConfirmUpload ───────────────────────────────────────────────
@@ -135,6 +146,12 @@ class ItemStorageService:
         item.status = "uploaded"
         item.uploaded_at = _now()
         await self.session.flush()
+        logger.info(
+            "item.upload.confirmed",
+            item_id=item_id,
+            owner_user_id=owner_user_id,
+            item_type=item.item_type,
+        )
         return True
 
     # ── GetDownloadUrl ──────────────────────────────────────────────
@@ -184,6 +201,12 @@ class ItemStorageService:
         item.status = "deleted"
         item.deleted_at = _now()
         await self.session.flush()
+        logger.info(
+            "item.deleted",
+            item_id=item_id,
+            owner_user_id=owner_user_id,
+            item_type=item.item_type,
+        )
         return True
 
     # ── DeleteUserItems ─────────────────────────────────────────────
@@ -215,6 +238,12 @@ class ItemStorageService:
             .values(status="deleted", deleted_at=now)
         )
         await self.session.flush()
+        logger.info(
+            "item.user_items_deleted",
+            owner_user_id=owner_user_id,
+            deleted_count=len(ids),
+            item_types=item_types,
+        )
         return len(ids)
 
     # ── CleanupPendingUploads ───────────────────────────────────────
@@ -249,6 +278,11 @@ class ItemStorageService:
             .values(status="deleted", deleted_at=now)
         )
         await self.session.flush()
+        logger.info(
+            "item.pending_cleanup",
+            cleaned_count=len(ids),
+            older_than_seconds=older_than_seconds,
+        )
         return len(ids)
 
     # ── GetItemMetadata ─────────────────────────────────────────────

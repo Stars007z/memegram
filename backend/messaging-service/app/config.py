@@ -25,6 +25,14 @@ class Settings:
 
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    SERVICE_NAME: str = os.getenv("SERVICE_NAME", "messaging-service")
+    SERVICE_VERSION: str = os.getenv("SERVICE_VERSION", "1.0.0")
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() in ("production", "staging")
+
     MAX_UPLOAD_SIZE_BYTES: int = 104_857_600  # 100 MB
     PRESIGNED_UPLOAD_TTL: int = 3600
     PRESIGNED_DOWNLOAD_TTL: int = 900
