@@ -22,7 +22,8 @@ class ChatsViewModel(
     private val sessionManager: SessionManager,
     private val api: ApiService,
     private val mlsManager: MlsManager,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val blockedUsersCache: BlockedUsersCache
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -50,12 +51,24 @@ class ChatsViewModel(
 
     private val peerCache = mutableMapOf<String, String>()
 
+    private val _blockedConversationIds = MutableStateFlow<Set<String>>(emptySet())
+    val blockedConversationIds: StateFlow<Set<String>> = _blockedConversationIds.asStateFlow()
+
     init {
         viewModelScope.launch {
             initMls()
             loadChatsInternal()
             startPolling()
             startGlobalMlsSync()
+        }
+        viewModelScope.launch { blockedUsersCache.load() }
+        viewModelScope.launch {
+            blockedUsersCache.blockedIds.collect { blockedIds ->
+                _blockedConversationIds.value = peerCache.entries
+                    .filter { (_, peerId) -> peerId in blockedIds }
+                    .map { (convId, _) -> convId }
+                    .toSet()
+            }
         }
     }
 
@@ -100,6 +113,7 @@ class ChatsViewModel(
             val newChatsList = response.items.map { conv ->
                 var chatName = conv.name?.takeIf { it.isNotBlank() } ?: "Собеседник"
                 var peerAvatarMediaId: String? = null
+                var dmPeerUserId: String? = null
 
                 if (conv.type == "direct") {
                     try {
@@ -108,6 +122,7 @@ class ChatsViewModel(
                             val peer = details.members.find { it.userId != currentUserId }
                             peer?.userId?.also { peerCache[conv.id] = it }
                         }
+                        dmPeerUserId = peerId
                         if (peerId != null) {
                             val profile = profileCache[peerId]
                                 ?: api.getUserById(peerId).also { profileCache[peerId] = it }
@@ -160,13 +175,21 @@ class ChatsViewModel(
                     unreadCount             = conv.unreadCount,
                     isLastMessageMine       = isMine,
                     lastSenderName          = senderName,
-                    avatarMediaId           = peerAvatarMediaId,
-                    lastSenderAvatarMediaId = lastSenderAvatarMediaId
+                    avatarMediaId           = peerAvatarMediaId
+                                                ?: conv.avatarMediaId?.takeIf { it.isNotBlank() },
+                    lastSenderAvatarMediaId = lastSenderAvatarMediaId,
+                    peerUserId              = dmPeerUserId
                 )
             }
 
             chatRepository.saveChats(newChatsList)
             subscribeToGlobalEvents(newChatsList.map { it.conversationId })
+
+            val blockedIds = blockedUsersCache.blockedIds.value
+            _blockedConversationIds.value = peerCache.entries
+                .filter { (_, peerId) -> peerId in blockedIds }
+                .map { (convId, _) -> convId }
+                .toSet()
 
         } catch (_: Exception) {
             if (!silent) _error.value = "Не удалось загрузить чаты"

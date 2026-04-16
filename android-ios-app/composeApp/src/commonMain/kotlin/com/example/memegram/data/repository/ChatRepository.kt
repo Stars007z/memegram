@@ -22,4 +22,9 @@ interface ChatRepository {
     suspend fun getLastMessageText(conversationId: String): String?
 
     suspend fun getMessagesOnce(conversationId: String): List<Message>
+
+    // ── Translation ──────────────────────────────────────────────────
+    suspend fun updateMessageTranslation(serverId: String, translatedText: String, fromLang: String)
+    suspend fun revertMessageTranslation(serverId: String)
+    suspend fun showCachedTranslation(serverId: String)
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,7 +36,10 @@ fun BlackListScreen(
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val blockedUsers by viewModel.blockedUsers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val canLoadMore by viewModel.canLoadMore.collectAsState()
     val error by viewModel.error.collectAsState()
+    val listState = rememberLazyListState()
 
     var pendingUnblockId by remember { mutableStateOf<String?>(null) }
 
@@ -120,7 +124,7 @@ fun BlackListScreen(
                 }
 
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                         items(blockedUsers, key = { it.blockedUserId }) { entry ->
                             BlockedUserItem(
                                 displayName = entry.profile?.username
@@ -134,6 +138,22 @@ fun BlackListScreen(
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             )
                         }
+                        if (isLoadingMore) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(16.sdp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.sdp))
+                                }
+                            }
+                        }
+                    }
+                    val shouldLoadMore = remember {
+                        derivedStateOf {
+                            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            lastVisible >= blockedUsers.size - 5 && canLoadMore && !isLoadingMore
+                        }
+                    }
+                    LaunchedEffect(shouldLoadMore.value) {
+                        if (shouldLoadMore.value) viewModel.loadMore()
                     }
                 }
             }

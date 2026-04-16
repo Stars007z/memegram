@@ -239,6 +239,8 @@ fun ChatScreen(
     val messageSenders by viewModel.messageSenders.collectAsState()
     val memberProfiles by viewModel.memberProfiles.collectAsState()
     val peerAvatarMediaId by viewModel.peerAvatarMediaId.collectAsState()
+    val isPeerBlocked by viewModel.isPeerBlocked.collectAsState()
+    var showBlockConfirm by remember { mutableStateOf(false) }
 
     val replyingTo by viewModel.replyingTo.collectAsState()
     val replyContext by viewModel.replyContext.collectAsState()
@@ -490,6 +492,24 @@ fun ChatScreen(
             }
         )
     }
+    if (showBlockConfirm && !isGroupChat) {
+        AlertDialog(
+            onDismissRequest = { showBlockConfirm = false },
+            title = { Text(s.blockConfirmTitle(chatName)) },
+            text  = { Text(s.blockConfirmMessage(chatName)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlockConfirm = false
+                        if (isPeerBlocked) viewModel.unblockPeer() else viewModel.blockPeer()
+                    },
+                    colors = if (!isPeerBlocked) ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                             else ButtonDefaults.textButtonColors()
+                ) { Text(if (isPeerBlocked) s.unblockUser else s.blockUser) }
+            },
+            dismissButton = { TextButton(onClick = { showBlockConfirm = false }) { Text(s.cancel) } }
+        )
+    }
     if (showFullScreenAvatar) {
         AlertDialog(
             onDismissRequest = { showFullScreenAvatar = false },
@@ -554,7 +574,7 @@ fun ChatScreen(
                     ) {
                         Box(modifier = Modifier.clickable { showFullScreenAvatar = true }) {
                             AvatarImage(
-                                mediaId = if (!isGroupChat) peerAvatarMediaId else null,
+                                mediaId = peerAvatarMediaId,
                                 size = 36.sdp,
                                 fallbackLetter = chatName.take(1).uppercase(),
                                 backgroundColor = topBarTextColor.copy(alpha = 0.2f),
@@ -577,6 +597,13 @@ fun ChatScreen(
                                 DropdownMenuItem(text = { Text(s.call) },             leadingIcon = { Icon(Icons.Default.Call, null) },              onClick = { showMenu = false })
                                 DropdownMenuItem(text = { Text(s.notifications) },    leadingIcon = { Icon(Icons.Default.NotificationsOff, null) },  onClick = { showMenu = false; showMuteDialog = true })
                                 DropdownMenuItem(text = { Text(s.changeWallpaper) },  leadingIcon = { Icon(Icons.Default.Wallpaper, null) },         onClick = { showMenu = false })
+                                if (!isGroupChat) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (isPeerBlocked) s.unblockUser else s.blockUser, color = if (!isPeerBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
+                                        leadingIcon = { Icon(Icons.Default.Block, null, tint = if (!isPeerBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = { showMenu = false; showBlockConfirm = true }
+                                    )
+                                }
                                 HorizontalDivider()
                                 DropdownMenuItem(text = { Text(s.clearHistory) }, leadingIcon = { Icon(Icons.Default.CleaningServices, null) }, onClick = { showMenu = false; showClearDialog = true })
                                 DropdownMenuItem(
@@ -593,7 +620,25 @@ fun ChatScreen(
             }
         },
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.sdp) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.sdp,
+                modifier = Modifier.imePadding()
+            ) {
+                if (isPeerBlocked && !isGroupChat) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp, vertical = 12.sdp)
+                            .navigationBarsPadding(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Block, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.sdp))
+                        Spacer(Modifier.width(8.sdp))
+                        Text(s.userBlockedBanner, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else {
                 Column {
                     if (attachments.isNotEmpty()) {
                         LazyRow(
@@ -790,6 +835,7 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
             }
         }
     ) { paddingValues ->
@@ -1020,6 +1066,35 @@ fun ChatScreen(
                                                 contextMenuMessage = null
                                             }
                                         )
+
+                                        if (message.isTranslated) {
+                                            DropdownMenuItem(
+                                                text = { Text(s.showOriginal) },
+                                                leadingIcon = { Icon(Icons.Default.Translate, null) },
+                                                onClick = {
+                                                    viewModel.revertTranslation(message)
+                                                    contextMenuMessage = null
+                                                }
+                                            )
+                                        } else if (message.translatedText != null) {
+                                            DropdownMenuItem(
+                                                text = { Text(s.showTranslation) },
+                                                leadingIcon = { Icon(Icons.Default.Translate, null) },
+                                                onClick = {
+                                                    viewModel.showCachedTranslation(message)
+                                                    contextMenuMessage = null
+                                                }
+                                            )
+                                        } else {
+                                            DropdownMenuItem(
+                                                text = { Text(s.translate) },
+                                                leadingIcon = { Icon(Icons.Default.Translate, null) },
+                                                onClick = {
+                                                    viewModel.translateMessage(message)
+                                                    contextMenuMessage = null
+                                                }
+                                            )
+                                        }
                                     }
 
                                     DropdownMenuItem(
@@ -1584,6 +1659,15 @@ fun MessageBubble(
                     }
                     Text(text = annotated, color = textColor,
                         style = MaterialTheme.typography.bodyLarge, modifier = textMod)
+                    if (message.isTranslated && message.translatedFromLang != null) {
+                        val indicator = com.example.memegram.translation.translationIndicator(message.translatedFromLang)
+                        Text(
+                            text = "$indicator ${s.translated}",
+                            color = textColor.copy(alpha = 0.55f),
+                            fontSize = 10.ssp,
+                            modifier = if (isImageMsg) Modifier.padding(horizontal = 12.sdp) else Modifier
+                        )
+                    }
                 }
 
                 if (isOut && message.status != MessageStatus.SENT) {

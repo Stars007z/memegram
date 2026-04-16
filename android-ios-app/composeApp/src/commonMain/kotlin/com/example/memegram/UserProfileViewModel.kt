@@ -2,17 +2,22 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.models.BlockUserRequest
 import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ContactsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class UserProfileViewModel(
     private val api: ApiService,
-    private val contactsRepository: ContactsRepository
+    private val contactsRepository: ContactsRepository,
+    private val blockedUsersCache: BlockedUsersCache
 ) : ViewModel() {
 
     private val _userProfile = MutableStateFlow<UserProfileResponse?>(null)
@@ -30,6 +35,14 @@ class UserProfileViewModel(
     private val _coverBytes = MutableStateFlow<ByteArray?>(null)
     val coverBytes: StateFlow<ByteArray?> = _coverBytes.asStateFlow()
 
+    private val _isContact = MutableStateFlow(false)
+    val isContact: StateFlow<Boolean> = _isContact.asStateFlow()
+
+    val isBlocked: StateFlow<Boolean> = combine(
+        _userProfile, blockedUsersCache.blockedIds
+    ) { profile, ids -> profile?.id?.let { it in ids } ?: false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     fun loadUser(userId: String) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -38,6 +51,10 @@ class UserProfileViewModel(
                 _userProfile.value = profile
                 profile.avatarMediaId?.let { fetchImage(it, "avatar") }
                 profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                try {
+                    val contacts = contactsRepository.getContacts(limit = 200, offset = 0).getOrNull()
+                    _isContact.value = contacts?.any { it.contactUserId == userId } == true
+                } catch (_: Exception) {}
             } catch (e: Exception) {
                 _actionMessage.value = "Error loading profile"
             } finally {
@@ -64,9 +81,34 @@ class UserProfileViewModel(
         viewModelScope.launch {
             try {
                 contactsRepository.addContact(pubKey)
+                _isContact.value = true
                 _actionMessage.value = "User added to contacts"
             } catch (e: Exception) {
                 _actionMessage.value = "Error: User already in contacts or unavailable"
+            }
+        }
+    }
+
+    fun blockUser() {
+        val userId = _userProfile.value?.id ?: return
+        viewModelScope.launch {
+            try {
+                api.blockUser(BlockUserRequest(userId))
+                blockedUsersCache.add(userId)
+            } catch (e: Exception) {
+                _actionMessage.value = e.message
+            }
+        }
+    }
+
+    fun unblockUser() {
+        val userId = _userProfile.value?.id ?: return
+        viewModelScope.launch {
+            try {
+                api.unblockUser(userId)
+                blockedUsersCache.remove(userId)
+            } catch (e: Exception) {
+                _actionMessage.value = e.message
             }
         }
     }

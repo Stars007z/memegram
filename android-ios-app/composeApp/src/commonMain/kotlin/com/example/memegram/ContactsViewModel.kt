@@ -14,7 +14,8 @@ import kotlin.time.Clock
 class ContactsViewModel(
     private val contactsRepository: ContactsRepository,
     private val api: ApiService,
-    private val mlsManager: MlsManager
+    private val mlsManager: MlsManager,
+    private val blockedUsersCache: BlockedUsersCache
 ) : ViewModel() {
 
     private val _contacts = MutableStateFlow<List<ContactEntry>>(emptyList())
@@ -90,7 +91,18 @@ class ContactsViewModel(
     fun blockUser(contactUserId: String) {
         viewModelScope.launch {
             contactsRepository.blockUser(contactUserId)
-                .onSuccess { _contacts.value = contacts.value.filter { it.contactUserId != contactUserId } }
+                .onSuccess {
+                    _contacts.value = contacts.value.filter { it.contactUserId != contactUserId }
+                    blockedUsersCache.add(contactUserId)
+                }
+                .onFailure { _error.value = it.message }
+        }
+    }
+
+    fun unblockUser(userId: String) {
+        viewModelScope.launch {
+            contactsRepository.unblockUser(userId)
+                .onSuccess { blockedUsersCache.remove(userId) }
                 .onFailure { _error.value = it.message }
         }
     }
@@ -98,12 +110,6 @@ class ContactsViewModel(
     fun resetAddSuccess() { _addSuccess.value = false }
     fun clearError() { _error.value = null }
 
-    /**
-     * Attempt to commit a group change. If the server rejects it with an epoch
-     * conflict (e.g. "expected 2, got 1"), parse the expected epoch and retry
-     * once with the corrected value.
-     * Returns the actual epoch after a successful commit.
-     */
     private suspend fun commitGroupChangeWithRetry(
         convId: String,
         request: CommitGroupChangeRequest
@@ -125,12 +131,14 @@ class ContactsViewModel(
     }
 
     private val _pendingChatContact = MutableStateFlow<String?>(null)
+    private val _pendingChatAvatarMediaId = MutableStateFlow<String?>(null)
 
     fun startDirectChatWith(entry: ContactEntry) {
         val displayName = entry.profile?.username
             ?.takeIf { it.isNotBlank() }
             ?: entry.contactUserId.take(8)
         _pendingChatContact.value = displayName
+        _pendingChatAvatarMediaId.value = entry.profile?.avatarMediaId
 
         viewModelScope.launch {
             _isCreatingChat.value = true
@@ -208,6 +216,8 @@ class ContactsViewModel(
 
     fun getPendingChatName(): String? = _pendingChatContact.value
     fun clearPendingChatName() { _pendingChatContact.value = null }
+    fun getPendingChatAvatarMediaId(): String? = _pendingChatAvatarMediaId.value
+    fun clearPendingChatAvatarMediaId() { _pendingChatAvatarMediaId.value = null }
 
     fun createGroupChat(groupName: String, selectedUserIds: List<String>) {
         if (groupName.isBlank() || selectedUserIds.isEmpty()) {

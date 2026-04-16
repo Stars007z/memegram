@@ -51,3 +51,11 @@ alembic/versions/*.pyc
 static/
 
 memegram-362c0-firebase-adminsdk-fbsvc-87eea9959e.json
+
+exported_models/
+
+tools/__pycache__/
+tools/trace_bpe.py
+tools/trace_bpe2.py
+
+.cache/

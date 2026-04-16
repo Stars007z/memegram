@@ -10,7 +10,8 @@ data class ChatModel(
     val isLastMessageMine: Boolean = false,
     val lastSenderName: String? = null,
     val avatarMediaId: String? = null,
-    val lastSenderAvatarMediaId: String? = null
+    val lastSenderAvatarMediaId: String? = null,
+    val peerUserId: String? = null
 )
 
 data class Message(
@@ -26,7 +27,11 @@ data class Message(
     val localPreviewBytes: ByteArray? = null,
     val mediaUrl: String? = null,
     val senderUserId: String? = null,
-    val groupId: String? = null
+    val groupId: String? = null,
+    val originalText: String? = null,
+    val translatedText: String? = null,
+    val translatedFromLang: String? = null,
+    val isTranslated: Boolean = false
 )
 
 enum class MessageStatus { SENDING, SENT, FAILED }

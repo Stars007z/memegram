@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
@@ -42,6 +43,9 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import com.example.memegram.audio.GlobalAudioPlayer
 import com.example.memegram.audio.VoicePlaybackBar
+import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.models.CreateInviteRequest
+import com.example.memegram.data.network.ApiService
 import com.example.memegram.localization.LocalStrings
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -55,7 +59,7 @@ fun ChatsScreen(
     topBarColor: Color,
     onStorageClick: () -> Unit,
     onChatClick: (ChatModel) -> Unit,
-    onNavigateToChat: (String) -> Unit,
+    onNavigateToChat: (convId: String, chatName: String?, avatarMediaId: String?) -> Unit,
     onNavigateToCreateGroup: () -> Unit,
     onAppearanceClick: () -> Unit,
     onProfileClick: () -> Unit,
@@ -71,6 +75,7 @@ fun ChatsScreen(
     val s = LocalStrings.current
     val chats by viewModel.chats.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val blockedConvIds by viewModel.blockedConversationIds.collectAsState()
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
     val audioPlaybackState by globalAudioPlayer.state.collectAsState()
@@ -90,6 +95,15 @@ fun ChatsScreen(
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var newKeyInput by remember { mutableStateOf("") }
 
+    val sessionManager = koinInject<SessionManager>()
+    val apiService = koinInject<ApiService>()
+    val isAdmin = remember { sessionManager.getDeviceType() == "admin" }
+    var showInviteDialog by remember { mutableStateOf(false) }
+    var inviteDays by remember { mutableStateOf("7") }
+    var isCreatingInvite by remember { mutableStateOf(false) }
+    var createdInviteCode by remember { mutableStateOf<String?>(null) }
+    var inviteError by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Unit) {
         profileViewModel.loadProfile()
     }
@@ -100,8 +114,12 @@ fun ChatsScreen(
     }
     LaunchedEffect(createdChatId) {
         createdChatId?.let { id ->
+            val chatName = contactsVm.getPendingChatName()
+            val avatarMediaId = contactsVm.getPendingChatAvatarMediaId()
             contactsVm.clearChatCreated()
-            onNavigateToChat(id)
+            contactsVm.clearPendingChatName()
+            contactsVm.clearPendingChatAvatarMediaId()
+            onNavigateToChat(id, chatName, avatarMediaId)
         }
     }
 
@@ -207,6 +225,16 @@ fun ChatsScreen(
                     onClick = { scope.launch { drawerState.close(); onLanguageClick() } },
                     modifier = Modifier.padding(horizontal = 12.sdp)
                 )
+                if (isAdmin) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.sdp))
+                    NavigationDrawerItem(
+                        label = { Text(s.createInvite) },
+                        icon = { Icon(Icons.Default.CardGiftcard, null) },
+                        selected = false,
+                        onClick = { scope.launch { drawerState.close() }; showInviteDialog = true },
+                        modifier = Modifier.padding(horizontal = 12.sdp)
+                    )
+                }
             }
         }
     ) {
@@ -348,6 +376,92 @@ fun ChatsScreen(
                         }
                     )
                 }
+                if (showInviteDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isCreatingInvite) {
+                                showInviteDialog = false
+                                createdInviteCode = null
+                                inviteError = null
+                            }
+                        },
+                        title = { Text(s.createInviteTitle) },
+                        text = {
+                            Column {
+                                if (createdInviteCode != null) {
+                                    Text(s.inviteCreated, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(8.sdp))
+                                    SelectionContainer {
+                                        Text(
+                                            text = createdInviteCode!!,
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                } else {
+                                    OutlinedTextField(
+                                        value = inviteDays,
+                                        onValueChange = { inviteDays = it.filter { c -> c.isDigit() } },
+                                        label = { Text(s.createInviteExpiresDays) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !isCreatingInvite,
+                                        singleLine = true
+                                    )
+                                    inviteError?.let { err ->
+                                        Spacer(Modifier.height(8.sdp))
+                                        Text(err, color = MaterialTheme.colorScheme.error, fontSize = 13.ssp)
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            if (createdInviteCode != null) {
+                                TextButton(onClick = {
+                                    showInviteDialog = false
+                                    createdInviteCode = null
+                                }) { Text(s.close) }
+                            } else {
+                                TextButton(
+                                    onClick = {
+                                        val days = inviteDays.toIntOrNull()
+                                        if (days == null || days < 1) {
+                                            inviteError = "Invalid days"
+                                            return@TextButton
+                                        }
+                                        isCreatingInvite = true
+                                        inviteError = null
+                                        scope.launch {
+                                            try {
+                                                val resp = apiService.createInvite(CreateInviteRequest(days))
+                                                createdInviteCode = resp.code
+                                            } catch (e: Exception) {
+                                                inviteError = e.message
+                                            } finally {
+                                                isCreatingInvite = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !isCreatingInvite
+                                ) {
+                                    if (isCreatingInvite) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.sdp), strokeWidth = 2.sdp)
+                                    } else {
+                                        Text(s.create)
+                                    }
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            if (createdInviteCode == null) {
+                                TextButton(
+                                    onClick = { showInviteDialog = false; inviteError = null },
+                                    enabled = !isCreatingInvite
+                                ) { Text(s.cancel) }
+                            }
+                        }
+                    )
+                }
             }
         ) { paddingValues ->
             Column(
@@ -376,7 +490,11 @@ fun ChatsScreen(
                     } else {
                         LazyColumn(Modifier.fillMaxSize()) {
                             items(chats, key = { it.id }) { chat ->
-                                ChatItem(chat = chat, onClick = { onChatClick(chat) })
+                                ChatItem(
+                                    chat = chat,
+                                    onClick = { onChatClick(chat) },
+                                    isBlocked = chat.conversationId in blockedConvIds
+                                )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 76.sdp),
                                     color = MaterialTheme.colorScheme.surfaceVariant
@@ -405,7 +523,7 @@ fun formatChatTime(timestampMs: Long): String {
 }
 
 @Composable
-fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
+fun ChatItem(chat: ChatModel, onClick: () -> Unit, isBlocked: Boolean = false) {
     val s = LocalStrings.current
     Row(
         modifier = Modifier
@@ -424,13 +542,24 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit) {
         Spacer(modifier = Modifier.width(16.sdp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = chat.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = chat.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isBlocked) {
+                    Spacer(Modifier.width(6.sdp))
+                    Icon(
+                        Icons.Default.Block, null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.sdp)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(4.sdp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
