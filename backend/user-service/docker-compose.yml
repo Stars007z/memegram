@@ -53,6 +53,8 @@ services:
       - REDIS_URL=redis://redis:6379/1
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SERVICE_NAME=user-service
     ports:
       - "50052:50052"
     depends_on:
@@ -63,6 +65,12 @@ services:
     networks:
       - user-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+        tag: "{{.Name}}"
     healthcheck:
       test: ["CMD", "python", "-c",
         "import grpc; ch = grpc.insecure_channel('localhost:50052'); grpc.channel_ready_future(ch).result(timeout=5)"]

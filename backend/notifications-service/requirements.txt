@@ -10,3 +10,4 @@ redis>=5.0.0
 greenlet>=3.0.0
 firebase-admin>=6.0.0
 aioapns>=3.0
+structlog>=24.1.0

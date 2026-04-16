@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-service
+  namespace: memegram
+  labels:
+    app: notifications-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-service
+  template:
+    metadata:
+      labels:
+        app: notifications-service
+        app.kubernetes.io/part-of: memegram
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z notifications-postgres 5432; do
+                echo "Waiting for notifications-postgres..."
+                sleep 2
+              done
+      containers:
+        - name: notifications-service
+          image: memegram/notifications-service:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "alembic upgrade head && python -m app.main"
+          ports:
+            - containerPort: 50057
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@notifications-postgres:5432/notifications_db"
+            - name: GRPC_PORT
+              value: "50057"
+            - name: REDIS_URL
+              value: "redis://notifications-redis:6379/0"
+            - name: MESSAGING_REDIS_URL
+              value: "redis://messaging-redis:6379/0"
+            - name: STREAM_NAME
+              value: "notifications:events"
+            - name: CONSUMER_GROUP
+              value: notifications-cg
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: firebase-credentials
+                  key: GOOGLE_APPLICATION_CREDENTIALS
+            - name: FCM_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: firebase-credentials
+                  key: FCM_PROJECT_ID
+            - name: APNS_KEY_PATH
+              value: ""
+            - name: APNS_KEY_ID
+              value: ""
+            - name: APNS_TEAM_ID
+              value: ""
+            - name: APNS_BUNDLE_ID
+              value: com.memegram.app
+            - name: APNS_USE_SANDBOX
+              value: "true"
+            - name: MESSAGING_GRPC_HOST
+              value: messaging-service
+            - name: MESSAGING_GRPC_PORT
+              value: "50054"
+            - name: USER_GRPC_HOST
+              value: user-service
+            - name: USER_GRPC_PORT
+              value: "50052"
+            - name: ITEM_STORAGE_GRPC_HOST
+              value: item-storage-service
+            - name: ITEM_STORAGE_GRPC_PORT
+              value: "50056"
+            - name: ENVIRONMENT
+              value: development
+            - name: SERVICE_VERSION
+              value: "1.0.0"
+          readinessProbe:
+            tcpSocket:
+              port: 50057
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-service
+  namespace: memegram
+  labels:
+    app: notifications-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  selector:
+    app: notifications-service
+  ports:
+    - port: 50057
+      targetPort: 50057

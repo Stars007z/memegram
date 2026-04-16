@@ -12,6 +12,7 @@ from app.repositories.mls_group_repo import MlsGroupRepository
 from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
 from app.infrastructure.auth_client import IAuthClient
+from app.logging_config import get_logger
 from app.services.interfaces.mls_service import (
     CommitEntryResult,
     CommitResult,
@@ -24,6 +25,8 @@ from app.services.interfaces.stream_service import IStreamService
 
 
 DEFAULT_CIPHER_SUITE = 1  # MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+
+logger = get_logger(__name__)
 
 
 class MlsServiceImpl(IMlsService):
@@ -68,6 +71,12 @@ class MlsServiceImpl(IMlsService):
             })
 
         created = await self._key_packages.create_many(items)
+        logger.info(
+            "mls.key_packages.uploaded",
+            user_id=str(user_id),
+            device_id=str(device_id),
+            count=len(created),
+        )
         return len(created)
 
     async def get_key_package(
@@ -210,6 +219,15 @@ class MlsServiceImpl(IMlsService):
             "new_epoch": new_epoch,
         })
 
+        logger.info(
+            "mls.group.commit",
+            conversation_id=str(conversation_id),
+            device_id=str(device_id),
+            new_epoch=new_epoch,
+            added_count=len(added_user_ids) if added_user_ids else 0,
+            removed_count=len(removed_device_ids) if removed_device_ids else 0,
+        )
+
         return CommitResult(new_epoch=new_epoch, committed_at=now.timestamp())
 
     # ── Welcomes & Commits ──────────────────────────
@@ -266,5 +284,12 @@ class MlsServiceImpl(IMlsService):
                 "revoked_device_id": str(revoked_device_id),
                 "conversation_ids": [str(c) for c in conv_ids],
             })
+
+        logger.info(
+            "mls.device_revoked.notified",
+            user_id=str(user_id),
+            revoked_device_id=str(revoked_device_id),
+            conversation_count=len(conv_ids),
+        )
 
         return len(conv_ids)

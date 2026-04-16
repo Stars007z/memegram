@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.user_settings import UserSettings
 from app.database.redis import check_and_set_last_active_debounce
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _now() -> datetime:
@@ -35,6 +38,13 @@ class UserService:
         default_settings = UserSettings(user_id=user.id)
         self.session.add(default_settings)
         await self.session.flush()
+
+        logger.info(
+            "user.created",
+            user_id=user_id,
+            username=username,
+        )
+
         return user
 
     async def get_user(self, user_id: str, requester_user_id: str) -> tuple[User, bool]:
@@ -121,18 +131,30 @@ class UserService:
         if not user:
             raise ValueError("User not found")
 
+        updated_fields = []
         if username is not None:
             user.username = username
+            updated_fields.append("username")
         if bio is not None:
             user.bio = bio
+            updated_fields.append("bio")
         if avatar_media_id is not None:
             user.avatar_media_id = uuid.UUID(avatar_media_id) if avatar_media_id else None
+            updated_fields.append("avatar_media_id")
         if profile_background_media_id is not None:
             user.profile_background_media_id = (
                 uuid.UUID(profile_background_media_id) if profile_background_media_id else None
             )
+            updated_fields.append("profile_background_media_id")
 
         await self.session.flush()
+
+        logger.info(
+            "user.updated",
+            user_id=user_id,
+            updated_fields=updated_fields,
+        )
+
         return user
 
     async def delete_user(self, user_id: str) -> datetime:
@@ -148,6 +170,9 @@ class UserService:
         user.deleted_at = ts
         user.username = f"{user.username}_deleted_{int(ts.timestamp())}"
         await self.session.flush()
+
+        logger.info("user.deleted", user_id=user_id)
+
         return ts
 
     async def check_and_process_auto_delete(self) -> tuple[int, list[str]]:
@@ -173,6 +198,14 @@ class UserService:
         for user in users_to_delete:
             await self.delete_user(str(user.id))
             deleted_ids.append(str(user.id))
+
+        if deleted_ids:
+            logger.info(
+                "user.auto_delete.processed",
+                deleted_count=len(deleted_ids),
+                user_ids=deleted_ids,
+            )
+
         return len(deleted_ids), deleted_ids
 
     async def get_user_settings(self, user_id: str) -> UserSettings:
@@ -210,6 +243,13 @@ class UserService:
 
         settings.updated_at = _now()
         await self.session.flush()
+
+        logger.info(
+            "user.settings_updated",
+            user_id=user_id,
+            updated_fields=list(kwargs.keys()),
+        )
+
         return settings
 
     async def get_users_batch(self, user_ids: list[str]) -> list[User]:

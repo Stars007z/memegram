@@ -20,7 +20,10 @@ from app.services.interfaces.conversation_service import (
     MemberResult,
     MlsGroupResult,
 )
+from app.logging_config import get_logger
 from app.services.interfaces.stream_service import IStreamService
+
+logger = get_logger(__name__)
 
 
 class ConversationServiceImpl(IConversationService):
@@ -95,6 +98,13 @@ class ConversationServiceImpl(IConversationService):
                 "welcome_data": welcome_data,
             })
 
+        logger.info(
+            "conversation.direct.created",
+            conversation_id=str(conv.id),
+            initiator_user_id=str(initiator_user_id),
+            recipient_user_id=str(recipient_user_id),
+        )
+
         return self._build_conversation_result(
             conv, [initiator_member, recipient_member], epoch=1, cipher_suite=1,
         )
@@ -148,6 +158,13 @@ class ConversationServiceImpl(IConversationService):
             "current_epoch": 0,
             "cipher_suite": 1,
         })
+
+        logger.info(
+            "conversation.group.created",
+            conversation_id=str(conv.id),
+            creator_user_id=str(creator_user_id),
+            member_count=len(all_members),
+        )
 
         return self._build_conversation_result(
             conv, all_members, epoch=0, cipher_suite=1,
@@ -233,6 +250,12 @@ class ConversationServiceImpl(IConversationService):
         # a remaining member will create the Remove Commit per RFC 9420 §12.2).
         await self._members.update(member, {"left_at": datetime.utcnow()})
 
+        logger.info(
+            "conversation.member.left",
+            conversation_id=str(conversation_id),
+            user_id=str(user_id),
+        )
+
         await self._stream.publish_event(conversation_id, {
             "event_type": "member_left",
             "user_id": str(user_id),
@@ -274,6 +297,13 @@ class ConversationServiceImpl(IConversationService):
 
         # Mark as left
         await self._members.update(target, {"left_at": datetime.utcnow()})
+
+        logger.info(
+            "conversation.member.kicked",
+            conversation_id=str(conversation_id),
+            target_user_id=str(target_user_id),
+            kicked_by=str(caller_user_id),
+        )
 
         await self._stream.publish_event(conversation_id, {
             "event_type": "member_kicked",
@@ -324,6 +354,14 @@ class ConversationServiceImpl(IConversationService):
             return True
 
         await self._members.update_role(conversation_id, target_user_id, new_role)
+
+        logger.info(
+            "conversation.role.changed",
+            conversation_id=str(conversation_id),
+            target_user_id=str(target_user_id),
+            new_role=new_role,
+            changed_by=str(caller_user_id),
+        )
 
         await self._stream.publish_event(conversation_id, {
             "event_type": "role_changed",

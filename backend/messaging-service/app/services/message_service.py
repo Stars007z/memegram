@@ -1,4 +1,3 @@
-import logging
 import uuid
 
 from datetime import datetime
@@ -6,6 +5,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from app.logging_config import get_logger
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
 from app.repositories.message_repo import MessageRepository
@@ -18,7 +18,7 @@ from app.services.interfaces.message_service import (
 )
 from app.services.interfaces.stream_service import IStreamService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MessageServiceImpl(IMessageService):
@@ -81,6 +81,14 @@ class MessageServiceImpl(IMessageService):
             "event_type": "new_message",
             "message": self._msg_to_dict(msg),
         })
+
+        logger.info(
+            "message.sent",
+            message_id=str(msg.id),
+            conversation_id=str(conversation_id),
+            sender_user_id=str(sender_user_id),
+            type=type,
+        )
 
         return SendResult(message_id=msg.id, created_at=msg.created_at.timestamp())
 
@@ -170,9 +178,18 @@ class MessageServiceImpl(IMessageService):
                 await self._media.delete_media(msg.media_id)
             except Exception:
                 logger.warning(
-                    "Failed to delete media %s for message %s",
-                    msg.media_id, msg.id,
+                    "media.delete_failed",
+                    media_id=str(msg.media_id),
+                    message_id=str(msg.id),
                 )
+
+        logger.info(
+            "message.deleted",
+            message_id=str(msg.id),
+            conversation_id=str(msg.conversation_id),
+            user_id=str(user_id),
+            delete_for_everyone=delete_for_everyone,
+        )
 
         await self._stream.publish_event(msg.conversation_id, {
             "event_type": "message_deleted",

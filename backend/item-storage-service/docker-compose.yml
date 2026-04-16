@@ -74,6 +74,8 @@ services:
       - GRPC_PORT=${GRPC_PORT:-50056}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+      - SERVICE_NAME=item-storage-service
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - AWS_ACCESS_KEY_ID=minioadmin
       - AWS_SECRET_ACCESS_KEY=minioadmin
       - AWS_REGION=eu-central-1
@@ -94,6 +96,12 @@ services:
     networks:
       - item-storage-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+        tag: "{{.Name}}"
     healthcheck:
       test: ["CMD", "python", "-c",
         "import grpc; ch = grpc.insecure_channel('localhost:50056'); grpc.channel_ready_future(ch).result(timeout=5)"]

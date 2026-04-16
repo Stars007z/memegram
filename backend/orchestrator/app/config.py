@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
+    LOG_LEVEL: str = "INFO"
+    SERVICE_NAME: str = "orchestrator"
+    SERVICE_VERSION: str = "1.0.0"
+    ENVIRONMENT: str = "development"
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
+
     AUTH_GRPC_HOST: str = "localhost"
     AUTH_GRPC_PORT: int = 50051
     AUTH_GRPC_TIMEOUT: float = 10.0

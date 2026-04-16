@@ -8,9 +8,14 @@ from app.container import Container
 from app.database.redis import RedisClient
 from app.generated import messaging_pb2, messaging_pb2_grpc
 from app.grpc_handlers.messaging_handler import MessagingHandler
+from app.grpc_interceptor import LoggingInterceptor
 from app.infrastructure.auth_client import GrpcAuthClient
 from app.infrastructure.contacts_client import GrpcContactsClient
 from app.infrastructure.media_client import GrpcMediaClient
+from app.logging_config import setup_logging, get_logger
+
+setup_logging()
+logger = get_logger(__name__)
 
 SERVICE_NAMES = (
     messaging_pb2.DESCRIPTOR.services_by_name["MessagingService"].full_name,
@@ -41,7 +46,7 @@ async def _build_container() -> Container:
 async def serve() -> None:
     container = await _build_container()
 
-    server = grpc.aio.server()
+    server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     messaging_pb2_grpc.add_MessagingServiceServicer_to_server(
         MessagingHandler(container), server,
     )
@@ -49,19 +54,19 @@ async def serve() -> None:
     reflection.enable_server_reflection(SERVICE_NAMES, server)
     server.add_insecure_port(f"[::]:{settings.GRPC_PORT}")
 
-    print(f"Messaging service running on port {settings.GRPC_PORT}")
+    logger.info("service.started", port=settings.GRPC_PORT)
     await server.start()
 
     try:
         await server.wait_for_termination()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logger.info("service.shutting_down")
         await server.stop(0)
 
         from app.database.session import close_db
         await close_db()
         await RedisClient.close()
-        print("All connections closed")
+        logger.info("service.stopped", message="All connections closed")
 
 
 if __name__ == "__main__":

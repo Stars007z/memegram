@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: contacts-postgres
+  namespace: memegram
+  labels:
+    app: contacts-postgres
+    app.kubernetes.io/part-of: memegram
+spec:
+  serviceName: contacts-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contacts-postgres
+  template:
+    metadata:
+      labels:
+        app: contacts-postgres
+        app.kubernetes.io/part-of: memegram
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: contacts_db
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - memegram
+                - -d
+                - contacts_db
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contacts-postgres
+  namespace: memegram
+  labels:
+    app: contacts-postgres
+    app.kubernetes.io/part-of: memegram
+spec:
+  clusterIP: None
+  selector:
+    app: contacts-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
