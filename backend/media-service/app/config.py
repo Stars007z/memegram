@@ -26,6 +26,13 @@ class Settings:
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SERVICE_VERSION: str = os.getenv("SERVICE_VERSION", "1.0.0")
 
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    SERVICE_NAME: str = os.getenv("SERVICE_NAME", "media-service")
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
+
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT.lower() == "development"

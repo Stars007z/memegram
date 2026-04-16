@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-redis
+  namespace: memegram
+  labels:
+    app: auth-redis
+    app.kubernetes.io/part-of: memegram
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-redis
+  template:
+    metadata:
+      labels:
+        app: auth-redis
+        app.kubernetes.io/part-of: memegram
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-redis
+  namespace: memegram
+  labels:
+    app: auth-redis
+    app.kubernetes.io/part-of: memegram
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

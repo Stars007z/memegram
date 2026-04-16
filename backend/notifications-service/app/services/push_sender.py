@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -12,8 +11,9 @@ from enum import Enum
 from typing import Any
 
 from app.config import settings
+from app.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PushPlatform(str, Enum):
@@ -81,9 +81,9 @@ class FcmSender(IPushSender):
                 # Use Application Default Credentials
                 firebase_admin.initialize_app()
             self._initialized = True
-            logger.info("FCM initialized (project=%s)", settings.FCM_PROJECT_ID)
+            logger.info("fcm.initialized", project=settings.FCM_PROJECT_ID)
         except Exception as e:
-            logger.warning("FCM initialization failed: %s", e)
+            logger.warning("fcm.init_failed", error=str(e))
 
     async def send(self, payload: PushPayload) -> PushResult:
         self._ensure_initialized()
@@ -152,9 +152,9 @@ class ApnsSender(IPushSender):
                 topic=settings.APNS_BUNDLE_ID,
                 use_sandbox=settings.APNS_USE_SANDBOX,
             )
-            logger.info("APNs client initialized (bundle=%s, sandbox=%s)", settings.APNS_BUNDLE_ID, settings.APNS_USE_SANDBOX)
+            logger.info("apns.initialized", bundle=settings.APNS_BUNDLE_ID, sandbox=settings.APNS_USE_SANDBOX)
         except Exception as e:
-            logger.warning("APNs initialization failed: %s", e)
+            logger.warning("apns.init_failed", error=str(e))
         return self._client
 
     async def send(self, payload: PushPayload) -> PushResult:

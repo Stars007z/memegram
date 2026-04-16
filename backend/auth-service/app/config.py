@@ -31,6 +31,10 @@ class Settings:
 
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    SERVICE_NAME: str = os.getenv("SERVICE_NAME", "auth-service")
+    SERVICE_VERSION: str = os.getenv("SERVICE_VERSION", "1.0.0")
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"

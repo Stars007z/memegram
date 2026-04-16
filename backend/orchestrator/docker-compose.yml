@@ -29,6 +29,10 @@ services:
       - MEDIA_GRPC_TIMEOUT=10.0
       - AUTO_DELETE_CRON_HOUR=3
       - AUTO_DELETE_CRON_MINUTE=0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SERVICE_NAME=orchestrator
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
     depends_on:
       auth-service:
         condition: service_healthy
@@ -43,6 +47,12 @@ services:
     networks:
       - memegram-backend
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+        tag: "{{.Name}}"
     healthcheck:
       test: ["CMD", "python", "-c",
         "import httpx; exit(0 if httpx.get('http://localhost:8000/health').status_code == 200 else 1)"]

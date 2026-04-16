@@ -12,6 +12,51 @@
 
 ---
 
+## Логирование
+
+Реализовано по единой архитектуре проекта (см. [logging.md](logging.md)).
+Референсная реализация скопирована из `auth-service` и адаптирована для `user-service`.
+
+### Два слоя логирования
+
+| Слой | Что | Когда | Где |
+|------|-----|-------|-----|
+| **Access log** (interceptor) | Одна запись на gRPC-запрос | Каждый запрос, при завершении | `app/grpc_interceptor.py` |
+| **Audit log** (service layer) | Бизнес-события | Создание, обновление, удаление пользователя и т.д. | `app/services/user_service.py` |
+
+### Access log — уровни
+
+| Результат | Level | Включает |
+|-----------|-------|----------|
+| Успех (OK) | `INFO` | method, caller IDs, peer, status, duration |
+| Ошибка клиента (INVALID_ARGUMENT, NOT_FOUND и т.д.) | `WARNING` | + error details, sanitized request_data |
+| Серверная ошибка / необработанное исключение | `ERROR` | + error + traceback, sanitized request_data |
+
+### Audit log — бизнес-события
+
+```
+user.created              — user_id, username
+user.updated              — user_id, updated_fields
+user.deleted              — user_id
+user.auto_delete.processed — deleted_count, user_ids
+user.settings_updated     — user_id, updated_fields
+```
+
+### Редактирование чувствительных данных
+
+`user_public_key` добавлен в `_SENSITIVE_FIELDS` и автоматически заменяется на `***` в логах ошибок.
+
+### Файлы
+
+| Файл | Описание |
+|------|----------|
+| `app/logging_config.py` | structlog конфигурация, `setup_logging()`, `get_logger()` |
+| `app/grpc_interceptor.py` | `LoggingInterceptor` — автоматическое логирование запросов |
+| `app/config.py` | `LOG_LEVEL`, `SERVICE_NAME`, `SERVICE_VERSION` |
+| `app/main.py` | Инициализация логирования и interceptor |
+
+---
+
 ## База данных
 
 ### `users`

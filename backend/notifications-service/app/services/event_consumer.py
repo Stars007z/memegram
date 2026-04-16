@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import uuid
 from typing import Any
 
 import redis.asyncio as aioredis
 
 from app.config import settings
+from app.logging_config import get_logger
 from app.database.session import get_session
 from app.infrastructure.item_storage_client import IItemStorageClient
 from app.infrastructure.messaging_client import IMessagingClient
@@ -30,7 +30,7 @@ from app.services.push_sender import (
     send_with_retry,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # message_type → human-readable label
 MESSAGE_TYPE_LABELS: dict[str, str] = {
@@ -73,13 +73,13 @@ class EventConsumer:
             await self._messaging_redis.xgroup_create(
                 self._stream, self._group, id="0", mkstream=True,
             )
-            logger.info("Created consumer group %s on %s", self._group, self._stream)
+            logger.info("consumer_group.created", group=self._group, stream=self._stream)
         except Exception:
             # Group already exists
             pass
 
         self._running = True
-        logger.info("Event consumer started: consumer=%s", self._consumer)
+        logger.info("event_consumer.started", consumer=self._consumer)
         await asyncio.gather(
             self._consume_loop(),
             self._claim_loop(),
@@ -108,7 +108,7 @@ class EventConsumer:
                         await self._process_entry(entry_id, fields)
 
             except Exception as e:
-                logger.error("Consumer loop error: %s", e)
+                logger.error("event_consumer.loop_error", error=str(e))
                 await asyncio.sleep(1)
 
     # ── Claim stale messages ─────────────────────────────────────────
@@ -132,7 +132,7 @@ class EventConsumer:
                     for entry_id, fields in claimed:
                         await self._process_entry(entry_id, fields)
             except Exception as e:
-                logger.error("Claim loop error: %s", e)
+                logger.error("event_consumer.claim_error", error=str(e))
 
     # ── Entry processing ─────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ class EventConsumer:
             dedup_key = f"notif:dedup:{entry_id_str}"
             was_set = await self._own_redis.set(dedup_key, "1", nx=True, ex=3600)
             if not was_set:
-                logger.debug("Duplicate event %s, skipping", entry_id_str)
+                logger.debug("event_consumer.duplicate_skipped", entry_id=entry_id_str)
                 await self._messaging_redis.xack(self._stream, self._group, entry_id)
                 return
 
@@ -165,12 +165,12 @@ class EventConsumer:
             elif event_type == "member_kicked":
                 await self._handle_member_kicked(payload)
             else:
-                logger.warning("Unknown event type: %s", event_type)
+                logger.warning("event_consumer.unknown_event_type", event_type=event_type)
 
             await self._messaging_redis.xack(self._stream, self._group, entry_id)
 
         except Exception as e:
-            logger.error("Failed to process entry %s: %s", entry_id_str, e)
+            logger.error("event_consumer.process_failed", entry_id=entry_id_str, error=str(e))
 
     # ── new_message ──────────────────────────────────────────────────
 
@@ -303,7 +303,7 @@ class EventConsumer:
             )
 
             if not tokens:
-                logger.debug("No active tokens for users %s", recipient_user_ids)
+                logger.debug("push.no_active_tokens", user_ids=recipient_user_ids)
                 return
 
             tasks = []
@@ -336,10 +336,10 @@ class EventConsumer:
         if result.success:
             await repo.mark_success(token_id)
         elif result.error_type == PushErrorType.PERMANENT_TOKEN:
-            logger.info("Permanent token error for %s: %s — deactivating", token_id, result.error_code)
+            logger.info("push.token_deactivated", token_id=str(token_id), error_code=result.error_code)
             await repo.deactivate_token(token_id)
         else:
-            logger.warning("Push failed for token %s: %s", token_id, result.error_code)
+            logger.warning("push.send_failed", token_id=str(token_id), error_code=result.error_code)
             await repo.increment_failure(
                 token_id,
                 max_failures=settings.MAX_TOKEN_CONSECUTIVE_FAILURES,

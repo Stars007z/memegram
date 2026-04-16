@@ -7,11 +7,14 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logging_config import get_logger
 from app.models.contact import Contact
 from app.models.blocked_user import BlockedUser
 from app.repositories.contact_repo import ContactRepository
 from app.repositories.blocked_user_repo import BlockedUserRepository
 from app.services.user_client import UserServiceClient, UserBriefProfile
+
+logger = get_logger(__name__)
 
 
 def _now() -> datetime:
@@ -76,6 +79,12 @@ class ContactsService:
         profiles = await self.user_client.get_users_batch([contact_user_id_str])
         profile = profiles.get(contact_user_id_str)
 
+        logger.info(
+            "contact.added",
+            user_id=user_id,
+            contact_user_id=contact_user_id_str,
+        )
+
         return _contact_to_dict(contact, profile)
 
     async def remove_contact(self, user_id: str, contact_user_id: str) -> bool:
@@ -87,6 +96,13 @@ class ContactsService:
             raise ValueError("NOT_FOUND:Contact not found")
 
         await self.contact_repo.delete(contact)
+
+        logger.info(
+            "contact.removed",
+            user_id=user_id,
+            contact_user_id=contact_user_id,
+        )
+
         return True
 
     async def get_contacts(self, user_id: str, limit: int, offset: int) -> dict:
@@ -156,6 +172,12 @@ class ContactsService:
         # 4 & 5. Удалить взаимные контакты
         await self.contact_repo.delete_mutual(uid, buid)
 
+        logger.info(
+            "user.blocked",
+            user_id=user_id,
+            blocked_user_id=blocked_user_id,
+        )
+
         return {
             "success": True,
             "created_at": int(blocked.created_at.timestamp()),
@@ -170,6 +192,13 @@ class ContactsService:
             raise ValueError("NOT_FOUND:Block record not found")
 
         await self.blocked_repo.delete(blocked)
+
+        logger.info(
+            "user.unblocked",
+            user_id=user_id,
+            blocked_user_id=blocked_user_id,
+        )
+
         return True
 
     async def get_blocked_users(self, user_id: str, limit: int, offset: int) -> dict:

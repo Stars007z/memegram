@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contacts-service
+  namespace: memegram
+  labels:
+    app: contacts-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contacts-service
+  template:
+    metadata:
+      labels:
+        app: contacts-service
+        app.kubernetes.io/part-of: memegram
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until nc -z contacts-postgres 5432; do echo waiting for postgres; sleep 2; done"
+      containers:
+        - name: contacts-service
+          image: memegram/contacts-service:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "alembic upgrade head && python -m app.main"
+          ports:
+            - containerPort: 50053
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@contacts-postgres:5432/contacts_db"
+            - name: GRPC_PORT
+              value: "50053"
+            - name: ENVIRONMENT
+              value: development
+            - name: SERVICE_VERSION
+              value: "1.0.0"
+            - name: USER_GRPC_HOST
+              value: user-service
+            - name: USER_GRPC_PORT
+              value: "50052"
+            - name: USER_GRPC_TIMEOUT
+              value: "5.0"
+          readinessProbe:
+            tcpSocket:
+              port: 50053
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contacts-service
+  namespace: memegram
+  labels:
+    app: contacts-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  type: ClusterIP
+  selector:
+    app: contacts-service
+  ports:
+    - port: 50053
+      targetPort: 50053

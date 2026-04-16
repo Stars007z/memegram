@@ -1,10 +1,10 @@
-import logging
 import uuid
 from datetime import datetime
 
 import grpc
 
 from app.config import settings
+from app.logging_config import get_logger
 from app.infrastructure.media_client import IMediaClient
 from app.repositories.media_attachment_repo import MediaAttachmentRepository
 from app.repositories.member_repo import MemberRepository
@@ -14,7 +14,7 @@ from app.services.interfaces.media_service import (
     UploadInitResult,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MediaServiceImpl(IMediaService):
@@ -133,7 +133,7 @@ class MediaServiceImpl(IMediaService):
                 media_id=media_id, s3_key=attachment.s3_key,
             )
         except grpc.RpcError as e:
-            logger.warning("Failed to delete media %s from S3: %s", media_id, e)
+            logger.warning("media.s3_delete_failed", media_id=str(media_id), error=str(e))
             return False
 
         await self._attachments.update(attachment, {

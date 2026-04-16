@@ -12,6 +12,9 @@ from app.repositories.device_registration_repo import DeviceRegistrationReposito
 from app.repositories.session_repo import SessionRepository
 from app.services.auth_service import AuthService
 from app.config import settings
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 REGISTRATION_TTL_MINUTES = 10
 
@@ -210,7 +213,7 @@ class DeviceService:
             self._auth_service._generate_tokens(
                 user_id=user_id,
                 device_id=str(device_uuid),
-                is_primary=False,
+                device_type="secondary",
             )
         )
 
@@ -293,6 +296,14 @@ class DeviceService:
         })
 
         await self._revoke_device_sessions(target.id)
+
+        logger.info(
+            "device.revoked",
+            user_id=user_id,
+            target_device_id=str(target.id),
+            requesting_device_id=str(requesting.id),
+            reason=reason,
+        )
 
         return {
             "success": True,
@@ -416,6 +427,13 @@ class DeviceService:
         await self.device_repo.update(requesting, {"device_type": "secondary"})
         await self.device_repo.update(target, {"device_type": "primary"})
 
+        logger.info(
+            "device.primary_transferred",
+            user_id=user_id,
+            old_primary_device_id=str(requesting.id),
+            new_primary_device_id=str(target.id),
+        )
+
         return {
             "success": True,
             "new_primary_device_id": str(target.id),
@@ -460,6 +478,15 @@ class DeviceService:
             })
             await self._revoke_device_sessions(target.id)
             revoked_ids.append(str(target.id))
+
+        logger.info(
+            "device.bulk_revoked",
+            user_id=user_id,
+            requesting_device_id=str(requesting.id),
+            revoked_count=len(revoked_ids),
+            revoked_device_ids=revoked_ids,
+            reason=reason,
+        )
 
         return {
             "success": True,

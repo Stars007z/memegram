@@ -11,6 +11,9 @@ from app.repositories.session_repo import SessionRepository
 from app.repositories.invite_repo import InviteRepository
 from app.config import settings
 from app.database.redis import store_challenge, get_challenge, delete_challenge, RedisClient
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 ACCESS_TOKEN_MINUTES = 60
 REFRESH_TOKEN_DAYS = 7
@@ -70,6 +73,14 @@ class AuthService:
         })
 
         await self.invite_repo.mark_as_used(invite, used_by_user_id=user_id)
+
+        logger.info(
+            "auth.register.success",
+            user_id=str(user_id),
+            device_id=str(device_uuid),
+            device_type=device_type,
+            invite_code=invite_code,
+        )
 
         return {
             "user_id": str(user_id),
@@ -153,6 +164,13 @@ class AuthService:
             "refresh_expires_at": refresh_expires_at,
         })
 
+        logger.info(
+            "auth.login.success",
+            user_id=str(device.user_id),
+            device_id=str(device.id),
+            device_type=device.device_type,
+        )
+
         return {
             "user_id": str(device.user_id),
             "device_id": str(device.id),
@@ -228,6 +246,8 @@ class AuthService:
         redis = await RedisClient.get_instance()
         await redis.delete(f"session:valid:{access_token}")
 
+        logger.info("auth.logout.success", device_id=str(session.device_id))
+
         return {"success": True, "message": "Successfully logged out"}
 
     async def create_invite(
@@ -243,6 +263,14 @@ class AuthService:
             expires_in_days=expires_in_days,
             created_by_admin_device_id=admin_device_uuid,
         )
+
+        logger.info(
+            "auth.invite.created",
+            invite_code=invite.code,
+            expires_in_days=expires_in_days,
+            created_by_device_id=created_by_device_id,
+        )
+
         return {
             "code": invite.code,
             "created_at": int(invite.created_at.timestamp()),

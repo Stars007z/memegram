@@ -1,7 +1,7 @@
 import asyncio
-import logging
 
 from fastapi import APIRouter, Depends
+from app.logging_config import get_logger
 from app.api.v1.user.schemas import (
     UserProfileResponseSchema, UpdateUserRequestSchema, DeleteUserResponseSchema,
     UserSettingsResponseSchema, UpdateUserSettingsRequestSchema, UserHealthResponseSchema,
@@ -12,7 +12,7 @@ from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, Up
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
 from app.core.session_context import SessionContext
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -145,8 +145,10 @@ async def sync_my_settings(
         for (field_label, item_id), result in zip(changed, results):
             if isinstance(result, Exception):
                 logger.warning(
-                    "Failed to get download URL for %s (%s): %s",
-                    field_label, item_id, result,
+                    "settings.sync.download_url_failed",
+                    field=field_label,
+                    item_id=item_id,
+                    error=str(result),
                 )
                 continue
             media_updates.append(MediaDownloadInfoSchema(

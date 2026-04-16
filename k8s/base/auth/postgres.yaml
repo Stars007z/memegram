@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-postgres
+  namespace: memegram
+  labels:
+    app: auth-postgres
+    app.kubernetes.io/part-of: memegram
+spec:
+  clusterIP: None
+  selector:
+    app: auth-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-postgres
+  namespace: memegram
+  labels:
+    app: auth-postgres
+    app.kubernetes.io/part-of: memegram
+spec:
+  serviceName: auth-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-postgres
+  template:
+    metadata:
+      labels:
+        app: auth-postgres
+        app.kubernetes.io/part-of: memegram
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: auth_db
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - memegram
+                - -d
+                - auth_db
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

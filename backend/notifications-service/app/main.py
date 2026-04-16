@@ -1,9 +1,10 @@
 import asyncio
-import logging
 
 import grpc.aio
 from grpc_reflection.v1alpha import reflection
 
+from app.logging_config import setup_logging, get_logger
+from app.grpc_interceptor import LoggingInterceptor
 from app.config import settings
 from app.container import Container
 from app.database.redis import MessagingRedisClient, RedisClient
@@ -13,11 +14,8 @@ from app.infrastructure.item_storage_client import GrpcItemStorageClient
 from app.infrastructure.messaging_client import GrpcMessagingClient
 from app.infrastructure.user_client import GrpcUserClient
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
-)
-logger = logging.getLogger(__name__)
+setup_logging()
+logger = get_logger(__name__)
 
 SERVICE_NAMES = (
     notifications_pb2.DESCRIPTOR.services_by_name["NotificationsService"].full_name,
@@ -50,25 +48,25 @@ async def _build_container() -> Container:
 async def serve() -> None:
     container = await _build_container()
 
-    # Start gRPC server
-    server = grpc.aio.server()
+    # Start gRPC server with logging interceptor
+    server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     notifications_pb2_grpc.add_NotificationsServiceServicer_to_server(
         NotificationsHandler(container), server,
     )
     reflection.enable_server_reflection(SERVICE_NAMES, server)
     server.add_insecure_port(f"[::]:{settings.GRPC_PORT}")
 
-    logger.info("Notifications service starting on port %s", settings.GRPC_PORT)
+    logger.info("service.started", port=settings.GRPC_PORT)
     await server.start()
 
     # Start Redis Streams event consumer as a background task
     consumer_task = asyncio.create_task(container.event_consumer.start())
-    logger.info("Event consumer started")
+    logger.info("event_consumer.started")
 
     try:
         await server.wait_for_termination()
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        logger.info("service.shutting_down")
     finally:
         await container.event_consumer.stop()
         consumer_task.cancel()
@@ -78,7 +76,7 @@ async def serve() -> None:
         await close_db()
         await RedisClient.close()
         await MessagingRedisClient.close()
-        logger.info("All connections closed")
+        logger.info("service.stopped")
 
 
 if __name__ == "__main__":
