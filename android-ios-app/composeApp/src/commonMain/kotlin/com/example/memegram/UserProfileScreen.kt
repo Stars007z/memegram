@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,6 +43,8 @@ fun UserProfileScreen(
     val message by viewModel.actionMessage.collectAsState()
     val avatarBytes by viewModel.avatarBytes.collectAsState()
     val coverBytes by viewModel.coverBytes.collectAsState()
+    val isBlocked by viewModel.isBlocked.collectAsState()
+    val isContact by viewModel.isContact.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(userId) {
@@ -179,15 +182,38 @@ fun UserProfileScreen(
                     Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
                 }
 
+                if (!isContact) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        FilledTonalIconButton(
+                            onClick = { viewModel.addToContacts() },
+                            modifier = Modifier.size(56.sdp)
+                        ) {
+                            Icon(Icons.Default.PersonAdd, null)
+                        }
+                        Spacer(Modifier.height(8.sdp))
+                        Text(s.addToContactsButton, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledTonalIconButton(
-                        onClick = { viewModel.addToContacts() },
-                        modifier = Modifier.size(56.sdp)
+                        onClick = { if (isBlocked) viewModel.unblockUser() else viewModel.blockUser() },
+                        modifier = Modifier.size(56.sdp),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = if (isBlocked) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
+                        )
                     ) {
-                        Icon(Icons.Default.PersonAdd, null)
+                        Icon(
+                            Icons.Default.Block, null,
+                            tint = if (isBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                     Spacer(Modifier.height(8.sdp))
-                    Text(s.addToContactsButton, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (isBlocked) s.unblockUser else s.blockUser,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }

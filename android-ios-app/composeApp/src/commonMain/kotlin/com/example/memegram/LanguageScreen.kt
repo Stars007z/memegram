@@ -1,5 +1,6 @@
 package com.example.memegram
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,9 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.memegram.localization.LocalStrings
+import com.example.memegram.translation.langNativeName
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
@@ -39,8 +40,13 @@ fun LanguageScreen(
     val s = LocalStrings.current
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val currentLang by viewModel.currentLang.collectAsState()
+    val autoTranslateEnabled by viewModel.autoTranslateEnabled.collectAsState()
+    val targetLanguage by viewModel.targetLanguage.collectAsState()
+    val blacklistedLanguages by viewModel.blacklistedLanguages.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
-    var aiTranslation by remember { mutableStateOf(false) }
+
+    var showTargetLangDialog by remember { mutableStateOf(false) }
+    var showBlacklistDialog by remember { mutableStateOf(false) }
 
     val allLanguages = remember {
         listOf(
@@ -66,6 +72,113 @@ fun LanguageScreen(
                     it.nameEnglish.contains(searchQuery, ignoreCase = true) ||
                     it.code.contains(searchQuery, ignoreCase = true)
         }
+    }
+
+    // ── Target language picker dialog ────────────────────────────────
+    if (showTargetLangDialog) {
+        val effectiveTarget = targetLanguage.ifBlank { currentLang }
+        AlertDialog(
+            onDismissRequest = { showTargetLangDialog = false },
+            title = { Text(s.targetLanguage) },
+            text = {
+                LazyColumn {
+                    items(allLanguages, key = { it.code }) { language ->
+                        val isSelected = effectiveTarget == language.code
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setTargetLanguage(language.code)
+                                    showTargetLangDialog = false
+                                }
+                                .padding(vertical = 12.sdp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = language.nameNative,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) topBarColor else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = language.nameEnglish,
+                                    fontSize = 12.ssp,
+                                    color = Color.Gray
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, null, tint = topBarColor)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTargetLangDialog = false }) {
+                    Text(s.close)
+                }
+            }
+        )
+    }
+
+    // ── Blacklist picker dialog ──────────────────────────────────────
+    if (showBlacklistDialog) {
+        val effectiveTarget = targetLanguage.ifBlank { currentLang }
+        AlertDialog(
+            onDismissRequest = { showBlacklistDialog = false },
+            title = { Text(s.dontTranslate) },
+            text = {
+                LazyColumn {
+                    items(allLanguages, key = { it.code }) { language ->
+                        val isBlacklisted = language.code in blacklistedLanguages
+                        val isAppLang = language.code == currentLang
+                        val isTargetLang = language.code == effectiveTarget
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.toggleBlacklistLanguage(language.code) }
+                                .padding(vertical = 8.sdp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(language.nameNative)
+                                Row {
+                                    Text(
+                                        text = language.nameEnglish,
+                                        fontSize = 12.ssp,
+                                        color = Color.Gray
+                                    )
+                                    if (isAppLang || isTargetLang) {
+                                        val hint = when {
+                                            isAppLang && isTargetLang -> " (${s.appLanguageHint}, ${s.targetLanguageHint})"
+                                            isAppLang -> " (${s.appLanguageHint})"
+                                            else -> " (${s.targetLanguageHint})"
+                                        }
+                                        Text(
+                                            text = hint,
+                                            fontSize = 12.ssp,
+                                            color = topBarColor.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                            }
+                            Checkbox(
+                                checked = isBlacklisted,
+                                onCheckedChange = { viewModel.toggleBlacklistLanguage(language.code) },
+                                colors = CheckboxDefaults.colors(checkedColor = topBarColor)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBlacklistDialog = false }) {
+                    Text(s.ok)
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -110,6 +223,7 @@ fun LanguageScreen(
                     .padding(horizontal = 16.sdp, vertical = 12.sdp)
             )
 
+            // ── Translation settings card ────────────────────────────
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -118,33 +232,97 @@ fun LanguageScreen(
                 shape = RoundedCornerShape(12.sdp),
                 tonalElevation = 2.sdp
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.sdp, vertical = 14.sdp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Auto-translate toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text(
                             text = s.aiTranslation,
                             fontWeight = FontWeight.Medium,
                             fontSize = 15.ssp
                         )
-                        Text(
-                            text = s.comingSoon,
-                            color = Color.Gray,
-                            fontSize = 12.ssp
+                        Switch(
+                            checked = autoTranslateEnabled,
+                            onCheckedChange = { viewModel.setAutoTranslateEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = topBarColor,
+                                checkedTrackColor = topBarColor.copy(alpha = 0.4f)
+                            )
                         )
                     }
-                    Switch(
-                        checked = aiTranslation,
-                        onCheckedChange = { aiTranslation = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = topBarColor,
-                            checkedTrackColor = topBarColor.copy(alpha = 0.4f)
-                        )
-                    )
+
+                    AnimatedVisibility(visible = autoTranslateEnabled) {
+                        Column {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.sdp)
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showTargetLangDialog = true }
+                                    .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = s.targetLanguage,
+                                    fontSize = 14.ssp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val displayLang = targetLanguage.ifBlank { currentLang }
+                                    Text(
+                                        text = langNativeName(displayLang),
+                                        color = Color.Gray,
+                                        fontSize = 14.ssp
+                                    )
+                                    Icon(
+                                        Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(20.sdp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showBlacklistDialog = true }
+                                    .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = s.dontTranslate,
+                                    fontSize = 14.ssp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (blacklistedLanguages.isNotEmpty()) {
+                                        Text(
+                                            text = blacklistedLanguages
+                                                .take(3)
+                                                .joinToString(", ") { langNativeName(it) },
+                                            color = Color.Gray,
+                                            fontSize = 12.ssp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(20.sdp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

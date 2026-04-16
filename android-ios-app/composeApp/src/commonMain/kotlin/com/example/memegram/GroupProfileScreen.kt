@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -25,6 +28,11 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.core.PickerMode
+import io.github.vinceglb.filekit.core.PickerType
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 private fun roleDisplayName(role: String, s: AppStrings): String = when (role) {
     "owner" -> s.roleOwner
@@ -52,6 +60,8 @@ fun GroupProfileScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val myRole by viewModel.myRole.collectAsState()
     val contacts by contactsViewModel.contacts.collectAsState()
+    val blockedUsersCache = koinInject<BlockedUsersCache>()
+    val blockedIds by blockedUsersCache.blockedIds.collectAsState()
     var selectedContactId by remember { mutableStateOf<String?>(null) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showAddMemberDialog by remember { mutableStateOf(false) }
@@ -64,6 +74,22 @@ fun GroupProfileScreen(
 
     val isAdmin = myRole == "owner" || myRole == "admin"
     val isOwner = myRole == "owner"
+
+    // ── Group name editing ───────────────────────
+    val currentGroupName by viewModel.groupName.collectAsState()
+    val groupAvatarMediaId by viewModel.groupAvatarMediaId.collectAsState()
+    val displayName = currentGroupName.ifBlank { groupName }
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editNameInput by remember(displayName) { mutableStateOf(displayName) }
+
+    // ── Avatar picker / crop ─────────────────────
+    var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
+    val scope = rememberCoroutineScope()
+    val avatarPicker = rememberFilePickerLauncher(
+        type = PickerType.Image, mode = PickerMode.Single
+    ) { file -> file?.let { scope.launch {
+        cropBytes = it.readBytes()
+    } } }
 
     LaunchedEffect(conversationId) {
         viewModel.loadGroup(conversationId)
@@ -161,6 +187,28 @@ fun GroupProfileScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text(s.addToContacts, modifier = Modifier.fillMaxWidth()) }
                         }
+
+                        val isMemberBlocked = member.user.id in blockedIds
+                        TextButton(
+                            onClick = {
+                                val memberId = member.user.id
+                                contextMenuMember = null
+                                if (isMemberBlocked) {
+                                    contactsViewModel.unblockUser(memberId)
+                                } else {
+                                    contactsViewModel.blockUser(memberId)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = if (!isMemberBlocked) ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                     else ButtonDefaults.textButtonColors()
+                        ) {
+                            Text(
+                                if (isMemberBlocked) s.unblockUser else s.blockUser,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (!isMemberBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
 
                     if (canPromote) {
@@ -257,6 +305,52 @@ fun GroupProfileScreen(
         )
     }
 
+    // ── Image crop overlay ───────────────────────
+    if (cropBytes != null) {
+        ImageCropScreen(
+            imageBytes = cropBytes!!,
+            aspectRatio = 1f,
+            onCropped = { croppedBytes ->
+                viewModel.updateGroupAvatar(conversationId, croppedBytes)
+                cropBytes = null
+            },
+            onCancel = { cropBytes = null }
+        )
+        return
+    }
+
+    // ── Edit group name dialog ───────────────────
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text(s.editGroupName) },
+            text = {
+                OutlinedTextField(
+                    value = editNameInput,
+                    onValueChange = { editNameInput = it },
+                    singleLine = true,
+                    label = { Text(s.groupName) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.sdp)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEditNameDialog = false
+                        if (editNameInput.isNotBlank() && editNameInput != displayName) {
+                            viewModel.updateGroupName(conversationId, editNameInput)
+                        }
+                    },
+                    enabled = editNameInput.isNotBlank()
+                ) { Text(s.save) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) { Text(s.cancel) }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             ImageTopAppBarBox(topBarColor) { bgColor ->
@@ -280,14 +374,39 @@ fun GroupProfileScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 24.sdp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier.size(100.sdp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(groupName.take(1).uppercase(), color = Color.White, fontSize = 48.ssp, fontWeight = FontWeight.Bold)
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    AvatarImage(
+                        mediaId = groupAvatarMediaId,
+                        size = 100.sdp,
+                        fallbackLetter = displayName.take(1).uppercase(),
+                        backgroundColor = MaterialTheme.colorScheme.primary,
+                        textColor = Color.White
+                    )
+                    if (isAdmin) {
+                        Surface(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { avatarPicker.launch() },
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.45f)
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt, null,
+                                modifier = Modifier.padding(5.sdp).size(16.sdp),
+                                tint = Color.White
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.height(16.sdp))
-                Text(groupName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(displayName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    if (isAdmin) {
+                        IconButton(onClick = { editNameInput = displayName; showEditNameDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = s.editGroupName, modifier = Modifier.size(20.sdp))
+                        }
+                    }
+                }
                 Text(s.membersCount(members.size), color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
             }
 

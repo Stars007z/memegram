@@ -11,13 +11,14 @@ class SessionManager(private val settings: Settings) {
         settings.putString("refresh_token", r.refreshToken)
         settings.putString("user_id", r.userId)
         settings.putString("device_id", r.deviceId)
-        settings.putBoolean("is_primary", r.isPrimary)
+        settings.putString("device_type", r.deviceType)
         settings.putLong("expires_at", r.expiresAt)
     }
 
     fun getDeviceId(): String? = settings.getStringOrNull("device_id")
     fun getUserId(): String? = settings.getStringOrNull("user_id")
     fun getAccessToken(): String? = settings.getStringOrNull("access_token")
+    fun getDeviceType(): String? = settings.getStringOrNull("device_type")
 
     val isLoggedIn: Boolean
         get() = getAccessToken() != null
@@ -34,7 +35,7 @@ class SessionManager(private val settings: Settings) {
         settings.remove("access_token")
         settings.remove("refresh_token")
         settings.remove("expires_at")
-        settings.remove("is_primary")
+        settings.remove("device_type")
     }
 
     fun saveProfile(username: String, bio: String) {
@@ -60,7 +61,7 @@ class SessionManager(private val settings: Settings) {
         settings.putString("refresh_token", response.refreshToken)
         settings.putString("user_id",       response.userId)
         settings.putString("device_id",     response.newDeviceId)
-        settings.putBoolean("is_primary",   false)
+        settings.putString("device_type",   "secondary")
         settings.putLong("expires_at",      response.expiresAt)
     }
 }

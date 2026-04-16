@@ -31,7 +31,7 @@ data class LoginCompleteRequest(
 data class AuthResponse(
     @SerialName("user_id") val userId: String,
     @SerialName("device_id") val deviceId: String,
-    @SerialName("is_primary") val isPrimary: Boolean,
+    @SerialName("device_type") val deviceType: String,
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String,
     @SerialName("expires_at") val expiresAt: Long
@@ -117,7 +117,8 @@ data class ConversationResponse(
     @SerialName("created_at") val createdAt: Long = 0,
     @SerialName("last_message_preview") val lastMessagePreview: String? = null,
     @SerialName("last_activity_at") val lastActivityAt: Long? = null,
-    @SerialName("unread_count") val unreadCount: Int? = null
+    @SerialName("unread_count") val unreadCount: Int? = null,
+    @SerialName("avatar_media_id") val avatarMediaId: String? = null
 )
 
 @Serializable
@@ -220,7 +221,8 @@ data class ConversationSummary(
     val name: String? = null,
     @SerialName("last_message_type") val lastMessageType: String? = null,
     @SerialName("unread_count") val unreadCount: Int = 0,
-    @SerialName("last_activity_at") val lastActivityAt: Long = 0L
+    @SerialName("last_activity_at") val lastActivityAt: Long = 0L,
+    @SerialName("avatar_media_id") val avatarMediaId: String? = null
 )
 
 @Serializable
@@ -358,4 +360,32 @@ data class ItemDownloadUrlResponse(
     @SerialName("download_url") val downloadUrl: String,
     @SerialName("expires_at") val expiresAt: Long,
     @SerialName("mime_type") val mimeType: String
+)
+
+// ── Admin Invite ──────────────────────────────────────────────────────
+
+@Serializable
+data class CreateInviteRequest(
+    @SerialName("expires_in_days") val expiresInDays: Int
+)
+
+@Serializable
+data class CreateInviteResponse(
+    val code: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("expires_at") val expiresAt: Long,
+    @SerialName("is_used") val isUsed: Boolean,
+    val message: String
+)
+
+// ── Group Settings ───────────────────────────────────────────────────
+
+@Serializable
+data class UpdateGroupNameRequest(
+    val name: String
+)
+
+@Serializable
+data class UpdateGroupAvatarRequest(
+    @SerialName("avatar_media_id") val avatarMediaId: String
 )

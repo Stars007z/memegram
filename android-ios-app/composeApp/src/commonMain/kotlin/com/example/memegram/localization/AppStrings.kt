@@ -153,6 +153,8 @@ interface AppStrings {
     val addMember: String
     val leaveGroup: String
     val searchMembers: String
+    val editGroupName: String
+    val changeGroupPhoto: String
 
     // ── User profile ─────────────────────────────────────────────────
     val sendMessage: String
@@ -255,11 +257,22 @@ interface AppStrings {
     val lruDescription: String
     val lfuDescription: String
 
-    // ── Language ─────────────────────────────────────────────────────
+    // ── Language / Translation ───────────────────────────────────────
     val languageTitle: String
     val searchLanguage: String
     val aiTranslation: String
     val comingSoon: String
+    val translate: String
+    val showOriginal: String
+    val translated: String
+    val showTranslation: String
+    val autoTranslate: String
+    val targetLanguage: String
+    val dontTranslate: String
+    val translationSettings: String
+    val appLanguageHint: String
+    val targetLanguageHint: String
+    val translationNotAvailable: String
 
     // ── Linked devices ───────────────────────────────────────────────
     val linkedDevicesTitle: String
@@ -300,6 +313,12 @@ interface AppStrings {
     val blackListTitle: String
     val blackListEmpty: String
     val blockedUsersHint: String
+    val blockUser: String
+    val unblockUser: String
+    fun blockConfirmTitle(name: String): String
+    fun blockConfirmMessage(name: String): String
+    val userBlockedBanner: String
+    val userBlockedSendError: String
 
     // ── Date scrubber ────────────────────────────────────────────────
     val mon: String
@@ -313,6 +332,14 @@ interface AppStrings {
     // ── App / misc ───────────────────────────────────────────────────
     val groupDefault: String
     val create: String
+
+    // ── Admin invite ─────────────────────────────────────────────────
+    val createInvite: String
+    val createInviteTitle: String
+    val createInviteExpiresDays: String
+    val inviteCreated: String
+    val inviteCodeLabel: String
+    val inviteExpiresAt: String
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -471,6 +498,8 @@ object RuStrings : AppStrings {
     override val addMember = "Добавить участника"
     override val leaveGroup = "Покинуть группу"
     override val searchMembers = "Поиск участников..."
+    override val editGroupName = "Изменить название"
+    override val changeGroupPhoto = "Изменить фото группы"
 
     // User profile
     override val sendMessage = "Написать"
@@ -573,13 +602,22 @@ object RuStrings : AppStrings {
     override val lruDescription = "Удаляются сообщения из чатов, которые давно не открывались"
     override val lfuDescription = "Удаляются сообщения из чатов, в которые реже всего заходят"
 
-    // Language
+    // Language / Translation
     override val languageTitle = "Язык"
     override val searchLanguage = "Поиск языка..."
     override val aiTranslation = "AI-перевод"
     override val comingSoon = "Скоро..."
-
-    // Linked devices
+    override val translate = "Перевести"
+    override val showOriginal = "Показать оригинал"
+    override val translated = "Переведено"
+    override val showTranslation = "Показать перевод"
+    override val autoTranslate = "Авто-перевод"
+    override val targetLanguage = "Целевой язык"
+    override val dontTranslate = "Не переводить"
+    override val translationSettings = "Настройки перевода"
+    override val appLanguageHint = "язык приложения"
+    override val targetLanguageHint = "целевой язык"
+    override val translationNotAvailable = "Перевод недоступен: недостаточно памяти или модель не загружена"
     override val linkedDevicesTitle = "Связанные устройства"
     override val refresh = "Обновить"
     override val addDeviceByQr = "Добавить устройство по QR"
@@ -619,6 +657,12 @@ object RuStrings : AppStrings {
     override val blackListTitle = "Чёрный список"
     override val blackListEmpty = "Чёрный список пуст"
     override val blockedUsersHint = "Заблокированные пользователи появятся здесь"
+    override val blockUser = "Заблокировать"
+    override val unblockUser = "Разблокировать"
+    override fun blockConfirmTitle(name: String) = "Заблокировать $name?"
+    override fun blockConfirmMessage(name: String) = "Вы не сможете получать сообщения от $name. Вы уверены?"
+    override val userBlockedBanner = "Пользователь заблокирован"
+    override val userBlockedSendError = "Нельзя отправить сообщение заблокированному пользователю"
 
     // Date scrubber
     override val mon = "Пн"
@@ -632,6 +676,14 @@ object RuStrings : AppStrings {
     // App / misc
     override val groupDefault = "Группа"
     override val create = "Создать"
+
+    // Admin invite
+    override val createInvite = "Создать инвайт"
+    override val createInviteTitle = "Новый инвайт-код"
+    override val createInviteExpiresDays = "Срок действия (дней)"
+    override val inviteCreated = "Инвайт-код создан"
+    override val inviteCodeLabel = "Код"
+    override val inviteExpiresAt = "Действует до"
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -790,6 +842,8 @@ object EnStrings : AppStrings {
     override val addMember = "Add member"
     override val leaveGroup = "Leave group"
     override val searchMembers = "Search members..."
+    override val editGroupName = "Edit name"
+    override val changeGroupPhoto = "Change group photo"
 
     // User profile
     override val sendMessage = "Message"
@@ -892,13 +946,22 @@ object EnStrings : AppStrings {
     override val lruDescription = "Messages are deleted from chats that haven't been opened for a long time"
     override val lfuDescription = "Messages are deleted from the least frequently accessed chats"
 
-    // Language
+    // Language / Translation
     override val languageTitle = "Language"
     override val searchLanguage = "Search language..."
     override val aiTranslation = "AI Translation"
     override val comingSoon = "Coming soon..."
-
-    // Linked devices
+    override val translate = "Translate"
+    override val showOriginal = "Show original"
+    override val translated = "Translated"
+    override val showTranslation = "Show translation"
+    override val autoTranslate = "Auto-translate"
+    override val targetLanguage = "Target language"
+    override val dontTranslate = "Don't translate"
+    override val translationSettings = "Translation settings"
+    override val appLanguageHint = "app language"
+    override val targetLanguageHint = "target language"
+    override val translationNotAvailable = "Translation unavailable: not enough memory or model not loaded"
     override val linkedDevicesTitle = "Linked Devices"
     override val refresh = "Refresh"
     override val addDeviceByQr = "Add device via QR"
@@ -938,6 +1001,12 @@ object EnStrings : AppStrings {
     override val blackListTitle = "Blacklist"
     override val blackListEmpty = "Blacklist is empty"
     override val blockedUsersHint = "Blocked users will appear here"
+    override val blockUser = "Block"
+    override val unblockUser = "Unblock"
+    override fun blockConfirmTitle(name: String) = "Block $name?"
+    override fun blockConfirmMessage(name: String) = "You won't receive messages from $name. Are you sure?"
+    override val userBlockedBanner = "User is blocked"
+    override val userBlockedSendError = "Cannot send message to a blocked user"
 
     // Date scrubber
     override val mon = "Mon"
@@ -951,6 +1020,14 @@ object EnStrings : AppStrings {
     // App / misc
     override val groupDefault = "Group"
     override val create = "Create"
+
+    // Admin invite
+    override val createInvite = "Create Invite"
+    override val createInviteTitle = "New Invite Code"
+    override val createInviteExpiresDays = "Expires in (days)"
+    override val inviteCreated = "Invite code created"
+    override val inviteCodeLabel = "Code"
+    override val inviteExpiresAt = "Valid until"
 }
 
 val LocalStrings = staticCompositionLocalOf<AppStrings> { EnStrings }

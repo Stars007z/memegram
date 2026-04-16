@@ -25,7 +25,11 @@ CREATE TABLE messageEntity (
     lastAccessedAt       INTEGER NOT NULL DEFAULT 0,
     accessCount          INTEGER NOT NULL DEFAULT 0,
     senderUserId         TEXT,
-    groupId              TEXT
+    groupId              TEXT,
+    originalText         TEXT,
+    translatedText       TEXT,
+    translatedFromLang   TEXT,
+    isTranslated         INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -44,12 +48,13 @@ selectMessagesByConversation:
 SELECT * FROM messageEntity WHERE conversationId = ? ORDER BY timestamp ASC;
 
 insertMessage:
-INSERT OR REPLACE INTO messageEntity(
+INSERT OR IGNORE INTO messageEntity(
     serverId, conversationId, text, isOutgoing, timestamp, status,
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
-    lastAccessedAt, accessCount, senderUserId, groupId
+    lastAccessedAt, accessCount, senderUserId, groupId,
+    originalText, translatedText, translatedFromLang, isTranslated
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMessagesByConversation:
 DELETE FROM messageEntity WHERE conversationId = ?;
@@ -94,13 +99,15 @@ insertOrIgnoreMessage:
 INSERT OR IGNORE INTO messageEntity(
     serverId, conversationId, text, isOutgoing, timestamp, status,
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
-    lastAccessedAt, accessCount, senderUserId, groupId
+    lastAccessedAt, accessCount, senderUserId, groupId,
+    originalText, translatedText, translatedFromLang, isTranslated
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?);
 
 updateExistingMessage:
 UPDATE messageEntity
-SET text = ?, status = ?, type = ?, mediaId = ?,
+SET text = CASE WHEN isTranslated = 1 THEN text ELSE ? END,
+    status = ?, type = ?, mediaId = ?,
     encryptionMetadata = ?, localPreviewBytes = ?, mediaUrl = ?,
     lastAccessedAt = ?, timestamp = ?, senderUserId = ?, groupId = ?
 WHERE serverId = ?;
@@ -118,3 +125,22 @@ DELETE FROM chatEntity;
 
 vacuumDb:
 VACUUM;
+
+-- ПЕРЕВОД СООБЩЕНИЙ
+
+updateMessageTranslation:
+UPDATE messageEntity
+SET originalText = CASE WHEN originalText IS NULL THEN text ELSE originalText END,
+    translatedText = ?,
+    text = ?, translatedFromLang = ?, isTranslated = 1
+WHERE serverId = ?;
+
+revertMessageTranslation:
+UPDATE messageEntity
+SET text = originalText, isTranslated = 0
+WHERE serverId = ? AND isTranslated = 1;
+
+showCachedTranslation:
+UPDATE messageEntity
+SET text = translatedText, isTranslated = 1
+WHERE serverId = ? AND translatedText IS NOT NULL;

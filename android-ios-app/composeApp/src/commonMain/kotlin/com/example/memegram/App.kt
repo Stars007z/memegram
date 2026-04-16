@@ -43,7 +43,8 @@ import org.koin.dsl.koinConfiguration
 @Serializable object ChatsRoute
 @Serializable data class ChatDetailRoute(
     val chatName: String,
-    val conversationId: String = ""
+    val conversationId: String = "",
+    val avatarMediaId: String = ""
 )
 @Serializable object AppearanceRoute
 @Serializable object NotificationsRoute
@@ -171,15 +172,17 @@ fun App() {
                                 navController.navigate(
                                     ChatDetailRoute(
                                         chatName = chat.name,
-                                        conversationId = chat.conversationId
+                                        conversationId = chat.conversationId,
+                                        avatarMediaId = chat.avatarMediaId ?: ""
                                     )
                                 ) { launchSingleTop = true }
                             },
-                            onNavigateToChat = { convId ->
+                            onNavigateToChat = { convId, chatName, avatarMediaId ->
                                 navController.navigate(
                                     ChatDetailRoute(
-                                        chatName = strings.newChat,
-                                        conversationId = convId
+                                        chatName = chatName ?: strings.newChat,
+                                        conversationId = convId,
+                                        avatarMediaId = avatarMediaId ?: ""
                                     )
                                 ) { launchSingleTop = true }
                             },
@@ -206,6 +209,9 @@ fun App() {
 
                         LaunchedEffect(route.conversationId) {
                             if (route.conversationId.isNotEmpty()) {
+                                if (route.avatarMediaId.isNotEmpty()) {
+                                    viewModel.setInitialPeerAvatar(route.avatarMediaId)
+                                }
                                 viewModel.loadConversation(route.conversationId)
                             }
                         }
@@ -310,7 +316,8 @@ fun App() {
                                     navController.navigate(
                                         ChatDetailRoute(
                                             chatName = chat.name,
-                                            conversationId = chat.conversationId
+                                            conversationId = chat.conversationId,
+                                            avatarMediaId = chat.avatarMediaId ?: ""
                                         )
                                     )
                                 },

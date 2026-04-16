@@ -100,7 +100,7 @@ class AddDeviceViewModel(
                                         userId       = device.userId,
                                         deviceId     = device.clientDeviceId,
                                         expiresAt    = statusResp.tokenExpiresAt,
-                                        isPrimary    = false
+                                        deviceType   = "secondary"
                                     )
                                 )
 
