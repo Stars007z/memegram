@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging-service
+  namespace: memegram
+  labels:
+    app: messaging-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: messaging-service
+  template:
+    metadata:
+      labels:
+        app: messaging-service
+        app.kubernetes.io/part-of: memegram
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z messaging-postgres 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: messaging-service
+          image: memegram/messaging-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50054
+          command:
+            - sh
+            - -c
+            - alembic upgrade head && python -m app.main
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@messaging-postgres:5432/messaging_db
+            - name: GRPC_PORT
+              value: "50054"
+            - name: REDIS_URL
+              value: redis://messaging-redis:6379/0
+            - name: AUTH_GRPC_HOST
+              value: auth-service
+            - name: AUTH_GRPC_PORT
+              value: "50051"
+            - name: CONTACTS_GRPC_HOST
+              value: contacts-service
+            - name: CONTACTS_GRPC_PORT
+              value: "50053"
+            - name: MEDIA_GRPC_HOST
+              value: media-service
+            - name: MEDIA_GRPC_PORT
+              value: "50055"
+            - name: ENVIRONMENT
+              value: development
+          readinessProbe:
+            tcpSocket:
+              port: 50054
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: messaging-service
+  namespace: memegram
+  labels:
+    app: messaging-service
+    app.kubernetes.io/part-of: memegram
+spec:
+  type: ClusterIP
+  selector:
+    app: messaging-service
+  ports:
+    - port: 50054
+      targetPort: 50054

@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: memegram
+
+resources:
+  # Namespace & Secrets
+  - namespace.yaml
+  - secrets.yaml
+
+  # Auth service
+  - auth/postgres.yaml
+  - auth/redis.yaml
+  - auth/deployment.yaml
+
+  # User service
+  - user/postgres.yaml
+  - user/redis.yaml
+  - user/deployment.yaml
+
+  # Contacts service
+  - contacts/postgres.yaml
+  - contacts/deployment.yaml
+
+  # Messaging service
+  - messaging/postgres.yaml
+  - messaging/redis.yaml
+  - messaging/deployment.yaml
+
+  # Media service
+  - media/postgres.yaml
+  - media/deployment.yaml
+
+  # Item Storage service
+  - item-storage/postgres.yaml
+  - item-storage/deployment.yaml
+
+  # Notifications service
+  - notifications/postgres.yaml
+  - notifications/redis.yaml
+  - notifications/deployment.yaml
+
+  # Orchestrator (API Gateway)
+  - orchestrator/deployment.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
