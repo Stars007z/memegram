@@ -58,4 +58,6 @@ tools/__pycache__/
 tools/trace_bpe.py
 tools/trace_bpe2.py
 
+k8s/base/secrets.yaml
+
 .cache/

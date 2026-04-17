@@ -2,6 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Production overlay for GKE
+# Before deploying, set env vars and run:
+#   export GCP_PROJECT_ID=your-project-id
+#   export GCP_REGION=europe-west1
+#   Then use deploy-gke.sh which generates this dynamically,
+#   or manually replace PROJECT_ID and REGION below.
+
 resources:
   - ../../base
 
@@ -27,14 +33,14 @@ patches:
         path: /spec/type
         value: LoadBalancer
 
-  # Increase Postgres storage to 10Gi for prod
+  # Increase Postgres storage to 2Gi for prod (cost-efficient for course project)
   - target:
       kind: StatefulSet
       labelSelector: app.kubernetes.io/part-of=memegram
     patch: |-
       - op: replace
         path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
-        value: 10Gi
+        value: 2Gi
 
   # Increase service memory limits for prod
   - target:
@@ -46,13 +52,41 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 1Gi
 
-# Production-specific images (will use GCR/Artifact Registry)
-# Uncomment and update when pushing to Google Artifact Registry:
-# images:
-#   - name: memegram/auth-service
-#     newName: REGION-docker.pkg.dev/PROJECT_ID/memegram/auth-service
-#     newTag: v1.0.0
-#   - name: memegram/user-service
-#     newName: REGION-docker.pkg.dev/PROJECT_ID/memegram/user-service
-#     newTag: v1.0.0
-#   ... (repeat for all services)
+  # Change imagePullPolicy to Always for prod (pull from registry)
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/part-of=memegram
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+
+# Production images from Google Artifact Registry
+# Replace REGION and PROJECT_ID with your values, e.g.:
+#   REGION = europe-west1
+#   PROJECT_ID = memegram-prod-123456
+images:
+  - name: memegram/auth-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/auth-service
+    newTag: v1.0.0
+  - name: memegram/user-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/user-service
+    newTag: v1.0.0
+  - name: memegram/contacts-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/contacts-service
+    newTag: v1.0.0
+  - name: memegram/messaging-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/messaging-service
+    newTag: v1.0.0
+  - name: memegram/media-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/media-service
+    newTag: v1.0.0
+  - name: memegram/item-storage-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/item-storage-service
+    newTag: v1.0.0
+  - name: memegram/notifications-service
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/notifications-service
+    newTag: v1.0.0
+  - name: memegram/orchestrator
+    newName: europe-west1-docker.pkg.dev/memegram-493617/memegram/orchestrator
+    newTag: v1.0.0
