@@ -7,11 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
+
 class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -25,10 +28,13 @@ class Message(Base):
     mls_epoch: Mapped[int] = mapped_column(BigInteger, nullable=True)
     media_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     reply_to_message_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
+        UUID(as_uuid=True),
+        nullable=True,
     )
     client_message_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False,
+        UUID(as_uuid=True),
+        unique=True,
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

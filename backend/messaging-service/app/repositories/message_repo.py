@@ -7,12 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.message import Message
 from app.repositories.base import BaseRepository
 
+
 class MessageRepository(BaseRepository[Message]):
     def __init__(self, session: AsyncSession):
         super().__init__(Message, session)
 
     async def get_by_client_message_id(
-        self, client_message_id: uuid.UUID,
+        self,
+        client_message_id: uuid.UUID,
     ) -> Optional[Message]:
         return await self.get_by_field("client_message_id", client_message_id)
 
@@ -43,7 +45,8 @@ class MessageRepository(BaseRepository[Message]):
         return list(result.scalars().all())
 
     async def get_last_message(
-        self, conversation_id: uuid.UUID,
+        self,
+        conversation_id: uuid.UUID,
     ) -> Optional[Message]:
         query = (
             select(Message)

@@ -1,11 +1,15 @@
 """gRPC-хэндлер ContactsService."""
+
 from __future__ import annotations
 
+from typing import Optional
+
 import grpc
+
 from app.generated import contacts_pb2, contacts_pb2_grpc
 from app.services.contacts_service import ContactsService
-from app.services.user_client import get_user_client, UserBriefProfile
-from typing import Optional
+from app.services.user_client import UserBriefProfile, get_user_client
+
 
 def _brief_profile_to_proto(profile: Optional[UserBriefProfile]) -> contacts_pb2.UserBriefProfile:
     if not profile:
@@ -18,6 +22,7 @@ def _brief_profile_to_proto(profile: Optional[UserBriefProfile]) -> contacts_pb2
         avatar_media_id=profile.avatar_media_id,
     )
 
+
 def _contact_dict_to_proto(d: dict) -> contacts_pb2.ContactEntry:
     return contacts_pb2.ContactEntry(
         contact_user_id=d["contact_user_id"],
@@ -26,6 +31,7 @@ def _contact_dict_to_proto(d: dict) -> contacts_pb2.ContactEntry:
         profile=_brief_profile_to_proto(d.get("profile")),
     )
 
+
 def _blocked_dict_to_proto(d: dict) -> contacts_pb2.BlockedEntry:
     return contacts_pb2.BlockedEntry(
         blocked_user_id=d["blocked_user_id"],
@@ -33,11 +39,13 @@ def _blocked_dict_to_proto(d: dict) -> contacts_pb2.BlockedEntry:
         profile=_brief_profile_to_proto(d.get("profile")),
     )
 
+
 _GRPC_STATUS_MAP = {
     "NOT_FOUND": grpc.StatusCode.NOT_FOUND,
     "ALREADY_EXISTS": grpc.StatusCode.ALREADY_EXISTS,
     "INVALID_ARGUMENT": grpc.StatusCode.INVALID_ARGUMENT,
 }
+
 
 def _map_error(e: ValueError) -> tuple[grpc.StatusCode, str]:
     msg = str(e)
@@ -45,6 +53,7 @@ def _map_error(e: ValueError) -> tuple[grpc.StatusCode, str]:
         code_str, detail = msg.split(":", 1)
         return _GRPC_STATUS_MAP.get(code_str, grpc.StatusCode.INTERNAL), detail
     return grpc.StatusCode.INTERNAL, msg
+
 
 class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
     def __init__(self, get_session):
@@ -61,12 +70,8 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
 
         async with self.get_session() as session:
             try:
-                result = await self._svc(session).add_contact(
-                    request.user_id, request.user_public_key
-                )
-                return contacts_pb2.AddContactResponse(
-                    contact=_contact_dict_to_proto(result)
-                )
+                result = await self._svc(session).add_contact(request.user_id, request.user_public_key)
+                return contacts_pb2.AddContactResponse(contact=_contact_dict_to_proto(result))
             except ValueError as e:
                 code, detail = _map_error(e)
                 context.set_code(code)
@@ -131,9 +136,7 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 result = await self._svc(session).update_contact(
                     request.user_id, request.contact_user_id, is_favorite=is_favorite
                 )
-                return contacts_pb2.UpdateContactResponse(
-                    contact=_contact_dict_to_proto(result)
-                )
+                return contacts_pb2.UpdateContactResponse(contact=_contact_dict_to_proto(result))
             except ValueError as e:
                 code, detail = _map_error(e)
                 context.set_code(code)
@@ -216,9 +219,7 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
 
         async with self.get_session() as session:
             try:
-                is_contact = await self._svc(session).is_contact(
-                    request.user_id, request.contact_user_id
-                )
+                is_contact = await self._svc(session).is_contact(request.user_id, request.contact_user_id)
                 return contacts_pb2.IsContactResponse(is_contact=is_contact)
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)
@@ -233,9 +234,7 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
 
         async with self.get_session() as session:
             try:
-                is_blocked = await self._svc(session).is_blocked(
-                    request.user_id, request.blocked_user_id
-                )
+                is_blocked = await self._svc(session).is_blocked(request.user_id, request.blocked_user_id)
                 return contacts_pb2.IsBlockedResponse(is_blocked=is_blocked)
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)

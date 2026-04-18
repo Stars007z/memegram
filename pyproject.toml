@@ -1,0 +1,113 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    "**/generated/**",
+    "**/proto/**",
+    "**/alembic/versions/**",
+    "course-project-2-Stars007z",
+    "ml",
+    "android-ios-app",
+]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: isort
+select = ["E", "F", "W", "I"]
+# Ослабляем некоторые правила, т.к. кодовая база уже существует
+ignore = [
+    "E501",  # слишком длинные строки: делегируем black'у
+    "E402",  # module level import not at top of file
+    "E712",  # == False/True нужен для SQLAlchemy where-клауз
+    "E731",  # lambda assignments
+    "F401",  # неиспользуемые импорты в __init__.py и т.п.
+    "F403",  # star-imports
+    "F405",
+    "F811",  # redefinition
+    "F841",  # локальные неиспользуемые переменные
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["F401", "F811", "E402"]
+"**/__init__.py" = ["F401", "F403"]
+# SQLAlchemy string-annotated relationships use forward refs resolved at runtime
+"**/models/**" = ["F821"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+extend-exclude = '''
+/(
+    \.venv
+  | venv
+  | build
+  | dist
+  | .*/generated
+  | .*/proto
+  | .*/alembic/versions
+  | course-project-2-Stars007z
+  | ml
+  | android-ios-app
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["app"]
+skip = [
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    "course-project-2-Stars007z",
+    "ml",
+    "android-ios-app",
+]
+skip_glob = [
+    "**/generated/**",
+    "**/proto/**",
+    "**/alembic/versions/**",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--disable-warnings",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+    "*/generated/*",
+    "*/proto/*",
+    "*/alembic/*",
+    "*/tests/*",
+    "*/main.py",
+    "*/logging_config.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

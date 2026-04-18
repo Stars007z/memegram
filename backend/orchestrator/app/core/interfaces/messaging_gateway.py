@@ -1,16 +1,19 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, AsyncIterator
+from typing import AsyncIterator, Optional
+
 
 @dataclass
 class DeviceWelcome:
     device_id: str
     welcome_data: bytes
 
+
 @dataclass
 class MemberWithWelcomes:
     user_id: str
     welcomes: list[DeviceWelcome] = field(default_factory=list)
+
 
 @dataclass
 class ConversationMemberResult:
@@ -18,10 +21,12 @@ class ConversationMemberResult:
     role: str
     joined_at: int
 
+
 @dataclass
 class MlsGroupInfoResult:
     current_epoch: int
     cipher_suite: int
+
 
 @dataclass
 class ConversationResult:
@@ -33,6 +38,7 @@ class ConversationResult:
     created_at: int = 0
     avatar_media_id: str = ""
 
+
 @dataclass
 class ConversationSummaryResult:
     id: str
@@ -43,10 +49,12 @@ class ConversationSummaryResult:
     last_activity_at: int
     avatar_media_id: str = ""
 
+
 @dataclass
 class GetConversationsResult:
     items: list[ConversationSummaryResult] = field(default_factory=list)
     next_cursor: str = ""
+
 
 @dataclass
 class MessageEntryResult:
@@ -62,20 +70,24 @@ class MessageEntryResult:
     edited_at: int = 0
     deleted_at: int = 0
 
+
 @dataclass
 class SendMessageResult:
     message_id: str
     created_at: int
+
 
 @dataclass
 class GetMessagesResult:
     messages: list[MessageEntryResult] = field(default_factory=list)
     has_more: bool = False
 
+
 @dataclass
 class KeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
+
 
 @dataclass
 class UserDeviceKeyPackageResult:
@@ -83,10 +95,12 @@ class UserDeviceKeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
 
+
 @dataclass
 class CommitGroupChangeResult:
     new_epoch: int
     committed_at: int
+
 
 @dataclass
 class WelcomeEntryResult:
@@ -95,11 +109,13 @@ class WelcomeEntryResult:
     welcome_data: bytes
     created_at: int
 
+
 @dataclass
 class CommitEntryResult:
     epoch: int
     commit_data: bytes
     created_at: int
+
 
 @dataclass
 class InitiateMediaUploadResult:
@@ -107,11 +123,13 @@ class InitiateMediaUploadResult:
     upload_url: str
     expires_in: int
 
+
 @dataclass
 class GetMediaDownloadUrlResult:
     download_url: str
     expires_in: int
     encryption_metadata: bytes
+
 
 @dataclass
 class MessagingHealthResult:
@@ -121,31 +139,42 @@ class MessagingHealthResult:
     media_service_status: str
     version: str
 
+
 class IMessagingGateway(ABC):
 
     @abstractmethod
     async def upload_key_packages(
-        self, user_id: str, device_id: str, key_packages: list[bytes],
+        self,
+        user_id: str,
+        device_id: str,
+        key_packages: list[bytes],
     ) -> int: ...
 
     @abstractmethod
     async def get_key_package(
-        self, target_user_id: str, target_device_id: str,
+        self,
+        target_user_id: str,
+        target_device_id: str,
     ) -> KeyPackageResult: ...
 
     @abstractmethod
     async def get_key_packages_count(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> int: ...
 
     @abstractmethod
     async def get_key_packages_for_user(
-        self, target_user_id: str,
+        self,
+        target_user_id: str,
     ) -> list[UserDeviceKeyPackageResult]: ...
 
     @abstractmethod
     async def delete_key_packages_for_device(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> int: ...
 
     @abstractmethod
@@ -168,42 +197,66 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     async def get_conversations(
-        self, user_id: str, limit: int, cursor: str,
+        self,
+        user_id: str,
+        limit: int,
+        cursor: str,
     ) -> GetConversationsResult: ...
 
     @abstractmethod
     async def get_conversation(
-        self, user_id: str, conversation_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
     ) -> ConversationResult: ...
 
     @abstractmethod
     async def leave_conversation(
-        self, user_id: str, device_id: str, conversation_id: str, commit_data: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        commit_data: bytes,
     ) -> bool: ...
 
     @abstractmethod
     async def kick_member(
-        self, user_id: str, conversation_id: str, target_user_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        target_user_id: str,
     ) -> bool: ...
 
     @abstractmethod
     async def update_member_role(
-        self, user_id: str, conversation_id: str, target_user_id: str, new_role: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        target_user_id: str,
+        new_role: str,
     ) -> bool: ...
 
     @abstractmethod
     async def update_group_avatar(
-        self, user_id: str, conversation_id: str, avatar_media_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        avatar_media_id: str,
     ) -> bool: ...
 
     @abstractmethod
     async def update_group_name(
-        self, user_id: str, conversation_id: str, name: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        name: str,
     ) -> bool: ...
 
     @abstractmethod
     async def delete_conversation(
-        self, user_id: str, conversation_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
     ) -> bool: ...
 
     @abstractmethod
@@ -221,22 +274,37 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     async def get_messages(
-        self, user_id: str, conversation_id: str, before_message_id: str, limit: int,
+        self,
+        user_id: str,
+        conversation_id: str,
+        before_message_id: str,
+        limit: int,
     ) -> GetMessagesResult: ...
 
     @abstractmethod
     async def edit_message(
-        self, user_id: str, device_id: str, message_id: str, new_mls_ciphertext: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        message_id: str,
+        new_mls_ciphertext: bytes,
     ) -> MessageEntryResult: ...
 
     @abstractmethod
     async def delete_message(
-        self, user_id: str, message_id: str, delete_for_everyone: bool,
+        self,
+        user_id: str,
+        message_id: str,
+        delete_for_everyone: bool,
     ) -> bool: ...
 
     @abstractmethod
     async def mark_as_read(
-        self, user_id: str, device_id: str, conversation_id: str, last_read_message_id: str,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        last_read_message_id: str,
     ) -> int: ...
 
     @abstractmethod
@@ -260,7 +328,10 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     async def get_pending_commits(
-        self, device_id: str, conversation_id: str, since_epoch: int,
+        self,
+        device_id: str,
+        conversation_id: str,
+        since_epoch: int,
     ) -> list[CommitEntryResult]: ...
 
     @abstractmethod
@@ -278,12 +349,18 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     async def get_media_download_url(
-        self, user_id: str, media_id: str,
+        self,
+        user_id: str,
+        media_id: str,
     ) -> GetMediaDownloadUrlResult: ...
 
     @abstractmethod
     async def set_typing(
-        self, user_id: str, device_id: str, conversation_id: str, is_typing: bool,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        is_typing: bool,
     ) -> bool: ...
 
     @abstractmethod
@@ -291,7 +368,10 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     def subscribe_to_conversations(
-        self, user_id: str, device_id: str, conversation_ids: list[str],
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_ids: list[str],
     ) -> AsyncIterator[dict]: ...
 
     @abstractmethod

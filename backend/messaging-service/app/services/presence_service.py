@@ -5,6 +5,7 @@ import redis.asyncio as aioredis
 from app.services.interfaces.presence_service import IPresenceService
 from app.services.interfaces.stream_service import IStreamService
 
+
 class PresenceServiceImpl(IPresenceService):
 
     def __init__(self, redis: aioredis.Redis, stream_service: IStreamService) -> None:
@@ -25,11 +26,14 @@ class PresenceServiceImpl(IPresenceService):
         else:
             await self._redis.delete(key)
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "typing",
-            "user_id": str(user_id),
-            "is_typing": is_typing,
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "typing",
+                "user_id": str(user_id),
+                "is_typing": is_typing,
+            },
+        )
         return True
 
     async def set_online(

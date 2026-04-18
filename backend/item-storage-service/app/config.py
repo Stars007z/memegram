@@ -1,11 +1,15 @@
 import os
 from functools import lru_cache
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://storage_user:storage_password@localhost:5432/item_storage_db")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://storage_user:storage_password@localhost:5432/item_storage_db"
+    )
     GRPC_PORT: int = int(os.getenv("GRPC_PORT", 50056))
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SERVICE_VERSION: str = os.getenv("SERVICE_VERSION", "1.0.0")
@@ -36,8 +40,10 @@ class Settings:
     def s3_endpoint(self) -> str | None:
         return self.S3_ENDPOINT_URL or None
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

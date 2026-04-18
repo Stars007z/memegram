@@ -2,16 +2,17 @@ import asyncio
 import os
 import sys
 from logging.config import fileConfig
+
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
-from alembic import context
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.database.base import Base
-from app.models import Contact, BlockedUser  # noqa: F401
 from app.config import settings
+from app.database.base import Base
+from app.models import BlockedUser, Contact  # noqa: F401
 
 config = context.config
 

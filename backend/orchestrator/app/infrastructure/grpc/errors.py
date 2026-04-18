@@ -1,11 +1,7 @@
 import grpc
 
-from app.exceptions import (
-    GatewayError,
-    NotFoundError,
-    ValidationError,
-    PermissionDeniedError,
-)
+from app.exceptions import GatewayError, NotFoundError, PermissionDeniedError, ValidationError
+
 
 def grpc_error_to_exception(e: grpc.RpcError, service_name: str = "Service") -> Exception:
     code = e.code()

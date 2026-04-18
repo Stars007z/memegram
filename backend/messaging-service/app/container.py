@@ -17,7 +17,6 @@ from app.database.session import get_session
 from app.infrastructure.auth_client import IAuthClient
 from app.infrastructure.contacts_client import IContactsClient
 from app.infrastructure.media_client import IMediaClient
-
 from app.services.interfaces import (
     IConversationService,
     IMediaService,
@@ -26,6 +25,7 @@ from app.services.interfaces import (
     IPresenceService,
     IStreamService,
 )
+
 
 class RequestScope:
     """Per-request scope: owns a DB session, lazily builds services."""
@@ -50,13 +50,13 @@ class RequestScope:
     @property
     def conversation_service(self) -> IConversationService:
         if "conversation" not in self._cache:
-            from app.services.conversation_service import ConversationServiceImpl
             from app.repositories.conversation_repo import ConversationRepository
             from app.repositories.member_repo import MemberRepository
-            from app.repositories.mls_group_repo import MlsGroupRepository
-            from app.repositories.mls_welcome_repo import MlsWelcomeRepository
             from app.repositories.message_repo import MessageRepository
             from app.repositories.mls_commit_repo import MlsCommitRepository
+            from app.repositories.mls_group_repo import MlsGroupRepository
+            from app.repositories.mls_welcome_repo import MlsWelcomeRepository
+            from app.services.conversation_service import ConversationServiceImpl
 
             self._cache["conversation"] = ConversationServiceImpl(
                 conversation_repo=ConversationRepository(self._session),
@@ -74,10 +74,10 @@ class RequestScope:
     @property
     def message_service(self) -> IMessageService:
         if "message" not in self._cache:
-            from app.services.message_service import MessageServiceImpl
-            from app.repositories.message_repo import MessageRepository
-            from app.repositories.member_repo import MemberRepository
             from app.repositories.conversation_repo import ConversationRepository
+            from app.repositories.member_repo import MemberRepository
+            from app.repositories.message_repo import MessageRepository
+            from app.services.message_service import MessageServiceImpl
 
             self._cache["message"] = MessageServiceImpl(
                 message_repo=MessageRepository(self._session),
@@ -93,12 +93,12 @@ class RequestScope:
     @property
     def mls_service(self) -> IMlsService:
         if "mls" not in self._cache:
-            from app.services.mls_service import MlsServiceImpl
-            from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
-            from app.repositories.mls_group_repo import MlsGroupRepository
-            from app.repositories.mls_welcome_repo import MlsWelcomeRepository
-            from app.repositories.mls_commit_repo import MlsCommitRepository
             from app.repositories.member_repo import MemberRepository
+            from app.repositories.mls_commit_repo import MlsCommitRepository
+            from app.repositories.mls_group_repo import MlsGroupRepository
+            from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
+            from app.repositories.mls_welcome_repo import MlsWelcomeRepository
+            from app.services.mls_service import MlsServiceImpl
 
             self._cache["mls"] = MlsServiceImpl(
                 key_package_repo=MlsKeyPackageRepository(self._session),
@@ -115,9 +115,9 @@ class RequestScope:
     @property
     def media_service(self) -> IMediaService:
         if "media" not in self._cache:
-            from app.services.media_service import MediaServiceImpl
             from app.repositories.media_attachment_repo import MediaAttachmentRepository
             from app.repositories.member_repo import MemberRepository
+            from app.services.media_service import MediaServiceImpl
 
             self._cache["media"] = MediaServiceImpl(
                 attachment_repo=MediaAttachmentRepository(self._session),
@@ -125,6 +125,7 @@ class RequestScope:
                 media_client=self._media,
             )
         return self._cache["media"]
+
 
 class Container:
     """Application-level DI container (singleton for the process lifetime)."""
@@ -146,12 +147,14 @@ class Container:
     def stream_service(self) -> IStreamService:
         if self._stream is None:
             from app.services.stream_service import StreamServiceImpl
+
             self._stream = StreamServiceImpl(self._redis)
         return self._stream
 
     @property
     def presence_service(self) -> IPresenceService:
         from app.services.presence_service import PresenceServiceImpl
+
         return PresenceServiceImpl(self._redis, self.stream_service)
 
     @asynccontextmanager

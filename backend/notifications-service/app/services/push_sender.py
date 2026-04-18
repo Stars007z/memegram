@@ -15,14 +15,17 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 class PushPlatform(str, Enum):
     IOS = "ios"
     ANDROID = "android"
+
 
 class PushErrorType(str, Enum):
     TRANSIENT = "transient"
     PERMANENT_TOKEN = "permanent_token"
     RATE_LIMIT = "rate_limit"
+
 
 @dataclass
 class PushResult:
@@ -30,6 +33,7 @@ class PushResult:
     error_type: PushErrorType | None = None
     error_code: str | None = None
     retry_after: float | None = None
+
 
 @dataclass
 class PushPayload:
@@ -43,10 +47,11 @@ class PushPayload:
     thread_id: str | None = None
     avatar_url: str | None = None
 
+
 class IPushSender(ABC):
     @abstractmethod
-    async def send(self, payload: PushPayload) -> PushResult:
-        ...
+    async def send(self, payload: PushPayload) -> PushResult: ...
+
 
 class FcmSender(IPushSender):
     """Send push via Firebase Cloud Messaging v1 API using firebase-admin SDK."""
@@ -111,10 +116,15 @@ class FcmSender(IPushSender):
             if "unregistered" in error_str or "not-registered" in error_str:
                 return PushResult(success=False, error_type=PushErrorType.PERMANENT_TOKEN, error_code="UNREGISTERED")
             if "invalid" in error_str and "argument" in error_str:
-                return PushResult(success=False, error_type=PushErrorType.PERMANENT_TOKEN, error_code="INVALID_ARGUMENT")
+                return PushResult(
+                    success=False, error_type=PushErrorType.PERMANENT_TOKEN, error_code="INVALID_ARGUMENT"
+                )
             if "429" in error_str or "quota" in error_str:
-                return PushResult(success=False, error_type=PushErrorType.RATE_LIMIT, error_code="RATE_LIMITED", retry_after=60)
+                return PushResult(
+                    success=False, error_type=PushErrorType.RATE_LIMIT, error_code="RATE_LIMITED", retry_after=60
+                )
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code=str(e)[:100])
+
 
 class ApnsSender(IPushSender):
     """Send push via APNs HTTP/2 using aioapns."""
@@ -187,6 +197,7 @@ class ApnsSender(IPushSender):
 
         except Exception as e:
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code=str(e)[:100])
+
 
 async def send_with_retry(
     sender: IPushSender,

@@ -2,47 +2,42 @@ import base64
 import dataclasses
 from typing import Optional
 
-from app.logging_config import get_logger
-
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import (
-    get_auth_gateway,
-    get_messaging_gateway,
-    get_current_session,
-    require_device_type,
-)
+from app.api.dependencies import get_auth_gateway, get_current_session, get_messaging_gateway, require_device_type
 from app.api.v1.devices.schemas import (
-    SubmitDeviceDataRequestSchema,
-    ConfirmDeviceAdditionRequestSchema,
-    RevokeDeviceRequestSchema,
-    UpdateDeviceKeysRequestSchema,
-    RenameDeviceRequestSchema,
-    VerifyDeviceRequestSchema,
-    TransferPrimaryRequestSchema,
     BulkRevokeDevicesRequestSchema,
-    DeviceInfoResponseSchema,
-    InitDeviceAdditionResponseSchema,
-    SubmitDeviceDataResponseSchema,
-    DeviceAdditionStatusResponseSchema,
-    PendingRegistrationResponseSchema,
-    ConfirmDeviceAdditionResponseSchema,
-    RevokeDeviceResponseSchema,
-    UpdateDeviceKeysResponseSchema,
-    RenameDeviceResponseSchema,
-    VerifyDeviceResponseSchema,
-    TransferPrimaryResponseSchema,
     BulkRevokeDevicesResponseSchema,
+    ConfirmDeviceAdditionRequestSchema,
+    ConfirmDeviceAdditionResponseSchema,
+    DeviceAdditionStatusResponseSchema,
+    DeviceInfoResponseSchema,
     DeviceStatsResponseSchema,
     DeviceTypeCountSchema,
+    InitDeviceAdditionResponseSchema,
+    PendingRegistrationResponseSchema,
+    RenameDeviceRequestSchema,
+    RenameDeviceResponseSchema,
+    RevokeDeviceRequestSchema,
+    RevokeDeviceResponseSchema,
+    SubmitDeviceDataRequestSchema,
+    SubmitDeviceDataResponseSchema,
+    TransferPrimaryRequestSchema,
+    TransferPrimaryResponseSchema,
+    UpdateDeviceKeysRequestSchema,
+    UpdateDeviceKeysResponseSchema,
+    VerifyDeviceRequestSchema,
+    VerifyDeviceResponseSchema,
 )
 from app.core.interfaces.auth_gateway import IAuthGateway
 from app.core.interfaces.messaging_gateway import IMessagingGateway
 from app.core.session_context import SessionContext
+from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+
 
 def _device_result_to_response(d) -> DeviceInfoResponseSchema:
     return DeviceInfoResponseSchema(
@@ -59,6 +54,7 @@ def _device_result_to_response(d) -> DeviceInfoResponseSchema:
         revoked_at=d.revoked_at,
     )
 
+
 @router.post("/init-addition", response_model=InitDeviceAdditionResponseSchema, status_code=201)
 async def init_device_addition(
     session: SessionContext = Depends(require_device_type("primary")),
@@ -69,6 +65,7 @@ async def init_device_addition(
         device_id=session.device_id,
     )
     return InitDeviceAdditionResponseSchema(**dataclasses.asdict(result))
+
 
 @router.post("/{registration_id}/submit", response_model=SubmitDeviceDataResponseSchema)
 async def submit_device_data(
@@ -88,6 +85,7 @@ async def submit_device_data(
     )
     return SubmitDeviceDataResponseSchema(**dataclasses.asdict(result))
 
+
 @router.get("/addition/{registration_id}/status", response_model=DeviceAdditionStatusResponseSchema)
 async def get_device_addition_status(
     registration_id: str,
@@ -104,6 +102,7 @@ async def get_device_addition_status(
         token_expires_at=result.token_expires_at,
     )
 
+
 @router.get("/addition/pending", response_model=list[PendingRegistrationResponseSchema])
 async def get_pending_device_additions(
     session: SessionContext = Depends(require_device_type("primary")),
@@ -114,6 +113,7 @@ async def get_pending_device_additions(
         device_id=session.device_id,
     )
     return [PendingRegistrationResponseSchema(**dataclasses.asdict(r)) for r in items]
+
 
 @router.post(
     "/addition/{registration_id}/confirm",
@@ -136,6 +136,7 @@ async def confirm_device_addition(
 
     return ConfirmDeviceAdditionResponseSchema(**dataclasses.asdict(result))
 
+
 @router.get("", response_model=list[DeviceInfoResponseSchema])
 async def get_devices(
     session: SessionContext = Depends(get_current_session),
@@ -143,6 +144,7 @@ async def get_devices(
 ) -> list[DeviceInfoResponseSchema]:
     devices = await auth_gw.get_devices(user_id=session.user_id)
     return [_device_result_to_response(d) for d in devices]
+
 
 @router.get("/stats", response_model=DeviceStatsResponseSchema)
 async def get_device_stats(
@@ -154,12 +156,10 @@ async def get_device_stats(
         total_count=stats.total_count,
         active_count=stats.active_count,
         primary_count=stats.primary_count,
-        type_stats=[
-            DeviceTypeCountSchema(device_type=ts.device_type, count=ts.count)
-            for ts in stats.type_stats
-        ],
+        type_stats=[DeviceTypeCountSchema(device_type=ts.device_type, count=ts.count) for ts in stats.type_stats],
         last_activity_at=stats.last_activity_at,
     )
+
 
 @router.get("/{device_id}", response_model=DeviceInfoResponseSchema)
 async def get_device(
@@ -169,6 +169,7 @@ async def get_device(
 ) -> DeviceInfoResponseSchema:
     result = await auth_gw.get_device(user_id=session.user_id, device_id=device_id)
     return _device_result_to_response(result)
+
 
 @router.delete("/{device_id}", response_model=RevokeDeviceResponseSchema)
 async def revoke_device(
@@ -193,12 +194,13 @@ async def revoke_device(
             )
         except Exception:
             logger.warning(
-                        "device.revoke.notify_failed",
-                        revoked_device_id=device_id,
-                        user_id=session.user_id,
-                    )
+                "device.revoke.notify_failed",
+                revoked_device_id=device_id,
+                user_id=session.user_id,
+            )
 
     return RevokeDeviceResponseSchema(**dataclasses.asdict(result))
+
 
 @router.put("/{device_id}/update-keys", response_model=UpdateDeviceKeysResponseSchema)
 async def update_device_keys(
@@ -216,6 +218,7 @@ async def update_device_keys(
     )
     return UpdateDeviceKeysResponseSchema(**dataclasses.asdict(result))
 
+
 @router.put("/{device_id}/rename", response_model=RenameDeviceResponseSchema)
 async def rename_device(
     device_id: str,
@@ -231,6 +234,7 @@ async def rename_device(
     )
     return RenameDeviceResponseSchema(**dataclasses.asdict(result))
 
+
 @router.post("/{device_id}/verify", response_model=VerifyDeviceResponseSchema)
 async def verify_device(
     device_id: str,
@@ -244,6 +248,7 @@ async def verify_device(
     )
     return VerifyDeviceResponseSchema(**dataclasses.asdict(result))
 
+
 @router.post("/primary/transfer", response_model=TransferPrimaryResponseSchema)
 async def transfer_primary(
     body: TransferPrimaryRequestSchema,
@@ -256,6 +261,7 @@ async def transfer_primary(
         target_device_id=body.target_device_id,
     )
     return TransferPrimaryResponseSchema(**dataclasses.asdict(result))
+
 
 @router.post("/bulk-revoke", response_model=BulkRevokeDevicesResponseSchema)
 async def bulk_revoke_devices(
@@ -280,9 +286,9 @@ async def bulk_revoke_devices(
                 )
             except Exception:
                 logger.warning(
-                        "device.bulk_revoke.notify_failed",
-                        revoked_device_id=revoked_id,
-                        user_id=session.user_id,
-                    )
+                    "device.bulk_revoke.notify_failed",
+                    revoked_device_id=revoked_id,
+                    user_id=session.user_id,
+                )
 
     return BulkRevokeDevicesResponseSchema(**dataclasses.asdict(result))

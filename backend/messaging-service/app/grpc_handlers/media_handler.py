@@ -6,6 +6,7 @@ from app.container import Container
 from app.generated import messaging_pb2
 from app.grpc_handlers.conversation_handler import _set_error_from_value_error
 
+
 class MediaHandler:
 
     def __init__(self, container: Container) -> None:

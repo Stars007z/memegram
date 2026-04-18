@@ -1,24 +1,29 @@
 import asyncio
 
 from fastapi import APIRouter, Depends
-from app.logging_config import get_logger
+
+from app.api.dependencies import get_contacts_gateway, get_current_session, get_item_storage_gateway, get_user_gateway
 from app.api.v1.user.schemas import (
-    UserProfileResponseSchema, UpdateUserRequestSchema, DeleteUserResponseSchema,
-    UserSettingsResponseSchema, UpdateUserSettingsRequestSchema, UserHealthResponseSchema,
-    SyncSettingsRequestSchema, SyncSettingsResponseSchema, MediaDownloadInfoSchema,
+    DeleteUserResponseSchema,
+    MediaDownloadInfoSchema,
+    SyncSettingsRequestSchema,
+    SyncSettingsResponseSchema,
+    UpdateUserRequestSchema,
+    UpdateUserSettingsRequestSchema,
+    UserHealthResponseSchema,
+    UserProfileResponseSchema,
+    UserSettingsResponseSchema,
 )
-from app.api.dependencies import (
-    get_current_session, get_user_gateway, get_item_storage_gateway,
-    get_contacts_gateway,
-)
-from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, UpdateUserSettingsRequest
 from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
+from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, UpdateUserSettingsRequest
 from app.core.session_context import SessionContext
+from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user", tags=["user"])
+
 
 async def _build_profile_with_blocks(
     profile_dc,
@@ -36,10 +41,12 @@ async def _build_profile_with_blocks(
         try:
             a, b = await asyncio.gather(
                 contacts_gw.is_blocked(
-                    user_id=requester_user_id, blocked_user_id=target_id,
+                    user_id=requester_user_id,
+                    blocked_user_id=target_id,
                 ),
                 contacts_gw.is_blocked(
-                    user_id=target_id, blocked_user_id=requester_user_id,
+                    user_id=target_id,
+                    blocked_user_id=requester_user_id,
                 ),
                 return_exceptions=True,
             )
@@ -59,10 +66,12 @@ async def _build_profile_with_blocks(
     data["is_blocked_by_peer"] = is_blocked_by_peer
     return UserProfileResponseSchema(**data)
 
+
 @router.get("/health", response_model=UserHealthResponseSchema)
 async def user_health(gateway: IUserGateway = Depends(get_user_gateway)):
     result = await gateway.health_check()
     return UserHealthResponseSchema(**result)
+
 
 @router.get("/me", response_model=UserProfileResponseSchema)
 async def get_me(
@@ -75,6 +84,7 @@ async def get_me(
     data["is_blocked_by_peer"] = False
     return UserProfileResponseSchema(**data)
 
+
 @router.get("/{user_id}", response_model=UserProfileResponseSchema)
 async def get_user(
     user_id: str,
@@ -84,6 +94,7 @@ async def get_user(
 ):
     result = await gateway.get_user(user_id=user_id, requester_user_id=session.user_id)
     return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
+
 
 @router.get("/by-key/{user_public_key}", response_model=UserProfileResponseSchema)
 async def get_user_by_public_key(
@@ -97,6 +108,7 @@ async def get_user_by_public_key(
         requester_user_id=session.user_id,
     )
     return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
+
 
 @router.patch("/me", response_model=UserProfileResponseSchema)
 async def update_me(
@@ -117,6 +129,7 @@ async def update_me(
     data["is_blocked_by_peer"] = False
     return UserProfileResponseSchema(**data)
 
+
 @router.delete("/me", response_model=DeleteUserResponseSchema)
 async def delete_me(
     session: SessionContext = Depends(get_current_session),
@@ -125,6 +138,7 @@ async def delete_me(
     success = await gateway.delete_user(user_id=session.user_id)
     return DeleteUserResponseSchema(success=success)
 
+
 @router.get("/me/settings", response_model=UserSettingsResponseSchema)
 async def get_my_settings(
     session: SessionContext = Depends(get_current_session),
@@ -132,6 +146,7 @@ async def get_my_settings(
 ):
     result = await gateway.get_user_settings(user_id=session.user_id)
     return UserSettingsResponseSchema(**result.__dict__)
+
 
 @router.patch("/me/settings", response_model=UserSettingsResponseSchema)
 async def update_my_settings(
@@ -146,6 +161,7 @@ async def update_my_settings(
     result = await gateway.update_user_settings(request)
     return UserSettingsResponseSchema(**result.__dict__)
 
+
 _MEDIA_FIELDS = [
     ("chat_background_media_id", "chat_background"),
     ("ringtone_media_id", "ringtone"),
@@ -154,6 +170,7 @@ _MEDIA_FIELDS = [
     ("my_bubble_media_id", "my_bubble"),
     ("their_bubble_media_id", "their_bubble"),
 ]
+
 
 @router.post("/me/settings/sync", response_model=SyncSettingsResponseSchema)
 async def sync_my_settings(
@@ -178,7 +195,8 @@ async def sync_my_settings(
     if changed:
         tasks = [
             storage_gw.get_download_url(
-                item_id=item_id, requester_user_id=session.user_id,
+                item_id=item_id,
+                requester_user_id=session.user_id,
             )
             for _, item_id in changed
         ]
@@ -192,13 +210,15 @@ async def sync_my_settings(
                     error=str(result),
                 )
                 continue
-            media_updates.append(MediaDownloadInfoSchema(
-                field=field_label,
-                item_id=item_id,
-                download_url=result.download_url,
-                expires_at=result.expires_at,
-                mime_type=result.mime_type,
-            ))
+            media_updates.append(
+                MediaDownloadInfoSchema(
+                    field=field_label,
+                    item_id=item_id,
+                    download_url=result.download_url,
+                    expires_at=result.expires_at,
+                    mime_type=result.mime_type,
+                )
+            )
 
     return SyncSettingsResponseSchema(
         settings=settings_schema,

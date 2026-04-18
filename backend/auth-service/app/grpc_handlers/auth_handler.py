@@ -1,8 +1,10 @@
 import grpc
+
+from app.database.redis import check_redis_health
 from app.generated import auth_pb2, auth_pb2_grpc
 from app.services.auth_service import AuthService
 from app.services.device_service import DeviceService
-from app.database.redis import check_redis_health
+
 
 class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
     def __init__(self, get_session):
@@ -134,6 +136,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
         try:
             async with self.get_session() as session:
                 from sqlalchemy import text
+
                 await session.execute(text("SELECT 1"))
                 db_status = "connected"
         except Exception as e:
@@ -163,9 +166,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
             try:
                 result = await service.create_invite(
                     expires_in_days=request.expires_in_days,
-                    created_by_device_id=request.created_by_device_id
-                    if request.created_by_device_id
-                    else None,
+                    created_by_device_id=request.created_by_device_id if request.created_by_device_id else None,
                 )
                 return auth_pb2.CreateInviteResponse(**result)
             except ValueError as e:
@@ -292,9 +293,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                     device_id=request.device_id,
                 )
                 return auth_pb2.GetPendingDeviceAdditionsResponse(
-                    registrations=[
-                        auth_pb2.PendingRegistrationInfo(**item) for item in items
-                    ]
+                    registrations=[auth_pb2.PendingRegistrationInfo(**item) for item in items]
                 )
             except PermissionError as e:
                 context.set_code(grpc.StatusCode.PERMISSION_DENIED)
@@ -349,9 +348,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
             svc = DeviceService(session)
             try:
                 devices = await svc.get_devices(user_id=request.user_id)
-                return auth_pb2.GetDevicesResponse(
-                    devices=[self._device_dict_to_pb(d) for d in devices]
-                )
+                return auth_pb2.GetDevicesResponse(devices=[self._device_dict_to_pb(d) for d in devices])
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
@@ -567,8 +564,7 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                     active_count=stats["active_count"],
                     primary_count=stats["primary_count"],
                     type_stats=[
-                        auth_pb2.DeviceTypeCount(device_type=dt, count=cnt)
-                        for dt, cnt in stats["type_stats"].items()
+                        auth_pb2.DeviceTypeCount(device_type=dt, count=cnt) for dt, cnt in stats["type_stats"].items()
                     ],
                     last_activity_at=stats["last_activity_at"],
                 )

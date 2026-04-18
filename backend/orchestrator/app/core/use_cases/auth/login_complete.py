@@ -1,5 +1,7 @@
-from app.core.interfaces.auth_gateway import IAuthGateway, LoginCompleteRequest, AuthResult
 from typing import Optional
+
+from app.core.interfaces.auth_gateway import AuthResult, IAuthGateway, LoginCompleteRequest
+
 
 class LoginCompleteUseCase:
     def __init__(self, auth_gateway: IAuthGateway):

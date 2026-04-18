@@ -12,15 +12,17 @@ from app.generated import messaging_pb2, messaging_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class MemberInfo:
     user_id: str
     role: str
 
+
 class IMessagingClient(ABC):
     @abstractmethod
-    async def get_conversation_members(self, conversation_id: str) -> list[MemberInfo]:
-        ...
+    async def get_conversation_members(self, conversation_id: str) -> list[MemberInfo]: ...
+
 
 class GrpcMessagingClient(IMessagingClient):
 
@@ -38,10 +40,7 @@ class GrpcMessagingClient(IMessagingClient):
                 ),
                 timeout=5.0,
             )
-            return [
-                MemberInfo(user_id=m.user_id, role=m.role)
-                for m in resp.members
-            ]
+            return [MemberInfo(user_id=m.user_id, role=m.role) for m in resp.members]
         except grpc.RpcError as e:
             logger.error("messaging.GetConversationMembers failed: %s", e.details())
             return []

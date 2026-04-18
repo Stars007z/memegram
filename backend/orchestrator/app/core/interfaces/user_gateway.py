@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
+
 @dataclass
 class UserProfileResult:
     id: str
@@ -12,6 +13,7 @@ class UserProfileResult:
     bio: str = ""
     last_active: int = 0
     is_deleted: bool = False
+
 
 @dataclass
 class UserSettingsResult:
@@ -34,10 +36,12 @@ class UserSettingsResult:
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
+
 @dataclass
 class CreateUserResult:
     id: str
     username: str
+
 
 @dataclass
 class UpdateUserRequest:
@@ -46,6 +50,7 @@ class UpdateUserRequest:
     username: Optional[str] = None
     avatar_media_id: Optional[str] = None
     profile_background_media_id: Optional[str] = None
+
 
 @dataclass
 class UpdateUserSettingsRequest:
@@ -67,10 +72,12 @@ class UpdateUserSettingsRequest:
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
+
 @dataclass
 class AutoDeleteResult:
     deleted_count: int
     user_ids: list[str] = field(default_factory=list)
+
 
 class IUserGateway(ABC):
     @abstractmethod
@@ -80,9 +87,7 @@ class IUserGateway(ABC):
     async def get_user(self, user_id: str, requester_user_id: str) -> UserProfileResult: ...
 
     @abstractmethod
-    async def get_user_by_public_key(
-        self, user_public_key: str, requester_user_id: str
-    ) -> UserProfileResult: ...
+    async def get_user_by_public_key(self, user_public_key: str, requester_user_id: str) -> UserProfileResult: ...
 
     @abstractmethod
     async def update_user(self, request: UpdateUserRequest) -> UserProfileResult: ...
@@ -94,9 +99,7 @@ class IUserGateway(ABC):
     async def get_user_settings(self, user_id: str) -> UserSettingsResult: ...
 
     @abstractmethod
-    async def update_user_settings(
-        self, request: UpdateUserSettingsRequest
-    ) -> UserSettingsResult: ...
+    async def update_user_settings(self, request: UpdateUserSettingsRequest) -> UserSettingsResult: ...
 
     @abstractmethod
     async def health_check(self) -> dict: ...

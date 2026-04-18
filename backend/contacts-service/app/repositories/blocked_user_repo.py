@@ -1,9 +1,12 @@
 import uuid
 from typing import Optional
-from sqlalchemy import select, func, delete
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.blocked_user import BlockedUser
 from app.repositories.base import BaseRepository
+
 
 class BlockedUserRepository(BaseRepository[BlockedUser]):
     def __init__(self, session: AsyncSession):
@@ -20,16 +23,16 @@ class BlockedUserRepository(BaseRepository[BlockedUser]):
 
     async def exists(self, user_id: uuid.UUID, blocked_user_id: uuid.UUID) -> bool:
         result = await self.session.execute(
-            select(func.count()).select_from(BlockedUser).where(
+            select(func.count())
+            .select_from(BlockedUser)
+            .where(
                 BlockedUser.user_id == user_id,
                 BlockedUser.blocked_user_id == blocked_user_id,
             )
         )
         return result.scalar() > 0
 
-    async def get_paginated(
-        self, user_id: uuid.UUID, limit: int, offset: int
-    ) -> list[BlockedUser]:
+    async def get_paginated(self, user_id: uuid.UUID, limit: int, offset: int) -> list[BlockedUser]:
         result = await self.session.execute(
             select(BlockedUser)
             .where(BlockedUser.user_id == user_id)

@@ -178,7 +178,7 @@ Table group_settings {
   message_auto_delete_hours integer
   is_archived bool [default: false]
   is_muted bool [default: false]
-  mute_until timestamp 
+  mute_until timestamp
   created_at timestamp
   updated_at timestamp
 }

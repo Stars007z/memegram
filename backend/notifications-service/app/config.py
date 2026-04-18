@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
@@ -15,13 +16,15 @@ class Settings:
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6382/0")
 
     MESSAGING_REDIS_URL: str = os.getenv(
-        "MESSAGING_REDIS_URL", "redis://localhost:6381/0",
+        "MESSAGING_REDIS_URL",
+        "redis://localhost:6381/0",
     )
     STREAM_NAME: str = os.getenv("STREAM_NAME", "notifications:events")
     CONSUMER_GROUP: str = os.getenv("CONSUMER_GROUP", "notifications-cg")
 
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv(
-        "GOOGLE_APPLICATION_CREDENTIALS", "",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "",
     )
     FCM_PROJECT_ID: str = os.getenv("FCM_PROJECT_ID", "")
 
@@ -82,8 +85,10 @@ class Settings:
     def contacts_grpc_address(self) -> str:
         return f"{self.CONTACTS_GRPC_HOST}:{self.CONTACTS_GRPC_PORT}"
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

@@ -1,7 +1,8 @@
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-import uuid
+
 
 @dataclass
 class MessageResult:
@@ -17,15 +18,18 @@ class MessageResult:
     edited_at: Optional[float]
     deleted_at: Optional[float]
 
+
 @dataclass
 class SendResult:
     message_id: uuid.UUID
     created_at: float
 
+
 @dataclass
 class MessageListResult:
     messages: list[MessageResult]
     has_more: bool
+
 
 class IMessageService(ABC):
 
@@ -40,8 +44,7 @@ class IMessageService(ABC):
         client_message_id: uuid.UUID,
         media_id: Optional[uuid.UUID] = None,
         reply_to_message_id: Optional[uuid.UUID] = None,
-    ) -> SendResult:
-        ...
+    ) -> SendResult: ...
 
     @abstractmethod
     async def get_messages(
@@ -50,8 +53,7 @@ class IMessageService(ABC):
         conversation_id: uuid.UUID,
         limit: int,
         before_message_id: Optional[uuid.UUID] = None,
-    ) -> MessageListResult:
-        ...
+    ) -> MessageListResult: ...
 
     @abstractmethod
     async def edit_message(
@@ -59,8 +61,7 @@ class IMessageService(ABC):
         user_id: uuid.UUID,
         message_id: uuid.UUID,
         new_mls_ciphertext: bytes,
-    ) -> MessageResult:
-        ...
+    ) -> MessageResult: ...
 
     @abstractmethod
     async def delete_message(
@@ -68,8 +69,7 @@ class IMessageService(ABC):
         user_id: uuid.UUID,
         message_id: uuid.UUID,
         delete_for_everyone: bool,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def mark_as_read(

@@ -1,9 +1,12 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, Integer, DateTime, ForeignKey
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database.base import Base
+
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
@@ -35,6 +38,8 @@ class UserSettings(Base):
     notification_vibration_strength: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
     user: Mapped["User"] = relationship(back_populates="settings")

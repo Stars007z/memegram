@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media_object import MediaObject
 from app.repositories.base import BaseRepository
 
+
 class MediaObjectRepository(BaseRepository[MediaObject]):
     def __init__(self, session: AsyncSession):
         super().__init__(MediaObject, session)
@@ -19,19 +20,25 @@ class MediaObjectRepository(BaseRepository[MediaObject]):
         obj = await self.get_by_id(media_id)
         if obj is None:
             return None
-        return await self.update(obj, {
-            "status": "uploaded",
-            "uploaded_at": datetime.utcnow(),
-        })
+        return await self.update(
+            obj,
+            {
+                "status": "uploaded",
+                "uploaded_at": datetime.utcnow(),
+            },
+        )
 
     async def mark_deleted(self, media_id: uuid.UUID) -> MediaObject | None:
         obj = await self.get_by_id(media_id)
         if obj is None:
             return None
-        return await self.update(obj, {
-            "status": "deleted",
-            "deleted_at": datetime.utcnow(),
-        })
+        return await self.update(
+            obj,
+            {
+                "status": "deleted",
+                "deleted_at": datetime.utcnow(),
+            },
+        )
 
     async def mark_deleted_batch(self, media_ids: list[uuid.UUID]) -> int:
         if not media_ids:
