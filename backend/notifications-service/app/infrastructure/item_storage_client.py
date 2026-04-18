@@ -12,16 +12,18 @@ from app.generated import item_storage_pb2, item_storage_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class DownloadUrlResult:
     download_url: str
     expires_at: int
     mime_type: str
 
+
 class IItemStorageClient(ABC):
     @abstractmethod
-    async def get_download_url(self, item_id: str, requester_user_id: str) -> DownloadUrlResult | None:
-        ...
+    async def get_download_url(self, item_id: str, requester_user_id: str) -> DownloadUrlResult | None: ...
+
 
 class GrpcItemStorageClient(IItemStorageClient):
 

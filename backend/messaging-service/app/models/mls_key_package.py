@@ -7,11 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
+
 class MlsKeyPackage(Base):
     __tablename__ = "mls_key_packages"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -24,7 +27,8 @@ class MlsKeyPackage(Base):
     __table_args__ = (
         Index(
             "ix_key_packages_available",
-            "user_id", "device_id",
+            "user_id",
+            "device_id",
             postgresql_where=consumed_at.is_(None),
         ),
     )

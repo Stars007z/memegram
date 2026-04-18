@@ -7,11 +7,12 @@ from app.core.interfaces.notifications_gateway import (
     RegisterPushTokenResult,
     UnregisterPushTokenResult,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import notifications_pb2, notifications_pb2_grpc
 
 _SERVICE = "Notifications service"
+
 
 class GrpcNotificationsGateway(INotificationsGateway):
 
@@ -46,7 +47,9 @@ class GrpcNotificationsGateway(INotificationsGateway):
         return RegisterPushTokenResult(success=resp.success)
 
     async def unregister_push_token(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> UnregisterPushTokenResult:
         try:
             resp = await self._stub().UnregisterPushToken(

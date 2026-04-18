@@ -4,6 +4,7 @@ import redis.asyncio as aioredis
 
 from app.config import settings
 
+
 class RedisClient:
     _instance: Optional[aioredis.Redis] = None
 
@@ -22,6 +23,7 @@ class RedisClient:
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
+
 
 async def check_redis_health() -> bool:
     try:

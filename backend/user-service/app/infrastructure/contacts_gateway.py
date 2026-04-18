@@ -16,6 +16,7 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 class ContactsGateway:
 
     def __init__(self):
@@ -33,6 +34,7 @@ class ContactsGateway:
     async def is_contact(self, owner_user_id: str, contact_user_id: str) -> bool:
         try:
             from app.generated import contacts_pb2, contacts_pb2_grpc
+
             stub = contacts_pb2_grpc.ContactsServiceStub(self._get_channel())
             resp = await stub.IsContact(
                 contacts_pb2.IsContactRequest(
@@ -50,6 +52,7 @@ class ContactsGateway:
         """Return True if user_id has blocked blocked_user_id."""
         try:
             from app.generated import contacts_pb2, contacts_pb2_grpc
+
             stub = contacts_pb2_grpc.ContactsServiceStub(self._get_channel())
             resp = await stub.IsBlocked(
                 contacts_pb2.IsBlockedRequest(

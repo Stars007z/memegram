@@ -19,6 +19,7 @@ import structlog
 
 from app.config import settings
 
+
 def setup_logging() -> None:
     """Configure structlog + stdlib logging for the service.
 
@@ -72,6 +73,7 @@ def setup_logging() -> None:
     logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
     logging.getLogger("aiobotocore").setLevel(logging.WARNING)
     logging.getLogger("botocore").setLevel(logging.WARNING)
+
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a structlog logger pre-bound with service-level context.

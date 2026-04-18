@@ -21,35 +21,40 @@ from app.logging_config import get_logger
 
 logger = get_logger("grpc.access")
 
-_CALLER_FIELDS = frozenset({
-    "user_id",
-    "device_id",
-    "sender_user_id",
-    "sender_device_id",
-    "initiator_user_id",
-    "initiator_device_id",
-    "caller_user_id",
-    "target_user_id",
-    "recipient_user_id",
-})
+_CALLER_FIELDS = frozenset(
+    {
+        "user_id",
+        "device_id",
+        "sender_user_id",
+        "sender_device_id",
+        "initiator_user_id",
+        "initiator_device_id",
+        "caller_user_id",
+        "target_user_id",
+        "recipient_user_id",
+    }
+)
 
-_SENSITIVE_FIELDS = frozenset({
-    "access_token",
-    "refresh_token",
-    "signature",
-    "identity_key_pub",
-    "init_key_pub",
-    "credential_data",
-    "jwt_secret",
-    "password",
-    "registration_code",
-    "mls_ciphertext",
-    "commit_data",
-    "welcome_data",
-    "key_package_data",
-    "ratchet_tree",
-    "encryption_metadata",
-})
+_SENSITIVE_FIELDS = frozenset(
+    {
+        "access_token",
+        "refresh_token",
+        "signature",
+        "identity_key_pub",
+        "init_key_pub",
+        "credential_data",
+        "jwt_secret",
+        "password",
+        "registration_code",
+        "mls_ciphertext",
+        "commit_data",
+        "welcome_data",
+        "key_package_data",
+        "ratchet_tree",
+        "encryption_metadata",
+    }
+)
+
 
 def _extract_caller_info(request) -> dict[str, str]:
     """Pull known ID fields from the protobuf message into a flat dict."""
@@ -63,6 +68,7 @@ def _extract_caller_info(request) -> dict[str, str]:
     except Exception:
         pass
     return info
+
 
 def _sanitize_request(request) -> dict:
     """Convert protobuf message to dict, replacing sensitive values with '***'."""
@@ -78,6 +84,7 @@ def _sanitize_request(request) -> dict:
         else:
             sanitized[key] = value
     return sanitized
+
 
 class LoggingInterceptor(grpc.aio.ServerInterceptor):
     """Intercepts every unary-unary RPC and emits one structured log entry per request.

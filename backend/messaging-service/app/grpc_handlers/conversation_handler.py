@@ -5,6 +5,7 @@ import grpc
 from app.container import Container
 from app.generated import messaging_pb2
 
+
 class ConversationHandler:
 
     def __init__(self, container: Container) -> None:
@@ -18,10 +19,7 @@ class ConversationHandler:
 
         async with self._container.request_scope() as scope:
             try:
-                welcomes = [
-                    (uuid.UUID(w.device_id), w.welcome_data)
-                    for w in request.welcome_messages
-                ]
+                welcomes = [(uuid.UUID(w.device_id), w.welcome_data) for w in request.welcome_messages]
                 result = await scope.conversation_service.create_direct(
                     initiator_user_id=uuid.UUID(request.initiator_user_id),
                     initiator_device_id=uuid.UUID(request.initiator_device_id),
@@ -232,13 +230,18 @@ class ConversationHandler:
                 )
                 for m in result.members
             ],
-            mls_group=messaging_pb2.MlsGroupInfo(
-                current_epoch=result.mls_group.current_epoch,
-                cipher_suite=result.mls_group.cipher_suite,
-            ) if result.mls_group else None,
+            mls_group=(
+                messaging_pb2.MlsGroupInfo(
+                    current_epoch=result.mls_group.current_epoch,
+                    cipher_suite=result.mls_group.cipher_suite,
+                )
+                if result.mls_group
+                else None
+            ),
             created_at=int(result.created_at),
             avatar_media_id=str(result.avatar_media_id) if result.avatar_media_id else "",
         )
+
 
 def _set_error_from_value_error(context, e: ValueError) -> None:
     msg = str(e)

@@ -2,9 +2,10 @@ import uuid
 
 import grpc
 
+from app.config import settings
 from app.container import Container
 from app.generated import media_pb2, media_pb2_grpc
-from app.config import settings
+
 
 class MediaServiceHandler(media_pb2_grpc.MediaServiceServicer):
 
@@ -106,19 +107,14 @@ class MediaServiceHandler(media_pb2_grpc.MediaServiceServicer):
             context.set_details("Maximum 1000 objects per batch")
             return media_pb2.DeleteObjectsBatchResponse()
 
-        objects = [
-            (uuid.UUID(item.media_id), item.s3_key) for item in request.objects
-        ]
+        objects = [(uuid.UUID(item.media_id), item.s3_key) for item in request.objects]
 
         async with self._container.request_scope() as scope:
             result = await scope.media_object_service.delete_objects_batch(objects)
 
         return media_pb2.DeleteObjectsBatchResponse(
             deleted_count=result.deleted_count,
-            failed=[
-                media_pb2.BatchDeleteError(media_id=f.media_id, error=f.error)
-                for f in result.failed
-            ],
+            failed=[media_pb2.BatchDeleteError(media_id=f.media_id, error=f.error) for f in result.failed],
         )
 
     async def ProcessExpiredObjects(self, request, context):
@@ -138,6 +134,7 @@ class MediaServiceHandler(media_pb2_grpc.MediaServiceServicer):
         try:
             async with self._container.request_scope() as scope:
                 from sqlalchemy import text
+
                 await scope._session.execute(text("SELECT 1"))
                 db_status = "connected"
         except Exception as e:

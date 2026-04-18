@@ -1,37 +1,39 @@
-import grpc
 from typing import Optional
+
+import grpc
 
 from app.config import Settings
 from app.core.interfaces.auth_gateway import (
-    IAuthGateway,
-    RegisterRequest,
     AuthResult,
-    LoginInitResult,
-    LoginCompleteRequest,
-    LogoutResult,
-    HealthResult,
-    CreateInviteResult,
-    ValidateTokenResult,
-    DeviceInfoResult,
-    InitDeviceAdditionResult,
-    SubmitDeviceDataResult,
-    DeviceAdditionStatusResult,
-    PendingRegistrationResult,
-    ConfirmDeviceAdditionResult,
-    RevokeDeviceResult,
-    UpdateDeviceKeysResult,
-    RenameDeviceResult,
-    VerifyDeviceResult,
-    TransferPrimaryResult,
     BulkRevokeDevicesResult,
+    ConfirmDeviceAdditionResult,
+    CreateInviteResult,
+    DeviceAdditionStatusResult,
+    DeviceInfoResult,
     DeviceStatsResult,
     DeviceTypeCountResult,
+    HealthResult,
+    IAuthGateway,
+    InitDeviceAdditionResult,
+    LoginCompleteRequest,
+    LoginInitResult,
+    LogoutResult,
+    PendingRegistrationResult,
+    RegisterRequest,
+    RenameDeviceResult,
+    RevokeDeviceResult,
+    SubmitDeviceDataResult,
+    TransferPrimaryResult,
+    UpdateDeviceKeysResult,
+    ValidateTokenResult,
+    VerifyDeviceResult,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import auth_pb2, auth_pb2_grpc
 
 _SERVICE = "Auth service"
+
 
 class GrpcAuthGateway(IAuthGateway):
 
@@ -138,7 +140,8 @@ class GrpcAuthGateway(IAuthGateway):
             pb_request.created_by_device_id = created_by_device_id
         try:
             response = await self._stub().CreateInvite(
-                pb_request, timeout=self._settings.AUTH_GRPC_TIMEOUT,
+                pb_request,
+                timeout=self._settings.AUTH_GRPC_TIMEOUT,
             )
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
@@ -181,9 +184,15 @@ class GrpcAuthGateway(IAuthGateway):
         )
 
     async def submit_device_data(
-        self, registration_id: str, registration_code: str,
-        device_id: str, device_name: str, device_type: str,
-        identity_key_pub: bytes, init_key_pub: bytes, credential_data: bytes,
+        self,
+        registration_id: str,
+        registration_code: str,
+        device_id: str,
+        device_name: str,
+        device_type: str,
+        identity_key_pub: bytes,
+        init_key_pub: bytes,
+        credential_data: bytes,
     ) -> SubmitDeviceDataResult:
         try:
             r = await self._stub().SubmitDeviceData(
@@ -222,7 +231,9 @@ class GrpcAuthGateway(IAuthGateway):
         )
 
     async def get_pending_device_additions(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> list[PendingRegistrationResult]:
         try:
             r = await self._stub().GetPendingDeviceAdditions(
@@ -246,8 +257,12 @@ class GrpcAuthGateway(IAuthGateway):
         ]
 
     async def confirm_device_addition(
-        self, user_id: str, device_id: str, registration_id: str,
-        confirm: bool, new_device_name: str,
+        self,
+        user_id: str,
+        device_id: str,
+        registration_id: str,
+        confirm: bool,
+        new_device_name: str,
     ) -> ConfirmDeviceAdditionResult:
         try:
             r = await self._stub().ConfirmDeviceAddition(
@@ -293,8 +308,11 @@ class GrpcAuthGateway(IAuthGateway):
         return self._pb_to_device_info(r)
 
     async def revoke_device(
-        self, user_id: str, requesting_device_id: str,
-        target_device_id: str, reason: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
+        reason: str,
     ) -> RevokeDeviceResult:
         try:
             r = await self._stub().RevokeDevice(
@@ -309,18 +327,25 @@ class GrpcAuthGateway(IAuthGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return RevokeDeviceResult(
-            success=r.success, message=r.message,
-            revoked_device_id=r.revoked_device_id, revoked_at=r.revoked_at,
+            success=r.success,
+            message=r.message,
+            revoked_device_id=r.revoked_device_id,
+            revoked_at=r.revoked_at,
         )
 
     async def update_device_keys(
-        self, user_id: str, device_id: str,
-        identity_key_pub: bytes, init_key_pub: bytes, credential_data: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        identity_key_pub: bytes,
+        init_key_pub: bytes,
+        credential_data: bytes,
     ) -> UpdateDeviceKeysResult:
         try:
             r = await self._stub().UpdateDeviceKeys(
                 auth_pb2.UpdateDeviceKeysRequest(
-                    user_id=user_id, device_id=device_id,
+                    user_id=user_id,
+                    device_id=device_id,
                     identity_key_pub=identity_key_pub,
                     init_key_pub=init_key_pub,
                     credential_data=credential_data,
@@ -330,12 +355,17 @@ class GrpcAuthGateway(IAuthGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return UpdateDeviceKeysResult(
-            success=r.success, message=r.message, updated_at=r.updated_at,
+            success=r.success,
+            message=r.message,
+            updated_at=r.updated_at,
         )
 
     async def rename_device(
-        self, user_id: str, requesting_device_id: str,
-        target_device_id: str, new_name: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
+        new_name: str,
     ) -> RenameDeviceResult:
         try:
             r = await self._stub().RenameDevice(
@@ -350,7 +380,9 @@ class GrpcAuthGateway(IAuthGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return RenameDeviceResult(
-            success=r.success, new_name=r.new_name, message=r.message,
+            success=r.success,
+            new_name=r.new_name,
+            message=r.message,
         )
 
     async def verify_device(self, device_id: str, signature: bytes) -> VerifyDeviceResult:
@@ -364,7 +396,10 @@ class GrpcAuthGateway(IAuthGateway):
         return VerifyDeviceResult(valid=r.valid, message=r.message)
 
     async def transfer_primary(
-        self, user_id: str, requesting_device_id: str, target_device_id: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
     ) -> TransferPrimaryResult:
         try:
             r = await self._stub().TransferPrimary(
@@ -384,8 +419,11 @@ class GrpcAuthGateway(IAuthGateway):
         )
 
     async def bulk_revoke_devices(
-        self, user_id: str, requesting_device_id: str,
-        target_device_ids: list[str], reason: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_ids: list[str],
+        reason: str,
     ) -> BulkRevokeDevicesResult:
         try:
             r = await self._stub().BulkRevokeDevices(
@@ -417,10 +455,7 @@ class GrpcAuthGateway(IAuthGateway):
             total_count=r.total_count,
             active_count=r.active_count,
             primary_count=r.primary_count,
-            type_stats=[
-                DeviceTypeCountResult(device_type=ts.device_type, count=ts.count)
-                for ts in r.type_stats
-            ],
+            type_stats=[DeviceTypeCountResult(device_type=ts.device_type, count=ts.count) for ts in r.type_stats],
             last_activity_at=r.last_activity_at,
         )
 

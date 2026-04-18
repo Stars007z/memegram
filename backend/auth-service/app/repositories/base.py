@@ -1,10 +1,13 @@
 import uuid
-from typing import TypeVar, Type, Optional, Generic, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Dict, Generic, Optional, Type, TypeVar
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
+
 
 class BaseRepository(Generic[ModelType]):
     def __init__(self, model: Type[ModelType], session: AsyncSession):
@@ -42,6 +45,7 @@ class BaseRepository(Generic[ModelType]):
 
     async def count(self) -> int:
         from sqlalchemy import func
+
         query = select(func.count()).select_from(self.model)
         result = await self.session.execute(query)
         return result.scalar()

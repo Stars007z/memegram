@@ -12,7 +12,7 @@ from app.grpc_interceptor import LoggingInterceptor
 from app.infrastructure.auth_client import GrpcAuthClient
 from app.infrastructure.contacts_client import GrpcContactsClient
 from app.infrastructure.media_client import GrpcMediaClient
-from app.logging_config import setup_logging, get_logger
+from app.logging_config import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger(__name__)
@@ -21,6 +21,7 @@ SERVICE_NAMES = (
     messaging_pb2.DESCRIPTOR.services_by_name["MessagingService"].full_name,
     reflection.SERVICE_NAME,
 )
+
 
 async def _build_container() -> Container:
     redis = await RedisClient.get_instance()
@@ -41,12 +42,14 @@ async def _build_container() -> Container:
         media_client=media_client,
     )
 
+
 async def serve() -> None:
     container = await _build_container()
 
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     messaging_pb2_grpc.add_MessagingServiceServicer_to_server(
-        MessagingHandler(container), server,
+        MessagingHandler(container),
+        server,
     )
 
     reflection.enable_server_reflection(SERVICE_NAMES, server)
@@ -62,9 +65,11 @@ async def serve() -> None:
         await server.stop(0)
 
         from app.database.session import close_db
+
         await close_db()
         await RedisClient.close()
         logger.info("service.stopped", message="All connections closed")
+
 
 if __name__ == "__main__":
     asyncio.run(serve())

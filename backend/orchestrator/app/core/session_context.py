@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class SessionContext:
     user_id: str

@@ -1,7 +1,8 @@
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-import uuid
+
 
 @dataclass
 class UploadInitResult:
@@ -9,11 +10,13 @@ class UploadInitResult:
     upload_url: str
     expires_in: int
 
+
 @dataclass
 class DownloadUrlResult:
     download_url: str
     expires_in: int
     encryption_metadata: bytes
+
 
 class IMediaService(ABC):
 
@@ -25,24 +28,21 @@ class IMediaService(ABC):
         mime_type: str,
         encrypted_size: int,
         encryption_metadata: bytes,
-    ) -> UploadInitResult:
-        ...
+    ) -> UploadInitResult: ...
 
     @abstractmethod
     async def confirm_upload(
         self,
         user_id: uuid.UUID,
         media_id: uuid.UUID,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def get_download_url(
         self,
         user_id: uuid.UUID,
         media_id: uuid.UUID,
-    ) -> DownloadUrlResult:
-        ...
+    ) -> DownloadUrlResult: ...
 
     @abstractmethod
     async def delete_media(self, media_id: uuid.UUID) -> bool:

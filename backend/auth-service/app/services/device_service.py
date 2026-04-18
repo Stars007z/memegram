@@ -1,22 +1,24 @@
-import uuid
-import secrets
 import os
+import secrets
+import uuid
 from datetime import datetime, timedelta
-from cryptography.hazmat.primitives.asymmetric import ed25519
-from cryptography.exceptions import InvalidSignature
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 
-from app.repositories.device_repo import DeviceRepository
-from app.repositories.device_registration_repo import DeviceRegistrationRepository
-from app.repositories.session_repo import SessionRepository
-from app.services.auth_service import AuthService
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
 from app.logging_config import get_logger
+from app.repositories.device_registration_repo import DeviceRegistrationRepository
+from app.repositories.device_repo import DeviceRepository
+from app.repositories.session_repo import SessionRepository
+from app.services.auth_service import AuthService
 
 logger = get_logger(__name__)
 
 REGISTRATION_TTL_MINUTES = 10
+
 
 class DeviceService:
     def __init__(self, session: AsyncSession):
@@ -41,14 +43,16 @@ class DeviceService:
         code = f"{secrets.randbelow(10**6):06d}"
         expires_at = datetime.utcnow() + timedelta(minutes=REGISTRATION_TTL_MINUTES)
 
-        await self.registration_repo.create({
-            "id": registration_id,
-            "registration_code": code,
-            "user_id": uuid.UUID(user_id),
-            "initiated_by_device_id": device.id,
-            "expires_at": expires_at,
-            "status": "pending",
-        })
+        await self.registration_repo.create(
+            {
+                "id": registration_id,
+                "registration_code": code,
+                "user_id": uuid.UUID(user_id),
+                "initiated_by_device_id": device.id,
+                "expires_at": expires_at,
+                "status": "pending",
+            }
+        )
 
         return {
             "registration_id": str(registration_id),
@@ -75,15 +79,18 @@ class DeviceService:
         if reg.status not in ("pending",):
             raise ValueError(f"Registration is in unexpected state: {reg.status}")
 
-        await self.registration_repo.update(reg, {
-            "device_id": device_id,
-            "device_name": device_name,
-            "device_type": device_type or "secondary",
-            "identity_key_pub": identity_key_pub,
-            "init_key_pub": init_key_pub,
-            "credential_data": credential_data,
-            "status": "awaiting_confirmation",
-        })
+        await self.registration_repo.update(
+            reg,
+            {
+                "device_id": device_id,
+                "device_name": device_name,
+                "device_type": device_type or "secondary",
+                "identity_key_pub": identity_key_pub,
+                "init_key_pub": init_key_pub,
+                "credential_data": credential_data,
+                "status": "awaiting_confirmation",
+            },
+        )
 
         return {
             "status": "awaiting_confirmation",
@@ -112,9 +119,7 @@ class DeviceService:
                 result["access_token"] = reg.result_access_token
                 result["refresh_token"] = reg.result_refresh_token or ""
                 result["token_expires_at"] = (
-                    int(reg.result_token_expires_at.timestamp())
-                    if reg.result_token_expires_at
-                    else 0
+                    int(reg.result_token_expires_at.timestamp()) if reg.result_token_expires_at else 0
                 )
 
         return result
@@ -168,11 +173,14 @@ class DeviceService:
             raise ValueError(f"Registration is not awaiting confirmation (status: {reg.status})")
 
         if not confirm:
-            await self.registration_repo.update(reg, {
-                "status": "rejected",
-                "rejected_at": datetime.utcnow(),
-                "rejection_reason": "Rejected by primary device",
-            })
+            await self.registration_repo.update(
+                reg,
+                {
+                    "status": "rejected",
+                    "rejected_at": datetime.utcnow(),
+                    "rejection_reason": "Rejected by primary device",
+                },
+            )
             return {
                 "new_device_id": "",
                 "user_id": user_id,
@@ -186,43 +194,48 @@ class DeviceService:
         device_uuid = uuid.uuid4()
         final_name = new_device_name or reg.device_name or "Unknown device"
 
-        await self.device_repo.create({
-            "id": device_uuid,
-            "user_id": uuid.UUID(user_id),
-            "client_device_id": reg.device_id,
-            "device_name": final_name,
-            "device_type": "secondary",
-            "is_active": True,
-            "identity_key_pub": reg.identity_key_pub,
-            "init_key_pub": reg.init_key_pub,
-            "credential_data": reg.credential_data,
-        })
-
-        access_token, refresh_token, expires_at, refresh_expires_at = (
-            self._auth_service._generate_tokens(
-                user_id=user_id,
-                device_id=str(device_uuid),
-                device_type="secondary",
-            )
+        await self.device_repo.create(
+            {
+                "id": device_uuid,
+                "user_id": uuid.UUID(user_id),
+                "client_device_id": reg.device_id,
+                "device_name": final_name,
+                "device_type": "secondary",
+                "is_active": True,
+                "identity_key_pub": reg.identity_key_pub,
+                "init_key_pub": reg.init_key_pub,
+                "credential_data": reg.credential_data,
+            }
         )
 
-        await self.session_repo.create({
-            "device_id": device_uuid,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "refresh_expires_at": refresh_expires_at,
-        })
+        access_token, refresh_token, expires_at, refresh_expires_at = self._auth_service._generate_tokens(
+            user_id=user_id,
+            device_id=str(device_uuid),
+            device_type="secondary",
+        )
 
-        await self.registration_repo.update(reg, {
-            "status": "confirmed",
-            "confirmed_at": datetime.utcnow(),
-            "confirmed_by_device_id": requesting_device.id,
-            "confirmed_device_id": device_uuid,
-            "result_access_token": access_token,
-            "result_refresh_token": refresh_token,
-            "result_token_expires_at": expires_at,
-        })
+        await self.session_repo.create(
+            {
+                "device_id": device_uuid,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "refresh_expires_at": refresh_expires_at,
+            }
+        )
+
+        await self.registration_repo.update(
+            reg,
+            {
+                "status": "confirmed",
+                "confirmed_at": datetime.utcnow(),
+                "confirmed_by_device_id": requesting_device.id,
+                "confirmed_device_id": device_uuid,
+                "result_access_token": access_token,
+                "result_refresh_token": refresh_token,
+                "result_token_expires_at": expires_at,
+            },
+        )
 
         return {
             "new_device_id": str(device_uuid),
@@ -272,11 +285,14 @@ class DeviceService:
             raise ValueError("Device is already revoked")
 
         now = datetime.utcnow()
-        await self.device_repo.update(target, {
-            "is_active": False,
-            "revoked_at": now,
-            "revoked_by_device_id": requesting.id,
-        })
+        await self.device_repo.update(
+            target,
+            {
+                "is_active": False,
+                "revoked_at": now,
+                "revoked_by_device_id": requesting.id,
+            },
+        )
 
         await self._revoke_device_sessions(target.id)
 
@@ -312,12 +328,15 @@ class DeviceService:
             raise ValueError("Device is inactive")
 
         now = datetime.utcnow()
-        await self.device_repo.update(device, {
-            "identity_key_pub": identity_key_pub,
-            "init_key_pub": init_key_pub,
-            "credential_data": credential_data,
-            "last_seen": now,
-        })
+        await self.device_repo.update(
+            device,
+            {
+                "identity_key_pub": identity_key_pub,
+                "init_key_pub": init_key_pub,
+                "credential_data": credential_data,
+                "last_seen": now,
+            },
+        )
 
         return {
             "success": True,
@@ -344,10 +363,7 @@ class DeviceService:
         if str(target.user_id) != user_id:
             raise PermissionError("Target device does not belong to user")
 
-        can_rename = (
-            requesting_device_id == target_device_id
-            or requesting.device_type == "primary"
-        )
+        can_rename = requesting_device_id == target_device_id or requesting.device_type == "primary"
         if not can_rename:
             raise PermissionError("Only the device itself or the primary device can rename")
 
@@ -444,11 +460,14 @@ class DeviceService:
             if not target.is_active:
                 continue
 
-            await self.device_repo.update(target, {
-                "is_active": False,
-                "revoked_at": now,
-                "revoked_by_device_id": requesting.id,
-            })
+            await self.device_repo.update(
+                target,
+                {
+                    "is_active": False,
+                    "revoked_at": now,
+                    "revoked_by_device_id": requesting.id,
+                },
+            )
             await self._revoke_device_sessions(target.id)
             revoked_ids.append(str(target.id))
 
@@ -479,8 +498,9 @@ class DeviceService:
         }
 
     async def _revoke_device_sessions(self, device_id: uuid.UUID) -> None:
-        from app.models.session import Session as SessionModel
         from sqlalchemy import update as sa_update
+
+        from app.models.session import Session as SessionModel
 
         stmt = (
             sa_update(SessionModel)

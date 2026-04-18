@@ -7,6 +7,7 @@ import redis.asyncio as aioredis
 
 from app.services.interfaces.stream_service import IStreamService
 
+
 class StreamServiceImpl(IStreamService):
     """Redis Pub/Sub based event streaming."""
 
@@ -26,7 +27,8 @@ class StreamServiceImpl(IStreamService):
         try:
             while True:
                 message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0,
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
                 )
                 if message and message["type"] == "message":
                     data = message["data"]

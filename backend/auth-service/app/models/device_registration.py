@@ -1,9 +1,12 @@
-from sqlalchemy import String, DateTime, Text, LargeBinary
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
 import uuid
 from datetime import datetime
+
+from sqlalchemy import DateTime, LargeBinary, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database.base import Base
+
 
 class DeviceRegistration(Base):
     __tablename__ = "device_registration"
@@ -14,8 +17,7 @@ class DeviceRegistration(Base):
     initiated_by_device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String(30),
-                                        default='pending')
+    status: Mapped[str] = mapped_column(String(30), default="pending")
 
     device_id: Mapped[str] = mapped_column(String(255), nullable=True)
     device_name: Mapped[str] = mapped_column(String(255), nullable=True)

@@ -1,5 +1,7 @@
+from typing import List, Optional
+
 from pydantic import BaseModel
-from typing import Optional, List
+
 
 class UserProfileResponseSchema(BaseModel):
     id: str
@@ -15,14 +17,17 @@ class UserProfileResponseSchema(BaseModel):
 
     is_blocked_by_peer: bool = False
 
+
 class UpdateUserRequestSchema(BaseModel):
     bio: Optional[str] = None
     username: Optional[str] = None
     avatar_media_id: Optional[str] = None
     profile_background_media_id: Optional[str] = None
 
+
 class DeleteUserResponseSchema(BaseModel):
     success: bool
+
 
 class UserSettingsResponseSchema(BaseModel):
     id: str
@@ -44,6 +49,7 @@ class UserSettingsResponseSchema(BaseModel):
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
+
 class UpdateUserSettingsRequestSchema(BaseModel):
     theme: Optional[str] = None
     language: Optional[str] = None
@@ -62,16 +68,19 @@ class UpdateUserSettingsRequestSchema(BaseModel):
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
+
 class SyncSettingsRequestSchema(BaseModel):
     """Client sends its locally cached media IDs.
     Server compares them with current values and returns
     download URLs only for items that changed."""
+
     chat_background_media_id: Optional[str] = None
     ringtone_media_id: Optional[str] = None
     notification_sound_media_id: Optional[str] = None
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
+
 
 class MediaDownloadInfoSchema(BaseModel):
     field: str
@@ -80,9 +89,11 @@ class MediaDownloadInfoSchema(BaseModel):
     expires_at: int
     mime_type: str
 
+
 class SyncSettingsResponseSchema(BaseModel):
     settings: UserSettingsResponseSchema
     media_updates: List[MediaDownloadInfoSchema] = []
+
 
 class UserHealthResponseSchema(BaseModel):
     status: str

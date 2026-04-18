@@ -7,12 +7,14 @@ Uses contextmanager-based sessions because aioboto3 resources are not long-lived
 
 from __future__ import annotations
 
+from types import TracebackType
+
 import aioboto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
-from types import TracebackType
 
 from app.config import settings
+
 
 class S3Client:
     def __init__(self) -> None:
@@ -84,7 +86,9 @@ class S3Client:
         return True
 
     async def delete_objects(
-        self, bucket: str, keys: list[str],
+        self,
+        bucket: str,
+        keys: list[str],
     ) -> tuple[int, list[dict]]:
         """
         Batch delete up to 1000 keys.
@@ -98,10 +102,7 @@ class S3Client:
                 Delete={"Objects": [{"Key": k} for k in keys], "Quiet": False},
             )
         deleted = len(response.get("Deleted", []))
-        errors = [
-            {"key": e["Key"], "code": e["Code"], "message": e["Message"]}
-            for e in response.get("Errors", [])
-        ]
+        errors = [{"key": e["Key"], "code": e["Code"], "message": e["Message"]} for e in response.get("Errors", [])]
         return deleted, errors
 
     async def head_bucket(self, bucket: str) -> bool:

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
@@ -52,8 +53,10 @@ class Settings:
     def media_grpc_address(self) -> str:
         return f"{self.MEDIA_GRPC_HOST}:{self.MEDIA_GRPC_PORT}"
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

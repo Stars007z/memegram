@@ -15,4 +15,4 @@ metadata:
   namespace: memegram
 spec:
   domains:
-    - DOMAIN_NAME
+    - memegram.win

@@ -21,23 +21,28 @@ from app.logging_config import get_logger
 
 logger = get_logger("grpc.access")
 
-_CALLER_FIELDS = frozenset({
-    "user_id",
-    "device_id",
-})
+_CALLER_FIELDS = frozenset(
+    {
+        "user_id",
+        "device_id",
+    }
+)
 
-_SENSITIVE_FIELDS = frozenset({
-    "access_token",
-    "refresh_token",
-    "signature",
-    "identity_key_pub",
-    "init_key_pub",
-    "credential_data",
-    "jwt_secret",
-    "password",
-    "registration_code",
-    "push_token",
-})
+_SENSITIVE_FIELDS = frozenset(
+    {
+        "access_token",
+        "refresh_token",
+        "signature",
+        "identity_key_pub",
+        "init_key_pub",
+        "credential_data",
+        "jwt_secret",
+        "password",
+        "registration_code",
+        "push_token",
+    }
+)
+
 
 def _extract_caller_info(request) -> dict[str, str]:
     """Pull known ID fields from the protobuf message into a flat dict."""
@@ -51,6 +56,7 @@ def _extract_caller_info(request) -> dict[str, str]:
     except Exception:
         pass
     return info
+
 
 def _sanitize_request(request) -> dict:
     """Convert protobuf message to dict, replacing sensitive values with '***'."""
@@ -66,6 +72,7 @@ def _sanitize_request(request) -> dict:
         else:
             sanitized[key] = value
     return sanitized
+
 
 class LoggingInterceptor(grpc.aio.ServerInterceptor):
     """Intercepts every unary-unary RPC and emits one structured log entry per request.

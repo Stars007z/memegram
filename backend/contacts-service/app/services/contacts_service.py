@@ -1,4 +1,5 @@
 """Бизнес-логика contacts-service."""
+
 from __future__ import annotations
 
 import uuid
@@ -8,16 +9,18 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logging_config import get_logger
-from app.models.contact import Contact
 from app.models.blocked_user import BlockedUser
-from app.repositories.contact_repo import ContactRepository
+from app.models.contact import Contact
 from app.repositories.blocked_user_repo import BlockedUserRepository
-from app.services.user_client import UserServiceClient, UserBriefProfile
+from app.repositories.contact_repo import ContactRepository
+from app.services.user_client import UserBriefProfile, UserServiceClient
 
 logger = get_logger(__name__)
 
+
 def _now() -> datetime:
     return datetime.utcnow()
+
 
 class ContactsService:
     def __init__(self, session: AsyncSession, user_client: UserServiceClient):
@@ -29,9 +32,7 @@ class ContactsService:
     async def add_contact(self, user_id: str, user_public_key: str) -> dict:
         uid = uuid.UUID(user_id)
 
-        contact_user_id_str = await self.user_client.get_user_by_public_key(
-            user_public_key, requester_user_id=user_id
-        )
+        contact_user_id_str = await self.user_client.get_user_by_public_key(user_public_key, requester_user_id=user_id)
         if not contact_user_id_str:
             raise ValueError("NOT_FOUND:User with given public key not found")
 
@@ -54,13 +55,15 @@ class ContactsService:
             raise ValueError("ALREADY_EXISTS:Contact already exists")
 
         now = _now()
-        contact = await self.contact_repo.create({
-            "id": uuid.uuid4(),
-            "user_id": uid,
-            "contact_user_id": cuid,
-            "created_at": now,
-            "is_favorite": False,
-        })
+        contact = await self.contact_repo.create(
+            {
+                "id": uuid.uuid4(),
+                "user_id": uid,
+                "contact_user_id": cuid,
+                "created_at": now,
+                "is_favorite": False,
+            }
+        )
 
         profiles = await self.user_client.get_users_batch([contact_user_id_str])
         profile = profiles.get(contact_user_id_str)
@@ -141,12 +144,14 @@ class ContactsService:
 
         now = _now()
 
-        blocked = await self.blocked_repo.create({
-            "id": uuid.uuid4(),
-            "user_id": uid,
-            "blocked_user_id": buid,
-            "created_at": now,
-        })
+        blocked = await self.blocked_repo.create(
+            {
+                "id": uuid.uuid4(),
+                "user_id": uid,
+                "blocked_user_id": buid,
+                "created_at": now,
+            }
+        )
 
         await self.contact_repo.delete_mutual(uid, buid)
 
@@ -188,22 +193,16 @@ class ContactsService:
         profiles = await self.user_client.get_users_batch(blocked_ids)
 
         return {
-            "blocked_users": [
-                _blocked_to_dict(b, profiles.get(str(b.blocked_user_id)))
-                for b in blocked_list
-            ],
+            "blocked_users": [_blocked_to_dict(b, profiles.get(str(b.blocked_user_id))) for b in blocked_list],
             "total_count": total,
         }
 
     async def is_contact(self, user_id: str, contact_user_id: str) -> bool:
-        return await self.contact_repo.exists(
-            uuid.UUID(user_id), uuid.UUID(contact_user_id)
-        )
+        return await self.contact_repo.exists(uuid.UUID(user_id), uuid.UUID(contact_user_id))
 
     async def is_blocked(self, user_id: str, blocked_user_id: str) -> bool:
-        return await self.blocked_repo.exists(
-            uuid.UUID(user_id), uuid.UUID(blocked_user_id)
-        )
+        return await self.blocked_repo.exists(uuid.UUID(user_id), uuid.UUID(blocked_user_id))
+
 
 def _contact_to_dict(contact: Contact, profile: Optional[UserBriefProfile]) -> dict:
     return {
@@ -212,6 +211,7 @@ def _contact_to_dict(contact: Contact, profile: Optional[UserBriefProfile]) -> d
         "created_at": int(contact.created_at.timestamp()),
         "profile": profile,
     }
+
 
 def _blocked_to_dict(blocked: BlockedUser, profile: Optional[UserBriefProfile]) -> dict:
     return {

@@ -1,4 +1,3 @@
-
 import os
 from functools import lru_cache
 from typing import Optional
@@ -7,16 +6,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
     """
     Конфигурация приложения.
     Значения берутся из переменных окружения или используются дефолты.
     """
 
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://auth_user:auth_password@localhost:5432/auth_db"
-    )
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://auth_user:auth_password@localhost:5432/auth_db")
 
     JWT_SECRET: str = os.getenv("JWT_SECRET", "dev_secret_change_in_prod")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
@@ -41,6 +38,7 @@ class Settings:
     def is_development(self) -> bool:
         return self.ENVIRONMENT.lower() == "development"
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """
@@ -48,5 +46,6 @@ def get_settings() -> Settings:
     Используется lru_cache для создания синглтона.
     """
     return Settings()
+
 
 settings = get_settings()

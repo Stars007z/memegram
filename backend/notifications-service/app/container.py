@@ -15,11 +15,13 @@ from app.infrastructure.messaging_client import IMessagingClient
 from app.infrastructure.user_client import IUserClient
 from app.services.event_consumer import EventConsumer
 
+
 class RequestScope:
     """Per-gRPC-call scope: owns a DB session."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
 
 class Container:
     """Application-level DI container."""

@@ -7,11 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
+
 class MediaObject(Base):
     __tablename__ = "media_objects"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     s3_bucket: Mapped[str] = mapped_column(String(255), nullable=False)
     s3_key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

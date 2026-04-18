@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mls_group import MlsGroup
 from app.repositories.base import BaseRepository
 
+
 class MlsGroupRepository(BaseRepository[MlsGroup]):
     def __init__(self, session: AsyncSession):
         super().__init__(MlsGroup, session)

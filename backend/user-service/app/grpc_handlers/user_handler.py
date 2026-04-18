@@ -1,7 +1,9 @@
 import grpc
+
+from app.database.redis import check_redis_health
 from app.generated import user_pb2, user_pb2_grpc
 from app.services.user_service import UserService
-from app.database.redis import check_redis_health
+
 
 def _build_minimal_profile(user) -> user_pb2.UserProfile:
     return user_pb2.UserProfile(
@@ -9,6 +11,7 @@ def _build_minimal_profile(user) -> user_pb2.UserProfile:
         username=user.username,
         is_deleted=user.is_deleted,
     )
+
 
 def _build_full_profile(user, settings, is_owner: bool) -> user_pb2.UserProfile:
     proto = user_pb2.UserProfile(
@@ -32,6 +35,7 @@ def _build_full_profile(user, settings, is_owner: bool) -> user_pb2.UserProfile:
                 proto.last_active = int(user.last_active.timestamp())
     return proto
 
+
 def _settings_to_proto(s) -> user_pb2.UserSettings:
     return user_pb2.UserSettings(
         id=str(s.id),
@@ -54,6 +58,7 @@ def _settings_to_proto(s) -> user_pb2.UserSettings:
         their_bubble_media_id=str(s.their_bubble_media_id) if s.their_bubble_media_id else "",
     )
 
+
 class UserHandler(user_pb2_grpc.UserServiceServicer):
     def __init__(self, get_session):
         self.get_session = get_session
@@ -62,6 +67,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
         """Graceful fallback: returns False if contacts-service is unavailable."""
         try:
             from app.infrastructure.contacts_gateway import ContactsGateway
+
             gw = ContactsGateway()
             return await gw.is_contact(
                 owner_user_id=owner_user_id,
@@ -154,9 +160,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
         async with self.get_session() as session:
             service = UserService(session)
             try:
-                user, settings = await service.get_user_by_public_key_with_settings(
-                    request.user_public_key
-                )
+                user, settings = await service.get_user_by_public_key_with_settings(request.user_public_key)
                 proto = await self._apply_privacy(user, settings, request.requester_user_id)
                 return user_pb2.UserProfileResponse(profile=proto)
             except ValueError as e:
@@ -178,10 +182,14 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             service = UserService(session)
             try:
                 kwargs = {}
-                if request.HasField("bio"):                         kwargs["bio"] = request.bio
-                if request.HasField("username"):                    kwargs["username"] = request.username
-                if request.HasField("avatar_media_id"):             kwargs["avatar_media_id"] = request.avatar_media_id
-                if request.HasField("profile_background_media_id"): kwargs["profile_background_media_id"] = request.profile_background_media_id
+                if request.HasField("bio"):
+                    kwargs["bio"] = request.bio
+                if request.HasField("username"):
+                    kwargs["username"] = request.username
+                if request.HasField("avatar_media_id"):
+                    kwargs["avatar_media_id"] = request.avatar_media_id
+                if request.HasField("profile_background_media_id"):
+                    kwargs["profile_background_media_id"] = request.profile_background_media_id
                 user = await service.update_user(request.user_id, **kwargs)
                 proto = _build_full_profile(user, settings=None, is_owner=True)
                 return user_pb2.UserProfileResponse(profile=proto)
@@ -204,9 +212,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             service = UserService(session)
             try:
                 deleted_at = await service.delete_user(request.user_id)
-                return user_pb2.DeleteUserResponse(
-                    success=True, deleted_at=int(deleted_at.timestamp())
-                )
+                return user_pb2.DeleteUserResponse(success=True, deleted_at=int(deleted_at.timestamp()))
             except ValueError as e:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(str(e))
@@ -221,9 +227,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             service = UserService(session)
             try:
                 count, ids = await service.check_and_process_auto_delete()
-                return user_pb2.CheckAndProcessAutoDeleteResponse(
-                    deleted_count=count, user_ids=ids
-                )
+                return user_pb2.CheckAndProcessAutoDeleteResponse(deleted_count=count, user_ids=ids)
             except Exception as e:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {str(e)}")
@@ -260,18 +264,24 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             try:
 
                 optional_fields = [
-                    "theme", "language", "is_translator_active", "animations_enabled",
-                    "account_auto_delete_after_days", "profile_visible_to",
-                    "last_active_visible_to", "chat_background_media_id", "top_bar_color",
-                    "ringtone_media_id", "ringtone_vibration_strength",
-                    "notification_sound", "notification_vibration_strength",
-                    "top_bar_media_id", "my_bubble_media_id", "their_bubble_media_id",
+                    "theme",
+                    "language",
+                    "is_translator_active",
+                    "animations_enabled",
+                    "account_auto_delete_after_days",
+                    "profile_visible_to",
+                    "last_active_visible_to",
+                    "chat_background_media_id",
+                    "top_bar_color",
+                    "ringtone_media_id",
+                    "ringtone_vibration_strength",
+                    "notification_sound",
+                    "notification_vibration_strength",
+                    "top_bar_media_id",
+                    "my_bubble_media_id",
+                    "their_bubble_media_id",
                 ]
-                kwargs = {
-                    f: getattr(request, f)
-                    for f in optional_fields
-                    if request.HasField(f)
-                }
+                kwargs = {f: getattr(request, f) for f in optional_fields if request.HasField(f)}
                 settings = await service.update_user_settings(request.user_id, **kwargs)
                 return user_pb2.UserSettingsResponse(settings=_settings_to_proto(settings))
             except ValueError as e:
@@ -290,12 +300,15 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             try:
                 users = await service.get_users_batch(list(request.user_ids))
 
-                brieflist = [user_pb2.UserBriefProfile(
-                    id=str(u.id),
-                    username=u.username,
-                    avatar_media_id=str(u.avatar_media_id) if u.avatar_media_id else "",
-                    is_deleted=u.is_deleted,
-                ) for u in users]
+                brieflist = [
+                    user_pb2.UserBriefProfile(
+                        id=str(u.id),
+                        username=u.username,
+                        avatar_media_id=str(u.avatar_media_id) if u.avatar_media_id else "",
+                        is_deleted=u.is_deleted,
+                    )
+                    for u in users
+                ]
                 return user_pb2.GetUsersBatchResponse(users=brieflist)
 
             except Exception as e:
@@ -365,6 +378,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
         try:
             async with self.get_session() as session:
                 from sqlalchemy import text
+
                 await session.execute(text("SELECT 1"))
                 db_status = "connected"
         except Exception as e:

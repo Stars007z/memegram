@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import select, func, case
+
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
 from app.repositories.base import BaseRepository
+
 
 class DeviceRepository(BaseRepository[Device]):
     def __init__(self, session: AsyncSession):

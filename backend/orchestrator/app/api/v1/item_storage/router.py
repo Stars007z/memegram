@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_item_storage_gateway, get_current_session
+from app.api.dependencies import get_current_session, get_item_storage_gateway
 from app.api.v1.item_storage.schemas import (
-    ItemStorageHealthResponseSchema,
-    InitiateUploadRequestSchema,
-    InitiateUploadResponseSchema,
     ConfirmUploadResponseSchema,
     DownloadUrlResponseSchema,
+    InitiateUploadRequestSchema,
+    InitiateUploadResponseSchema,
+    ItemStorageHealthResponseSchema,
 )
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
 from app.core.session_context import SessionContext
 
 router = APIRouter(prefix="/item-storage", tags=["item-storage"])
+
 
 @router.get("/health", response_model=ItemStorageHealthResponseSchema)
 async def item_storage_health(
@@ -19,6 +20,7 @@ async def item_storage_health(
 ):
     result = await gw.health_check()
     return ItemStorageHealthResponseSchema(**result.__dict__)
+
 
 @router.post("/upload/initiate", response_model=InitiateUploadResponseSchema)
 async def initiate_upload(
@@ -38,6 +40,7 @@ async def initiate_upload(
         expires_at=result.expires_at,
     )
 
+
 @router.post("/upload/{item_id}/confirm", response_model=ConfirmUploadResponseSchema)
 async def confirm_upload(
     item_id: str,
@@ -49,6 +52,7 @@ async def confirm_upload(
         item_id=item_id,
     )
     return ConfirmUploadResponseSchema(success=result.success, item_id=item_id)
+
 
 @router.get("/{item_id}/download", response_model=DownloadUrlResponseSchema)
 async def get_download_url(

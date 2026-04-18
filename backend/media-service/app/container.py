@@ -16,6 +16,7 @@ from app.database.session import get_session
 from app.infrastructure.s3_client import S3Client
 from app.services.interfaces import IMediaObjectService
 
+
 class RequestScope:
     """Per-request scope: owns a DB session, lazily builds services."""
 
@@ -27,14 +28,15 @@ class RequestScope:
     @property
     def media_object_service(self) -> IMediaObjectService:
         if "media_object" not in self._cache:
-            from app.services.media_object_service import MediaObjectServiceImpl
             from app.repositories.media_object_repo import MediaObjectRepository
+            from app.services.media_object_service import MediaObjectServiceImpl
 
             self._cache["media_object"] = MediaObjectServiceImpl(
                 repo=MediaObjectRepository(self._session),
                 s3=self._s3,
             )
         return self._cache["media_object"]
+
 
 class Container:
     """Application-level DI container (singleton for the process lifetime)."""

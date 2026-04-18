@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timedelta
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.storage_item import StorageItem
-from app.infrastructure import s3_client
 from app.config import settings
+from app.infrastructure import s3_client
 from app.logging_config import get_logger
+from app.models.storage_item import StorageItem
 
 logger = get_logger(__name__)
 
@@ -58,15 +59,21 @@ ITEM_TYPE_CONFIG: dict[str, dict] = {
     },
 }
 
+
 def _now() -> datetime:
     return datetime.utcnow()
+
 
 class ItemStorageService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def initiate_upload(
-        self, owner_user_id: str, item_type: str, mime_type: str, size_bytes: int,
+        self,
+        owner_user_id: str,
+        item_type: str,
+        mime_type: str,
+        size_bytes: int,
     ) -> tuple[str, str, int]:
         cfg = ITEM_TYPE_CONFIG.get(item_type)
         if cfg is None:
@@ -74,9 +81,7 @@ class ItemStorageService:
         if mime_type not in cfg["allowed_mimes"]:
             raise ValueError(f"Unsupported mime_type '{mime_type}' for {item_type}")
         if size_bytes <= 0 or size_bytes > cfg["max_size"]:
-            raise ValueError(
-                f"size_bytes must be 1..{cfg['max_size']} for {item_type}, got {size_bytes}"
-            )
+            raise ValueError(f"size_bytes must be 1..{cfg['max_size']} for {item_type}, got {size_bytes}")
 
         item_id = uuid.uuid4()
         s3_key = f"items/{owner_user_id}/{item_type}/{item_id}"
@@ -132,9 +137,7 @@ class ItemStorageService:
         actual_size = head.get("ContentLength", 0)
         tolerance = item.size_bytes * 0.01
         if abs(actual_size - item.size_bytes) > max(tolerance, 1):
-            raise ValueError(
-                f"Size mismatch: expected ~{item.size_bytes}, got {actual_size}"
-            )
+            raise ValueError(f"Size mismatch: expected ~{item.size_bytes}, got {actual_size}")
 
         item.status = "uploaded"
         item.uploaded_at = _now()
@@ -148,7 +151,9 @@ class ItemStorageService:
         return True
 
     async def get_download_url(
-        self, item_id: str, requester_user_id: str,
+        self,
+        item_id: str,
+        requester_user_id: str,
     ) -> tuple[str, int, str]:
         result = await self.session.execute(
             select(StorageItem).where(
@@ -199,7 +204,9 @@ class ItemStorageService:
         return True
 
     async def delete_user_items(
-        self, owner_user_id: str, item_types: list[str] | None = None,
+        self,
+        owner_user_id: str,
+        item_types: list[str] | None = None,
     ) -> int:
         uid = uuid.UUID(owner_user_id)
         query = select(StorageItem).where(
@@ -220,9 +227,7 @@ class ItemStorageService:
         now = _now()
         ids = [item.id for item in items]
         await self.session.execute(
-            update(StorageItem)
-            .where(StorageItem.id.in_(ids))
-            .values(status="deleted", deleted_at=now)
+            update(StorageItem).where(StorageItem.id.in_(ids)).values(status="deleted", deleted_at=now)
         )
         await self.session.flush()
         logger.info(
@@ -234,7 +239,9 @@ class ItemStorageService:
         return len(ids)
 
     async def cleanup_pending_uploads(
-        self, older_than_seconds: int = 7200, batch_size: int = 100,
+        self,
+        older_than_seconds: int = 7200,
+        batch_size: int = 100,
     ) -> int:
         cutoff = _now() - timedelta(seconds=older_than_seconds)
         result = await self.session.execute(
@@ -258,9 +265,7 @@ class ItemStorageService:
         now = _now()
         ids = [item.id for item in items]
         await self.session.execute(
-            update(StorageItem)
-            .where(StorageItem.id.in_(ids))
-            .values(status="deleted", deleted_at=now)
+            update(StorageItem).where(StorageItem.id.in_(ids)).values(status="deleted", deleted_at=now)
         )
         await self.session.flush()
         logger.info(
@@ -271,7 +276,9 @@ class ItemStorageService:
         return len(ids)
 
     async def get_item_metadata(
-        self, item_id: str, requester_user_id: str,
+        self,
+        item_id: str,
+        requester_user_id: str,
     ) -> StorageItem:
         result = await self.session.execute(
             select(StorageItem).where(
