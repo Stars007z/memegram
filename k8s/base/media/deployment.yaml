@@ -65,7 +65,7 @@ spec:
                   name: aws-credentials
                   key: AWS_REGION
             - name: S3_BUCKET_NAME
-              value: messenger-media-dev
+              value: memegram-media
             - name: S3_ENDPOINT_URL
               value: ""
             - name: PRESIGNED_UPLOAD_TTL
