@@ -64,3 +64,7 @@ tools/trace_bpe2.py
 k8s/base/secrets.yaml
 
 .cache/
+
+ml/nsfw/model_to_prod
+ml/nsfw/content_moderation_test/models
+ml/nsfw/content_moderation_test/test_images
