@@ -46,7 +46,7 @@ val appModule = module {
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
-    single { BlockedUsersCache(get()) }
+    single { BlockedUsersCache(get(), get()) }
     single<TranslationService> { createTranslationService() }
     single { TranslationSettings(get()) }
 

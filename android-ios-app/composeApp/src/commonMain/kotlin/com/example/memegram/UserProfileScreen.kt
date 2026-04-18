@@ -44,8 +44,10 @@ fun UserProfileScreen(
     val avatarBytes by viewModel.avatarBytes.collectAsState()
     val coverBytes by viewModel.coverBytes.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
+    val isBlockedByPeer by viewModel.isBlockedByPeer.collectAsState()
     val isContact by viewModel.isContact.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showCannotMessageDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(userId) {
         viewModel.loadUser(userId)
@@ -165,6 +167,39 @@ fun UserProfileScreen(
                 modifier = Modifier.offset(y = (-16).sdp)
             )
 
+            if (isBlocked || isBlockedByPeer) {
+                val (badgeText, badgeColor) = when {
+                    isBlockedByPeer -> s.youAreBlockedByUser to MaterialTheme.colorScheme.error
+                    else -> s.youBlockedThisUser to MaterialTheme.colorScheme.error
+                }
+                Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.sdp),
+                    color = badgeColor.copy(alpha = 0.12f),
+                    modifier = Modifier
+                        .offset(y = (-8).sdp)
+                        .padding(horizontal = 16.sdp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 6.sdp)
+                    ) {
+                        Icon(
+                            Icons.Default.Block,
+                            contentDescription = null,
+                            tint = badgeColor,
+                            modifier = Modifier.size(16.sdp)
+                        )
+                        Spacer(Modifier.width(6.sdp))
+                        Text(
+                            badgeText,
+                            color = badgeColor,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.sdp))
 
             Row(
@@ -173,10 +208,20 @@ fun UserProfileScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledIconButton(
-                        onClick = { profile?.userPublicKey?.let { onStartChat(it) } },
-                        modifier = Modifier.size(56.sdp)
+                        onClick = {
+                            if (isBlockedByPeer) {
+                                showCannotMessageDialog = true
+                            } else {
+                                profile?.userPublicKey?.let { onStartChat(it) }
+                            }
+                        },
+                        modifier = Modifier.size(56.sdp),
+                        enabled = !isBlockedByPeer || true,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Message, null)
+                        Icon(
+                            Icons.AutoMirrored.Filled.Message, null,
+                            tint = if (isBlockedByPeer) LocalContentColor.current.copy(alpha = 0.5f) else LocalContentColor.current
+                        )
                     }
                     Spacer(Modifier.height(8.sdp))
                     Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
@@ -217,5 +262,18 @@ fun UserProfileScreen(
                 }
             }
         }
+    }
+
+    if (showCannotMessageDialog) {
+        AlertDialog(
+            onDismissRequest = { showCannotMessageDialog = false },
+            title = { Text(s.cannotMessageTitle) },
+            text = { Text(s.cannotMessageBlockedByPeer) },
+            confirmButton = {
+                TextButton(onClick = { showCannotMessageDialog = false }) {
+                    Text(s.ok)
+                }
+            }
+        )
     }
 }

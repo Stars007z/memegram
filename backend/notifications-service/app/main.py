@@ -10,6 +10,7 @@ from app.container import Container
 from app.database.redis import MessagingRedisClient, RedisClient
 from app.generated import notifications_pb2, notifications_pb2_grpc
 from app.grpc_handlers.notifications_handler import NotificationsHandler
+from app.infrastructure.contacts_client import GrpcContactsClient
 from app.infrastructure.item_storage_client import GrpcItemStorageClient
 from app.infrastructure.messaging_client import GrpcMessagingClient
 from app.infrastructure.user_client import GrpcUserClient
@@ -36,12 +37,16 @@ async def _build_container() -> Container:
     item_storage_channel = grpc.aio.insecure_channel(settings.item_storage_grpc_address)
     item_storage_client = GrpcItemStorageClient(item_storage_channel)
 
+    contacts_channel = grpc.aio.insecure_channel(settings.contacts_grpc_address)
+    contacts_client = GrpcContactsClient(contacts_channel)
+
     return Container(
         own_redis=own_redis,
         messaging_redis=messaging_redis,
         messaging_client=messaging_client,
         user_client=user_client,
         item_storage_client=item_storage_client,
+        contacts_client=contacts_client,
     )
 
 

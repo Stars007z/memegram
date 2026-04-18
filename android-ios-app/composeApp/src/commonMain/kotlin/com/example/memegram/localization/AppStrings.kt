@@ -104,6 +104,13 @@ interface AppStrings {
     fun photoSendErrorDetail(msg: String): String
     fun voiceSendError(msg: String): String
     fun deleteError(msg: String): String
+    fun fileSendError(msg: String): String
+    val fileReadError: String
+    fun fileTooLarge(actual: String, max: String): String
+    val downloadFile: String
+    val openFile: String
+    val fileDownloadError: String
+    val fileSaveError: String
 
     // ── Contacts ─────────────────────────────────────────────────────
     val newContact: String
@@ -257,6 +264,34 @@ interface AppStrings {
     val lruDescription: String
     val lfuDescription: String
 
+    // ── Storage Usage ────────────────────────────────────────────────
+    val storageUsage: String
+    fun storageUsageOnDevice(size: String): String
+    fun currentCacheLimit(value: String): String
+    val storagePhotos: String
+    val storageVideos: String
+    val storageDocuments: String
+    val storageVoiceMessages: String
+    val storageMusic: String
+    val storageOther: String
+    val storageMiscellaneous: String
+    val storageTextMessages: String
+    fun clearSelectedSize(size: String): String
+    val storageCloudInfo: String
+    val autoRemoveMedia: String
+    val never: String
+    val autoRemoveInfo: String
+    val maxCacheSize: String
+    val noLimit: String
+    val cacheLimitInfo: String
+    val chatsTab: String
+    val mediaTab: String
+    val filesTab: String
+    val musicTab: String
+    fun clearCacheSize(size: String): String
+    val advancedCleanup: String
+    val stories: String
+
     // ── Language / Translation ───────────────────────────────────────
     val languageTitle: String
     val searchLanguage: String
@@ -319,6 +354,11 @@ interface AppStrings {
     fun blockConfirmMessage(name: String): String
     val userBlockedBanner: String
     val userBlockedSendError: String
+    val youBlockedThisUser: String
+    val youAreBlockedByUser: String
+    val cannotMessageTitle: String
+    val cannotMessageBlockedByPeer: String
+    val mlsChatBrokenBanner: String
 
     // ── Date scrubber ────────────────────────────────────────────────
     val mon: String
@@ -449,6 +489,13 @@ object RuStrings : AppStrings {
     override fun photoSendErrorDetail(msg: String) = "Ошибка отправки фото: $msg"
     override fun voiceSendError(msg: String) = "Ошибка отправки голосового: $msg"
     override fun deleteError(msg: String) = "Ошибка удаления: $msg"
+    override fun fileSendError(msg: String) = "Ошибка отправки файла: $msg"
+    override val fileReadError = "Не удалось прочитать файл"
+    override fun fileTooLarge(actual: String, max: String) = "Файл слишком большой ($actual). Максимум: $max"
+    override val downloadFile = "Скачать"
+    override val openFile = "Открыть"
+    override val fileDownloadError = "Ошибка загрузки файла"
+    override val fileSaveError = "Не удалось сохранить файл"
 
     // Contacts
     override val newContact = "Новый контакт"
@@ -602,6 +649,34 @@ object RuStrings : AppStrings {
     override val lruDescription = "Удаляются сообщения из чатов, которые давно не открывались"
     override val lfuDescription = "Удаляются сообщения из чатов, в которые реже всего заходят"
 
+    // Storage Usage
+    override val storageUsage = "Использование памяти"
+    override fun storageUsageOnDevice(size: String) = "Memegram занимает $size на этом устройстве"
+    override fun currentCacheLimit(value: String) = "Текущий лимит: $value"
+    override val storagePhotos = "Фото"
+    override val storageVideos = "Видео"
+    override val storageDocuments = "Документы"
+    override val storageVoiceMessages = "Голосовые сообщения"
+    override val storageMusic = "Музыка"
+    override val storageOther = "Другое"
+    override val storageMiscellaneous = "Прочее"
+    override val storageTextMessages = "Текстовые сообщения"
+    override fun clearSelectedSize(size: String) = "Очистить выбранное $size"
+    override val storageCloudInfo = "Все медиафайлы останутся в облаке Memegram и могут быть загружены повторно при необходимости."
+    override val autoRemoveMedia = "Авто-удаление кэшированных медиа"
+    override val never = "Никогда"
+    override val autoRemoveInfo = "Фото, видео и другие файлы из облачных чатов, к которым вы не обращались в течение этого периода, будут удалены с устройства для экономии места."
+    override val maxCacheSize = "Максимальный размер кэша"
+    override val noLimit = "Без лимита"
+    override val cacheLimitInfo = "Если размер кэша превысит этот лимит, самые старые неиспользуемые медиафайлы будут удалены с устройства."
+    override val chatsTab = "Чаты"
+    override val mediaTab = "Медиа"
+    override val filesTab = "Файлы"
+    override val musicTab = "Музыка"
+    override fun clearCacheSize(size: String) = "Очистить кэш $size"
+    override val advancedCleanup = "Расширенная очистка"
+    override val stories = "Истории"
+
     // Language / Translation
     override val languageTitle = "Язык"
     override val searchLanguage = "Поиск языка..."
@@ -663,6 +738,11 @@ object RuStrings : AppStrings {
     override fun blockConfirmMessage(name: String) = "Вы не сможете получать сообщения от $name. Вы уверены?"
     override val userBlockedBanner = "Пользователь заблокирован"
     override val userBlockedSendError = "Нельзя отправить сообщение заблокированному пользователю"
+    override val youBlockedThisUser = "В чёрном списке"
+    override val youAreBlockedByUser = "Вы заблокированы этим пользователем"
+    override val cannotMessageTitle = "Невозможно написать"
+    override val cannotMessageBlockedByPeer = "Этот пользователь заблокировал вас. Вы не можете отправлять ему сообщения."
+    override val mlsChatBrokenBanner = "Чат недоступен для расшифровки. Попросите собеседника создать новый чат."
 
     // Date scrubber
     override val mon = "Пн"
@@ -793,6 +873,13 @@ object EnStrings : AppStrings {
     override fun photoSendErrorDetail(msg: String) = "Photo send error: $msg"
     override fun voiceSendError(msg: String) = "Voice send error: $msg"
     override fun deleteError(msg: String) = "Delete error: $msg"
+    override fun fileSendError(msg: String) = "File send error: $msg"
+    override val fileReadError = "Failed to read file"
+    override fun fileTooLarge(actual: String, max: String) = "File too large ($actual). Maximum: $max"
+    override val downloadFile = "Download"
+    override val openFile = "Open"
+    override val fileDownloadError = "File download error"
+    override val fileSaveError = "Failed to save file"
 
     // Contacts
     override val newContact = "New contact"
@@ -946,6 +1033,34 @@ object EnStrings : AppStrings {
     override val lruDescription = "Messages are deleted from chats that haven't been opened for a long time"
     override val lfuDescription = "Messages are deleted from the least frequently accessed chats"
 
+    // Storage Usage
+    override val storageUsage = "Storage Usage"
+    override fun storageUsageOnDevice(size: String) = "Memegram is using $size on this device"
+    override fun currentCacheLimit(value: String) = "Current limit: $value"
+    override val storagePhotos = "Photos"
+    override val storageVideos = "Videos"
+    override val storageDocuments = "Documents"
+    override val storageVoiceMessages = "Voice messages"
+    override val storageMusic = "Music"
+    override val storageOther = "Other"
+    override val storageMiscellaneous = "Miscellaneous"
+    override val storageTextMessages = "Text messages"
+    override fun clearSelectedSize(size: String) = "Clear Selected $size"
+    override val storageCloudInfo = "All media will stay in the Memegram cloud and can be re-downloaded if you need them again."
+    override val autoRemoveMedia = "Auto-remove cached media"
+    override val never = "Never"
+    override val autoRemoveInfo = "Photos, videos and other files from cloud chats that you have not accessed during this period will be removed from this device to save disk space."
+    override val maxCacheSize = "Maximum cache size"
+    override val noLimit = "No limit"
+    override val cacheLimitInfo = "If your cache size exceeds this limit, the oldest unused media will be removed from the device."
+    override val chatsTab = "Chats"
+    override val mediaTab = "Media"
+    override val filesTab = "Files"
+    override val musicTab = "Music"
+    override fun clearCacheSize(size: String) = "Clear Cache $size"
+    override val advancedCleanup = "Advanced cleanup"
+    override val stories = "Stories"
+
     // Language / Translation
     override val languageTitle = "Language"
     override val searchLanguage = "Search language..."
@@ -1007,6 +1122,11 @@ object EnStrings : AppStrings {
     override fun blockConfirmMessage(name: String) = "You won't receive messages from $name. Are you sure?"
     override val userBlockedBanner = "User is blocked"
     override val userBlockedSendError = "Cannot send message to a blocked user"
+    override val youBlockedThisUser = "Blocked"
+    override val youAreBlockedByUser = "You have been blocked by this user"
+    override val cannotMessageTitle = "Cannot send message"
+    override val cannotMessageBlockedByPeer = "This user has blocked you. You cannot send them messages."
+    override val mlsChatBrokenBanner = "This chat can't be decrypted. Ask the other person to create a new chat."
 
     // Date scrubber
     override val mon = "Mon"

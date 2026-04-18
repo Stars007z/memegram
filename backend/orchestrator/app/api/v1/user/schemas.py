@@ -11,6 +11,10 @@ class UserProfileResponseSchema(BaseModel):
     bio: str
     last_active: int
     is_deleted: bool
+    # True if the requester has blocked this user (requester -> user)
+    is_peer_blocked: bool = False
+    # True if this user has blocked the requester (user -> requester)
+    is_blocked_by_peer: bool = False
 
 
 class UpdateUserRequestSchema(BaseModel):

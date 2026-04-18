@@ -1,13 +1,17 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, Depends, Query, Response
 from starlette.responses import StreamingResponse
 
-from app.api.dependencies import get_current_session, get_messaging_gateway
+from app.api.dependencies import (
+    get_current_session, get_messaging_gateway, get_contacts_gateway,
+)
 from app.api.v1.messaging.schemas import (
     b64_to_bytes,
     UploadKeyPackagesRequestSchema,
     UploadKeyPackagesResponseSchema,
+    DeleteKeyPackagesResponseSchema,
     UserDeviceKeyPackageSchema,
     GetKeyPackagesForUserResponseSchema,
     KeyPackagesCountResponseSchema,
@@ -54,7 +58,11 @@ from app.core.interfaces.messaging_gateway import (
     DeviceWelcome,
     MemberWithWelcomes,
 )
+from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.session_context import SessionContext
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/messaging", tags=["messaging"])
 
@@ -75,6 +83,40 @@ def _conv_to_schema(r):
         mls_group=mls, created_at=r.created_at,
         avatar_media_id=r.avatar_media_id,
     )
+
+
+async def _augment_conv_with_blocks(
+    schema: ConversationResponseSchema,
+    requester_user_id: str,
+    contacts_gw: IContactsGateway,
+) -> ConversationResponseSchema:
+    """For direct conversations, fill is_blocked_by_peer / is_peer_blocked
+    by querying contacts-service. No-op for groups or self-DMs."""
+    if schema.type != "direct":
+        return schema
+    peer_id = next(
+        (m.user_id for m in schema.members if m.user_id != requester_user_id),
+        None,
+    )
+    if not peer_id:
+        return schema
+    try:
+        a, b = await asyncio.gather(
+            contacts_gw.is_blocked(user_id=requester_user_id, blocked_user_id=peer_id),
+            contacts_gw.is_blocked(user_id=peer_id, blocked_user_id=requester_user_id),
+            return_exceptions=True,
+        )
+        if not isinstance(a, Exception):
+            schema.is_peer_blocked = a.is_blocked
+        else:
+            logger.warning("conv.block_lookup_failed", side="peer", error=str(a))
+        if not isinstance(b, Exception):
+            schema.is_blocked_by_peer = b.is_blocked
+        else:
+            logger.warning("conv.block_lookup_failed", side="by_peer", error=str(b))
+    except Exception as e:
+        logger.warning("conv.block_flags_failed", error=str(e))
+    return schema
 
 
 def _msg_to_schema(m):
@@ -107,6 +149,24 @@ async def upload_key_packages(
         key_packages=[b64_to_bytes(kp) for kp in body.key_packages],
     )
     return UploadKeyPackagesResponseSchema(uploaded_count=count)
+
+
+@router.delete("/key-packages", response_model=DeleteKeyPackagesResponseSchema)
+async def delete_my_key_packages(
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    """
+    Purge all unconsumed key packages for the current session's device.
+    Called by the client when its local MLS key-store is wiped
+    (logout, account reset). Old KPs must not be handed out to peers
+    because their private halves no longer exist on this device.
+    """
+    deleted = await gw.delete_key_packages_for_device(
+        user_id=session.user_id,
+        device_id=session.device_id,
+    )
+    return DeleteKeyPackagesResponseSchema(deleted_count=deleted)
 
 
 @router.get(
@@ -152,6 +212,7 @@ async def create_direct_conversation(
     body: CreateDirectConversationRequestSchema,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
+    contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
 ):
     result = await gw.create_direct_conversation(
         initiator_user_id=session.user_id,
@@ -162,7 +223,7 @@ async def create_direct_conversation(
             for w in body.welcome_messages
         ],
     )
-    return _conv_to_schema(result)
+    return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
 
 
 @router.post("/conversations/group", response_model=ConversationResponseSchema, status_code=201)
@@ -221,10 +282,11 @@ async def get_conversation(
     response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
+    contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
 ):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_conversation(session.user_id, conversation_id)
-    return _conv_to_schema(result)
+    return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
 
 
 @router.post(
@@ -316,6 +378,22 @@ async def update_group_name(
         user_id=session.user_id,
         conversation_id=conversation_id,
         name=body.name,
+    )
+    return SuccessResponseSchema(success=success)
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=SuccessResponseSchema,
+)
+async def delete_conversation(
+    conversation_id: str,
+    session: SessionContext = Depends(get_current_session),
+    gw: IMessagingGateway = Depends(get_messaging_gateway),
+):
+    success = await gw.delete_conversation(
+        user_id=session.user_id,
+        conversation_id=conversation_id,
     )
     return SuccessResponseSchema(success=success)
 

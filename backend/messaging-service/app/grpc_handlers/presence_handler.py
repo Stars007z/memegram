@@ -163,4 +163,12 @@ def _event_to_proto(event: dict) -> messaging_pb2.ConversationEvent | None:
             ),
         )
 
+    if event_type == "conversation_deleted":
+        return messaging_pb2.ConversationEvent(
+            conversation_id=conv_id,
+            conversation_deleted=messaging_pb2.ConversationDeletedEvent(
+                deleted_by=event.get("deleted_by", ""),
+            ),
+        )
+
     return None

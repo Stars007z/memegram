@@ -19,6 +19,10 @@ class UploadKeyPackagesResponseSchema(BaseModel):
     uploaded_count: int
 
 
+class DeleteKeyPackagesResponseSchema(BaseModel):
+    deleted_count: int
+
+
 class KeyPackageResponseSchema(BaseModel):
     key_package_data: bytes
     key_package_ref: bytes
@@ -86,6 +90,11 @@ class ConversationResponseSchema(BaseModel):
     mls_group: Optional[MlsGroupInfoSchema] = None
     created_at: int
     avatar_media_id: str = ""
+    # For direct conversations: True if the OTHER member has blocked the requester.
+    # Always False for groups and self-DMs.
+    is_blocked_by_peer: bool = False
+    # For direct conversations: True if the requester has blocked the other member.
+    is_peer_blocked: bool = False
 
 
 class ConversationSummarySchema(BaseModel):
@@ -96,6 +105,8 @@ class ConversationSummarySchema(BaseModel):
     unread_count: int
     last_activity_at: int
     avatar_media_id: str = ""
+    is_blocked_by_peer: bool = False
+    is_peer_blocked: bool = False
 
 
 class GetConversationsResponseSchema(BaseModel):

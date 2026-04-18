@@ -14,6 +14,7 @@ from app.core.interfaces.contacts_gateway import (
     BlockUserResult,
     UnblockUserResult,
     GetBlockedUsersResult,
+    IsBlockedResult,
     ContactsHealthResult,
 )
 from app.infrastructure.grpc.errors import grpc_error_to_exception
@@ -154,6 +155,18 @@ class GrpcContactsGateway(IContactsGateway):
                 blocked_users=[_blocked_proto_to_dc(b) for b in resp.blocked_users],
                 total_count=resp.total_count,
             )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+
+    async def is_blocked(self, user_id: str, blocked_user_id: str) -> IsBlockedResult:
+        try:
+            resp = await self._stub().IsBlocked(
+                contacts_pb2.IsBlockedRequest(
+                    user_id=user_id, blocked_user_id=blocked_user_id,
+                ),
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
+            )
+            return IsBlockedResult(is_blocked=resp.is_blocked)
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
 

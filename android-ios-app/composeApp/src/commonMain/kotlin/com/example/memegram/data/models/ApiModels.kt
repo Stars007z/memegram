@@ -55,7 +55,9 @@ data class UserProfileResponse(
     @SerialName("is_deleted") val isDeleted: Boolean = false,
     @SerialName("avatar_media_id") val avatarMediaId: String? = null,
     @SerialName("profile_background_media_id") val profileBackgroundMediaId: String? = null,
-    @SerialName("last_active") val lastActive: Long? = null
+    @SerialName("last_active") val lastActive: Long? = null,
+    @SerialName("is_peer_blocked") val isPeerBlocked: Boolean = false,
+    @SerialName("is_blocked_by_peer") val isBlockedByPeer: Boolean = false
 )
 
 @Serializable
@@ -118,7 +120,9 @@ data class ConversationResponse(
     @SerialName("last_message_preview") val lastMessagePreview: String? = null,
     @SerialName("last_activity_at") val lastActivityAt: Long? = null,
     @SerialName("unread_count") val unreadCount: Int? = null,
-    @SerialName("avatar_media_id") val avatarMediaId: String? = null
+    @SerialName("avatar_media_id") val avatarMediaId: String? = null,
+    @SerialName("is_peer_blocked") val isPeerBlocked: Boolean = false,
+    @SerialName("is_blocked_by_peer") val isBlockedByPeer: Boolean = false
 )
 
 @Serializable
@@ -162,7 +166,8 @@ data class SseEventData(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("kicked_by") val kickedBy: String? = null,
     @SerialName("new_role") val newRole: String? = null,
-    @SerialName("reply_to_message_id") val replyToMessageId: String? = null
+    @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
+    @SerialName("deleted_by") val deletedBy: String? = null
 )
 
 @Serializable

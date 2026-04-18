@@ -130,3 +130,19 @@ class IConversationService(ABC):
         name: str,
     ) -> bool:
         ...
+
+    @abstractmethod
+    async def delete_conversation(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+    ) -> bool:
+        """Hard-delete a conversation for all participants.
+
+        - For DM: any participant can delete; chat is removed for both sides.
+        - For group: only the owner can delete the whole group; non-owners
+          should use leave_conversation instead.
+        Publishes a `conversation_deleted` event so all online clients can
+        purge it locally.
+        """
+        ...

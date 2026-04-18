@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import redis.asyncio as aioredis
+from sqlalchemy import text
 
 from app.infrastructure.contacts_client import IContactsClient
 from app.repositories.conversation_repo import ConversationRepository
@@ -65,7 +66,23 @@ class ConversationServiceImpl(IConversationService):
             initiator_user_id, recipient_user_id,
         )
         if existing:
-            raise ValueError("ALREADY_EXISTS: Direct conversation already exists")
+            # Idempotent: return the existing direct conversation instead of erroring.
+            # This makes "open chat from contacts" work even if it was created earlier
+            # from a different device or after a local DB wipe.
+            existing_members = await self._members.get_active_members(existing.id)
+            existing_mls = await self._mls_groups.get_by_conversation_id(existing.id)
+            logger.info(
+                "conversation.direct.create_idempotent_hit",
+                conversation_id=str(existing.id),
+                initiator_user_id=str(initiator_user_id),
+                recipient_user_id=str(recipient_user_id),
+            )
+            return self._build_conversation_result(
+                existing,
+                existing_members,
+                epoch=existing_mls.current_epoch if existing_mls else 1,
+                cipher_suite=existing_mls.cipher_suite if existing_mls else 1,
+            )
 
         conv = await self._conversations.create({
             "type": "direct",
@@ -433,6 +450,78 @@ class ConversationServiceImpl(IConversationService):
             "name": name.strip(),
             "changed_by": str(caller_user_id),
         })
+
+        return True
+
+    # ── DeleteConversation ──────────────────────────
+
+    async def delete_conversation(
+        self,
+        caller_user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+    ) -> bool:
+        conv = await self._conversations.get_by_id(conversation_id)
+        if not conv:
+            raise ValueError("NOT_FOUND: Conversation not found")
+
+        # Caller must currently be (or have been) a member to delete.
+        # For DMs we allow any active participant; for groups only the owner.
+        caller = await self._members.get_active_member(conversation_id, caller_user_id)
+        if not caller:
+            raise ValueError("NOT_FOUND: Not a member of this conversation")
+
+        if conv.type == "group" and caller.role != "owner":
+            raise ValueError(
+                "PERMISSION_DENIED: Only the group owner can delete the group; "
+                "use leave instead",
+            )
+
+        # Publish deletion event BEFORE the row goes away so subscribers can
+        # purge the chat locally on every device of every participant.
+        await self._stream.publish_event(conversation_id, {
+            "event_type": "conversation_deleted",
+            "deleted_by": str(caller_user_id),
+        })
+
+        # Hard-delete dependent rows in FK-safe order. Most tables don't have
+        # ON DELETE CASCADE on conversation_id, so we wipe them explicitly.
+        # conversation_members has CASCADE on conversations.id and is removed
+        # automatically when the parent row is deleted.
+        session = self._conversations.session
+        cid = conversation_id
+
+        await session.execute(
+            text("DELETE FROM mls_welcome_messages WHERE conversation_id = :cid"),
+            {"cid": cid},
+        )
+        await session.execute(
+            text("DELETE FROM mls_commit_messages WHERE conversation_id = :cid"),
+            {"cid": cid},
+        )
+        await session.execute(
+            text("DELETE FROM mls_groups WHERE id = :cid"),
+            {"cid": cid},
+        )
+        await session.execute(
+            text("DELETE FROM media_attachments WHERE conversation_id = :cid"),
+            {"cid": cid},
+        )
+        await session.execute(
+            text("DELETE FROM messages WHERE conversation_id = :cid"),
+            {"cid": cid},
+        )
+        await session.execute(
+            text("DELETE FROM conversations WHERE id = :cid"),
+            {"cid": cid},
+        )
+        await session.flush()
+
+        logger.info(
+            "conversation.deleted",
+            conversation_id=str(conversation_id),
+            deleted_by=str(caller_user_id),
+            type=conv.type,
+        )
 
         return True
 

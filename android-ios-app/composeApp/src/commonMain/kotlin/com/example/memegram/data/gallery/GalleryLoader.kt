@@ -40,14 +40,20 @@ private fun monthShort(m: Int) = when (m) {
 
 sealed class AttachItem {
     abstract val name: String
-    data class FromPicker(val file: PlatformFile) : AttachItem() { override val name get() = file.name }
+    open val asFile: Boolean get() = false
+    data class FromPicker(
+        val file: PlatformFile,
+        override val asFile: Boolean = false
+    ) : AttachItem() { override val name get() = file.name }
     data class FromGallery(val thumb: GalleryThumb) : AttachItem() { override val name get() = thumb.name }
 }
 
 interface GalleryLoader {
     val isPermissionGranted: Boolean
     fun requestPermission()
-    suspend fun loadRecent(limit: Int = 48): List<GalleryThumb>
+    suspend fun loadAll(): List<GalleryThumb>
+    suspend fun loadThumbBytes(id: String): ByteArray?
+    suspend fun loadRecent(limit: Int = 48): List<GalleryThumb> = loadAll().take(limit)
 }
 
 @Composable
