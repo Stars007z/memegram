@@ -22,7 +22,6 @@ from app.core.interfaces.user_gateway import CreateUserResult
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.login_init import LoginInitUseCase
-from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.register import RegisterUseCase
 from app.exceptions import GatewayError
 
@@ -189,23 +188,6 @@ class TestLoginCompleteUseCase:
         # Assert
         passed: LoginCompleteRequest = auth_gateway.login_complete.await_args.args[0]
         assert passed.device_name is None
-
-
-# ---------------------------------------------------------------------------
-# LogoutUseCase
-# ---------------------------------------------------------------------------
-class TestLogoutUseCase:
-    async def test_delegates_to_gateway(self, auth_gateway):
-        # Arrange
-        auth_gateway.logout.return_value = LogoutResult(success=True, message="ok")
-        use_case = LogoutUseCase(auth_gateway)
-
-        # Act
-        result = await use_case.execute("access-token")
-
-        # Assert
-        assert result.success is True
-        auth_gateway.logout.assert_awaited_once_with("access-token")
 
 
 # ---------------------------------------------------------------------------

@@ -45,10 +45,6 @@ class LoginCompleteRequestSchema(BaseModel):
         return base64.b64decode(self.signature_b64)
 
 
-class LogoutRequestSchema(BaseModel):
-    access_token: str = Field(..., min_length=1)
-
-
 class CreateInviteRequestSchema(BaseModel):
     expires_in_days: int = Field(..., ge=1, le=365)
 
@@ -66,11 +62,6 @@ class LoginInitResponseSchema(BaseModel):
     challenge: str
     expires_at: int
     device_id: str
-
-
-class LogoutResponseSchema(BaseModel):
-    success: bool
-    message: str
 
 
 class HealthResponseSchema(BaseModel):
