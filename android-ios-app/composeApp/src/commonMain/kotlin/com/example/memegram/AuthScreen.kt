@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +39,6 @@ fun AuthScreen(
     val s = LocalStrings.current
     val currentLang by languageViewModel.currentLang.collectAsState()
     val isDarkMode by themeViewModel.isDarkMode.collectAsState()
-    var isLoginMode by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
     var showLangMenu by remember { mutableStateOf(false) }
@@ -58,7 +56,6 @@ fun AuthScreen(
     val cardBg = if (isDarkMode) Color(0xFF2A2A3E) else Color.White
     val accentColor = Color(0xFF6075F2)
     val textPrimary = if (isDarkMode) Color(0xFFE4E1E6) else Color(0xFF1A1A2E)
-    val textSecondary = if (isDarkMode) Color(0xFFA0A0B8) else Color(0xFF888AA0)
     val borderColor = if (isDarkMode) Color(0xFF3A3A50) else Color(0xFFE0E0E0)
     val errorBg = if (isDarkMode) Color(0xFF3D1F1F) else Color(0xFFFFEDED)
     val buttonBg = if (isDarkMode) Color(0xFF7B8BF5) else Color(0xFF6075F2)
@@ -186,50 +183,26 @@ fun AuthScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.sdp)
             ) {
                 Column(modifier = Modifier.padding(20.sdp)) {
-                    AnimatedVisibility(
-                        visible = !isLoginMode,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Column {
-                            AuthTextField(
-                                value = username,
-                                onValueChange = { username = it },
-                                label = s.nickname,
-                                icon = Icons.Default.Person,
-                                isDarkMode = isDarkMode,
-                                accentColor = accentColor,
-                                borderColor = borderColor,
-                            )
-                            Spacer(modifier = Modifier.height(12.sdp))
-                            AuthTextField(
-                                value = inviteCode,
-                                onValueChange = { inviteCode = it },
-                                label = s.inviteCode,
-                                icon = Icons.Default.CardGiftcard,
-                                placeholder = "XXXXXXXX",
-                                isDarkMode = isDarkMode,
-                                accentColor = accentColor,
-                                borderColor = borderColor,
-                            )
-                        }
-                    }
-
-                    AnimatedVisibility(
-                        visible = isLoginMode,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Text(
-                            text = s.autoLoginHint,
-                            fontSize = 14.ssp,
-                            color = textSecondary,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.sdp)
-                        )
-                    }
+                    AuthTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = s.nickname,
+                        icon = Icons.Default.Person,
+                        isDarkMode = isDarkMode,
+                        accentColor = accentColor,
+                        borderColor = borderColor,
+                    )
+                    Spacer(modifier = Modifier.height(12.sdp))
+                    AuthTextField(
+                        value = inviteCode,
+                        onValueChange = { inviteCode = it },
+                        label = s.inviteCode,
+                        icon = Icons.Default.CardGiftcard,
+                        placeholder = "XXXXXXXX",
+                        isDarkMode = isDarkMode,
+                        accentColor = accentColor,
+                        borderColor = borderColor,
+                    )
                 }
             }
 
@@ -264,10 +237,7 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(20.sdp))
 
             Button(
-                onClick = {
-                    if (isLoginMode) viewModel.login()
-                    else viewModel.register(username, inviteCode)
-                },
+                onClick = { viewModel.register(username, inviteCode) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.sdp),
@@ -286,7 +256,7 @@ fun AuthScreen(
                     )
                 } else {
                     Text(
-                        text = if (isLoginMode) s.login else s.register,
+                        text = s.register,
                         fontSize = 16.ssp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
@@ -296,15 +266,6 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(16.sdp))
 
-            TextButton(onClick = { isLoginMode = !isLoginMode }) {
-                Text(
-                    text = if (isLoginMode) s.noAccountRegister
-                    else s.hasAccountLogin,
-                    color = accentColor,
-                    fontSize = 14.ssp,
-                    textAlign = TextAlign.Center
-                )
-            }
             TextButton(
                 onClick = onAddDevice,
                 modifier = Modifier.fillMaxWidth()

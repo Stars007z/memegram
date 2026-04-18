@@ -1,7 +1,6 @@
 package com.example.memegram
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -11,6 +10,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Box
 import com.example.memegram.utils.LocalScreenWidthDp
 import com.example.memegram.utils.LocalScreenHeightDp
@@ -28,18 +29,24 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.memegram.di.appModule
+import com.example.memegram.auth.SessionRefresher
+import com.example.memegram.auth.SessionState
+import com.example.memegram.lifecycle.AppLifecycleObserver
 import com.example.memegram.localization.EnStrings
 import com.example.memegram.localization.LocalStrings
 import com.example.memegram.localization.RuStrings
 import com.example.memegram.localization.S
+import com.example.memegram.push.PushDeepLink
 import com.ionspin.kotlin.crypto.LibsodiumInitializer
 import kotlinx.serialization.Serializable
-import org.koin.compose.KoinApplication
+import org.koin.core.context.startKoin
+import org.koin.mp.KoinPlatform
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import org.koin.dsl.koinConfiguration
 
 @Serializable object ProfileRoute
 @Serializable object AuthRoute
+@Serializable object SplashRoute
 @Serializable object ChatsRoute
 @Serializable data class ChatDetailRoute(
     val chatName: String,
@@ -113,10 +120,13 @@ fun App() {
     LaunchedEffect(Unit) {
         LibsodiumInitializer.initializeWithCallback { }
     }
-    KoinApplication(configuration = koinConfiguration {
-        modules(appModule)
-    }) {
-        val themeViewModel = koinViewModel<ThemeViewModel>()
+    remember {
+        if (KoinPlatform.getKoinOrNull() == null) {
+            startKoin { modules(appModule) }
+        }
+        Unit
+    }
+    val themeViewModel = koinViewModel<ThemeViewModel>()
         val topBarColor by themeViewModel.topBarColor.collectAsState()
         val topBarImageBytes by themeViewModel.topBarImage.collectAsState()
         val isDarkMode by themeViewModel.isDarkMode.collectAsState()
@@ -151,7 +161,57 @@ fun App() {
                     themeViewModel.refreshTheme()
                 }
 
-                NavHost(navController = navController, startDestination = AuthRoute) {
+                val sessionRefresher = koinInject<SessionRefresher>()
+                val lifecycleObserver = koinInject<AppLifecycleObserver>()
+                DisposableEffect(lifecycleObserver, sessionRefresher) {
+                    lifecycleObserver.start {
+                        sessionRefresher.refreshIfNeeded()
+                    }
+                    onDispose { lifecycleObserver.stop() }
+                }
+
+                val pendingPush by PushDeepLink.pending.collectAsState()
+                val sessionStateForPush by sessionRefresher.state.collectAsState()
+                LaunchedEffect(pendingPush, sessionStateForPush, navBackStackEntry) {
+                    val target = pendingPush ?: return@LaunchedEffect
+                    if (sessionStateForPush !is SessionState.Authenticated) return@LaunchedEffect
+                    val currentRoute = navBackStackEntry?.destination?.route ?: return@LaunchedEffect
+                    if (currentRoute.contains("SplashRoute")) return@LaunchedEffect
+                    PushDeepLink.consume()
+                    navController.navigate(
+                        ChatDetailRoute(
+                            chatName = target.chatName,
+                            conversationId = target.conversationId,
+                            avatarMediaId = target.avatarMediaId,
+                        )
+                    ) { launchSingleTop = true }
+                }
+
+                NavHost(navController = navController, startDestination = SplashRoute) {
+                    composable<SplashRoute> {
+                        val sessionState by sessionRefresher.state.collectAsState()
+                        LaunchedEffect(Unit) {
+                            sessionRefresher.refreshIfNeeded()
+                        }
+                        LaunchedEffect(sessionState) {
+                            when (sessionState) {
+                                is SessionState.Authenticated -> {
+                                    navController.navigate(ChatsRoute) {
+                                        popUpTo<SplashRoute> { inclusive = true }
+                                    }
+                                }
+                                is SessionState.NoCredentials,
+                                is SessionState.Failed -> {
+                                    navController.navigate(AuthRoute) {
+                                        popUpTo<SplashRoute> { inclusive = true }
+                                    }
+                                }
+                                is SessionState.Unknown,
+                                is SessionState.Refreshing -> Unit
+                            }
+                        }
+                        SplashScreen(isDarkMode = isDarkMode)
+                    }
                     composable<AuthRoute> {
                         val viewModel = koinViewModel<AuthViewModel>()
                         AuthScreen(
@@ -262,11 +322,6 @@ fun App() {
                             onBack = {
                                 if (navController.previousBackStackEntry != null)
                                     navController.popBackStack()
-                            },
-                            onLogoutDone = {
-                                navController.navigate(AuthRoute) {
-                                    popUpTo(0) { inclusive = true }
-                                }
                             },
                             viewModel = viewModel
                         )
@@ -454,5 +509,22 @@ fun App() {
         } // CompositionLocalProvider (LocalScreenWidthDp)
         } // BoxWithConstraints
         } // CompositionLocalProvider (LocalStrings)
+}
+@Composable
+private fun SplashScreen(isDarkMode: Boolean) {
+    val bgStart = if (isDarkMode) Color(0xFF1B1B2F) else Color(0xFFF8F7FF)
+    val bgEnd = if (isDarkMode) Color(0xFF162447) else Color(0xFFEDE9FF)
+    val spinnerColor = if (isDarkMode) Color(0xFFBBC3FF) else Color(0xFF6075F2)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(bgStart, bgEnd)
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = spinnerColor, strokeWidth = 3.dp)
     }
 }

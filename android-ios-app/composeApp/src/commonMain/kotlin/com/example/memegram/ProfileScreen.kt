@@ -13,7 +13,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,7 +43,6 @@ private enum class CropTarget { AVATAR, COVER }
 fun ProfileScreen(
     topBarColor: Color,
     onBack: () -> Unit,
-    onLogoutDone: () -> Unit,
     viewModel: ProfileViewModel
 ) {
     val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
@@ -92,7 +90,6 @@ fun ProfileScreen(
         )
     }
 
-    // Show crop screen as full-screen overlay
     if (cropBytes != null && cropTarget != null) {
         val ratio = when (cropTarget!!) {
             CropTarget.AVATAR -> 1f
@@ -285,21 +282,6 @@ fun ProfileScreen(
                         Spacer(Modifier.width(8.sdp))
                         Text(if (keyCopied) s.copied else s.copyMyPublicKey)
                     }
-                }
-
-                Spacer(modifier = Modifier.height(16.sdp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.sdp))
-
-                Button(
-                    onClick = { viewModel.logout(onLogoutDone) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.sdp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.sdp))
-                    Spacer(Modifier.width(8.sdp))
-                    Text(s.logout)
                 }
 
                 if (isLoading) {

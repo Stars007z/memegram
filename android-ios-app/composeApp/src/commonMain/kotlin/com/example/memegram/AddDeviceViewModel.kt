@@ -6,6 +6,7 @@ import com.example.memegram.data.local.KeyManager
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
 import com.example.memegram.data.network.ApiService
+import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.mls.MlsManager.Companion.BATCH_KEY_PACKAGES
 import com.example.memegram.utils.generateUuid
@@ -18,7 +19,8 @@ class AddDeviceViewModel(
     private val api: ApiService,
     private val sessionManager: SessionManager,
     private val mlsManager: MlsManager,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val notificationsRepository: NotificationsRepository
 ) : ViewModel() {
 
     private val _step  = MutableStateFlow(AddDeviceStep.SCANNING)
@@ -123,6 +125,7 @@ class AddDeviceViewModel(
                                 }
 
                                 uploadKeyPackages()
+                                notificationsRepository.registerCurrentDeviceToken()
                                 _step.value = AddDeviceStep.CONFIRMED
                             }
                             return@launch

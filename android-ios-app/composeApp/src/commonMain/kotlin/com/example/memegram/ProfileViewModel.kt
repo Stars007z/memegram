@@ -4,12 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.InitiateItemUploadRequest
-import com.example.memegram.data.models.LogoutRequest
 import com.example.memegram.data.models.UpdateProfileRequest
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.UserRepository
-import com.example.memegram.mls.MlsManager
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,8 +20,7 @@ class ProfileViewModel(
     private val settings: Settings,
     private val chatRepository: ChatRepository,
     private val sessionManager: SessionManager,
-    private val api: ApiService,
-    private val mlsManager: MlsManager
+    private val api: ApiService
 ) : ViewModel() {
 
     val myPublicKey: StateFlow<String> = userRepository.profile
@@ -195,37 +192,6 @@ class ProfileViewModel(
                 _error.value = "Error clearing cache: ${e.message}"
             } finally {
                 _isLoading.value = false
-            }
-        }
-    }
-
-    fun logout(onDone: () -> Unit) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                try {
-                    val deleted = api.deleteMyKeyPackages()
-                    sessionManager.clearPendingKpCleanup()
-                    println("MemegramDebug [Logout] Server KPs purged: $deleted")
-                } catch (e: Exception) {
-                    sessionManager.markPendingKpCleanup()
-                    println("MemegramDebug [Logout] KP purge FAILED (${e.message}) — will retry on next login")
-                }
-
-                sessionManager.getAccessToken()?.let { token ->
-                    try { api.logout(LogoutRequest(token)) } catch (_: Exception) {}
-                }
-            } finally {
-                chatRepository.clearAllLocalData()
-                mlsManager.clearAll()
-                settings.remove("profile_avatar")
-                settings.remove("profile_cover")
-                settings.remove("profile_avatar_media_id")
-                settings.remove("profile_cover_media_id")
-                sessionManager.clear()
-
-                _isLoading.value = false
-                onDone()
             }
         }
     }

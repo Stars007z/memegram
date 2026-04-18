@@ -52,6 +52,9 @@ static/
 
 memegram-362c0-firebase-adminsdk-fbsvc-87eea9959e.json
 
+# Firebase client config (download per-developer from Firebase Console)
+android-ios-app/composeApp/google-services.json
+
 exported_models/
 
 tools/__pycache__/

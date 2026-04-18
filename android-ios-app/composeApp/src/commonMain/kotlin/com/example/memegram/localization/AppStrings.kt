@@ -133,7 +133,6 @@ interface AppStrings {
     val username: String
     val aboutMe: String
     val copyMyPublicKey: String
-    val logout: String
 
     // ── Group profile ────────────────────────────────────────────────
     val roleOwner: String
@@ -518,7 +517,6 @@ object RuStrings : AppStrings {
     override val username = "Имя пользователя"
     override val aboutMe = "О себе"
     override val copyMyPublicKey = "Скопировать мой публичный ключ"
-    override val logout = "Выйти из аккаунта"
 
     // Group profile
     override val roleOwner = "Владелец"
@@ -902,7 +900,6 @@ object EnStrings : AppStrings {
     override val username = "Username"
     override val aboutMe = "About"
     override val copyMyPublicKey = "Copy my public key"
-    override val logout = "Log out"
 
     // Group profile
     override val roleOwner = "Owner"
