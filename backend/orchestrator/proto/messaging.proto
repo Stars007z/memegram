@@ -52,17 +52,22 @@ message ConversationSummary {
 message ConversationEvent {
     string conversation_id = 1;
     oneof event {
-        MessageEntry      new_message     = 2;
-        MessageEdited     message_edited  = 3;
-        MessageDeleted    message_deleted = 4;
-        TypingEvent       typing          = 5;
-        MemberEvent       member_joined   = 6;
-        MemberEvent       member_left     = 7;
-        EpochChanged      epoch_changed   = 8;
-        DeviceRevoked     device_revoked  = 9;
-        MemberKickedEvent member_kicked   = 10;
-        RoleChangedEvent  role_changed    = 11;
+        MessageEntry   new_message     = 2;
+        MessageEdited  message_edited  = 3;
+        MessageDeleted message_deleted = 4;
+        TypingEvent    typing          = 5;
+        MemberEvent       member_joined  = 6;
+        MemberEvent       member_left    = 7;
+        EpochChanged      epoch_changed  = 8;
+        DeviceRevoked     device_revoked = 9;
+        MemberKickedEvent member_kicked  = 10;
+        RoleChangedEvent  role_changed   = 11;
+        ConversationDeletedEvent conversation_deleted = 12;
     }
+}
+
+message ConversationDeletedEvent {
+    string deleted_by = 1; // user_id who initiated the delete
 }
 
 message MessageEdited {
@@ -146,6 +151,14 @@ message UserDeviceKeyPackage {
 
 message GetKeyPackagesForUserResponse {
     repeated UserDeviceKeyPackage key_packages = 1;
+}
+
+message DeleteKeyPackagesForDeviceRequest {
+    string user_id   = 1;
+    string device_id = 2;
+}
+message DeleteKeyPackagesForDeviceResponse {
+    int32 deleted_count = 1;
 }
 
 // ──────────────────────────────────────────────
@@ -240,6 +253,14 @@ message UpdateGroupNameRequest {
     string name            = 3;
 }
 message UpdateGroupNameResponse {
+    bool success = 1;
+}
+
+message DeleteConversationRequest {
+    string user_id         = 1; // caller
+    string conversation_id = 2;
+}
+message DeleteConversationResponse {
     bool success = 1;
 }
 
@@ -470,6 +491,7 @@ service MessagingService {
     rpc GetKeyPackage(GetKeyPackageRequest)             returns (GetKeyPackageResponse);
     rpc GetKeyPackagesCount(GetKeyPackagesCountRequest) returns (GetKeyPackagesCountResponse);
     rpc GetKeyPackagesForUser(GetKeyPackagesForUserRequest) returns (GetKeyPackagesForUserResponse);
+    rpc DeleteKeyPackagesForDevice(DeleteKeyPackagesForDeviceRequest) returns (DeleteKeyPackagesForDeviceResponse);
 
     // Conversations
     rpc CreateDirectConversation(CreateDirectConversationRequest) returns (ConversationResponse);
@@ -481,6 +503,7 @@ service MessagingService {
     rpc UpdateMemberRole(UpdateMemberRoleRequest)                 returns (UpdateMemberRoleResponse);
     rpc UpdateGroupAvatar(UpdateGroupAvatarRequest)               returns (UpdateGroupAvatarResponse);
     rpc UpdateGroupName(UpdateGroupNameRequest)                   returns (UpdateGroupNameResponse);
+    rpc DeleteConversation(DeleteConversationRequest)             returns (DeleteConversationResponse);
 
     // Messages
     rpc SendMessage(SendMessageRequest)   returns (SendMessageResponse);

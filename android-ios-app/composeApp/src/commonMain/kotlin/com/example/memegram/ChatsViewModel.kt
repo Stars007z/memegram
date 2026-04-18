@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.CommitGroupChangeRequest
+import com.example.memegram.data.models.LeaveConversationRequest
 import com.example.memegram.data.models.LogoutRequest
 import com.example.memegram.data.models.SseEvent
 import com.example.memegram.data.network.ApiService
@@ -34,6 +35,69 @@ class ChatsViewModel(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _blockedConversationIds = MutableStateFlow<Set<String>>(emptySet())
+    val blockedConversationIds: StateFlow<Set<String>> = _blockedConversationIds.asStateFlow()
+
+    private val _selectedChatIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedChatIds: StateFlow<Set<String>> = _selectedChatIds.asStateFlow()
+    val isSelectionMode: StateFlow<Boolean> = _selectedChatIds
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun toggleSelection(conversationId: String) {
+        _selectedChatIds.update { current ->
+            if (conversationId in current) current - conversationId else current + conversationId
+        }
+    }
+
+    fun clearSelection() { _selectedChatIds.value = emptySet() }
+
+    fun isMuted(chat: ChatModel): Boolean =
+        chat.muteUntil == Long.MAX_VALUE || chat.muteUntil > Clock.System.now().toEpochMilliseconds()
+
+    fun muteChats(conversationIds: Set<String>, durationMs: Long) {
+        if (conversationIds.isEmpty()) return
+        viewModelScope.launch {
+            val until = when {
+                durationMs <= 0L -> 0L
+                durationMs == Long.MAX_VALUE -> Long.MAX_VALUE
+                else -> Clock.System.now().toEpochMilliseconds() + durationMs
+            }
+            chatRepository.setMuteUntilForIds(conversationIds.toList(), until)
+            clearSelection()
+        }
+    }
+
+    fun deleteSelectedChats() {
+        val ids = _selectedChatIds.value.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val snapshot = chats.value.associateBy { it.conversationId }
+            for (id in ids) {
+                val chat = snapshot[id] ?: chatRepository.getChatById(id)
+                val isGroup = chat?.isGroup ?: false
+                try {
+                    if (isGroup) {
+                        try {
+                            api.deleteConversation(id)
+                        } catch (_: Exception) {
+                            try {
+                                api.leaveConversation(id, LeaveConversationRequest(commitData = ""))
+                            } catch (_: Exception) {}
+                        }
+                    } else {
+                        api.deleteConversation(id)
+                    }
+                } catch (_: Exception) {}
+
+                try { mlsManager.deleteLocalGroup(id) } catch (_: Exception) {}
+                chatRepository.deleteChat(id)
+            }
+            mlsManager.flushState()
+            clearSelection()
+        }
+    }
+
     val chats: StateFlow<List<ChatModel>> = combine(
         chatRepository.getAllChatsFlow(),
         _searchQuery
@@ -51,8 +115,7 @@ class ChatsViewModel(
 
     private val peerCache = mutableMapOf<String, String>()
 
-    private val _blockedConversationIds = MutableStateFlow<Set<String>>(emptySet())
-    val blockedConversationIds: StateFlow<Set<String>> = _blockedConversationIds.asStateFlow()
+    private val blockedUnreadOffset = mutableMapOf<String, Int>()
 
     init {
         viewModelScope.launch {
@@ -138,6 +201,26 @@ class ChatsViewModel(
                 val isMine = localLastMessage?.isOutgoing ?: false
                 val isGroup = conv.type != "direct"
 
+                val serverUnread = conv.unreadCount ?: 0
+                if (serverUnread == 0) blockedUnreadOffset.remove(conv.id)
+                val blockedIdsNow = blockedUsersCache.blockedIds.value
+                val adjustedGroupUnread: Int = if (isGroup && serverUnread > 0) {
+                    val byOffset = blockedUnreadOffset[conv.id] ?: 0
+                    val byLocal = if (blockedIdsNow.isNotEmpty()) {
+                        val tail = localMessages
+                            .asSequence()
+                            .filter { !it.isOutgoing }
+                            .toList()
+                            .takeLast(serverUnread)
+                        tail.count { msg ->
+                            val s = msg.senderUserId
+                            s != null && s in blockedIdsNow
+                        }
+                    } else 0
+                    val correction = maxOf(byOffset, byLocal)
+                    (serverUnread - correction).coerceAtLeast(0)
+                } else serverUnread
+
                 var senderName: String? = null
                 var lastSenderAvatarMediaId: String? = null
 
@@ -172,13 +255,18 @@ class ChatsViewModel(
                     name                    = chatName,
                     lastMessage             = displayLastMessage,
                     timestamp               = conv.lastActivityAt * 1000,
-                    unreadCount             = conv.unreadCount,
+                    unreadCount             = when {
+                        !isGroup && dmPeerUserId != null && blockedUsersCache.isBlocked(dmPeerUserId) -> 0
+                        isGroup -> adjustedGroupUnread
+                        else -> serverUnread
+                    },
                     isLastMessageMine       = isMine,
                     lastSenderName          = senderName,
                     avatarMediaId           = peerAvatarMediaId
                                                 ?: conv.avatarMediaId?.takeIf { it.isNotBlank() },
                     lastSenderAvatarMediaId = lastSenderAvatarMediaId,
-                    peerUserId              = dmPeerUserId
+                    peerUserId              = dmPeerUserId,
+                    isGroup                 = isGroup
                 )
             }
 
@@ -259,7 +347,25 @@ class ChatsViewModel(
                 val currentUserId = sessionManager.getUserId()
                 val isMine = event.data?.senderUserId == currentUserId
 
+                val senderUid = event.data?.senderUserId
+                if (!isMine && senderUid != null && blockedUsersCache.isBlocked(senderUid)) {
+                    println("MemegramDebug [ChatsVM]: drop new_message from blocked user $senderUid")
+                    val msgId = event.data?.id
+                    if (!msgId.isNullOrBlank()) {
+                        viewModelScope.launch {
+                            runCatching { api.markAsRead(convId, com.example.memegram.data.models.MarkAsReadRequest(msgId)) }
+                        }
+                    }
+                    blockedUnreadOffset[convId] = (blockedUnreadOffset[convId] ?: 0) + 1
+                    val chat = chatRepository.getChatById(convId)
+                    if (chat != null && chat.unreadCount > 0) {
+                        chatRepository.saveChat(chat.copy(unreadCount = 0))
+                    }
+                    return
+                }
+
                 if (convId == ActiveChatCoordinator.conversationId) {
+                    blockedUnreadOffset.remove(convId)
                     val chat = chatRepository.getChatById(convId)
                     if (chat != null) {
                         chatRepository.saveChat(
@@ -276,22 +382,25 @@ class ChatsViewModel(
                     mlsManager.decrypt(convId, event.data?.mlsCiphertextB64 ?: "")
                 } catch (_: Exception) { null }
 
-                if (decryptedText != null) {
-                    mlsManager.flushState()
-                    chatRepository.saveMessage(
-                        Message(
-                            id           = event.data?.id.hashCode(),
-                            serverId     = event.data?.id ?: "",
-                            text         = decryptedText,
-                            isOutgoing   = isMine,
-                            timestamp    = (event.data?.createdAt?.let { it * 1000L })
-                                ?: Clock.System.now().toEpochMilliseconds(),
-                            status       = MessageStatus.SENT,
-                            senderUserId = event.data?.senderUserId
-                        ),
-                        convId
-                    )
+                if (decryptedText == null) {
+                    println("MemegramDebug [ChatsVM]: drop undecryptable message in conv=$convId")
+                    return
                 }
+
+                mlsManager.flushState()
+                chatRepository.saveMessage(
+                    Message(
+                        id           = event.data?.id.hashCode(),
+                        serverId     = event.data?.id ?: "",
+                        text         = decryptedText,
+                        isOutgoing   = isMine,
+                        timestamp    = (event.data?.createdAt?.let { it * 1000L })
+                            ?: Clock.System.now().toEpochMilliseconds(),
+                        status       = MessageStatus.SENT,
+                        senderUserId = event.data?.senderUserId
+                    ),
+                    convId
+                )
 
                 val chat = chatRepository.getChatById(convId)
                 if (chat != null) {
@@ -311,7 +420,7 @@ class ChatsViewModel(
                     }
                     chatRepository.saveChat(
                         chat.copy(
-                            lastMessage             = decryptedText ?: if (isMine) "\uD83D\uDCE8" else "\uD83D\uDD12",
+                            lastMessage             = decryptedText,
                             timestamp               = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
                             unreadCount             = if (isMine) chat.unreadCount else chat.unreadCount + 1,
                             isLastMessageMine       = isMine,
@@ -350,6 +459,12 @@ class ChatsViewModel(
                 val userId = event.data?.userId
                 val newRole = event.data?.newRole
                 println("MemegramDebug [ChatsVM]: role_changed: user=$userId, newRole=$newRole in conv=$convId")
+            }
+            "conversation_deleted" -> {
+                println("MemegramDebug [ChatsVM]: conversation_deleted event for conv=$convId — purging locally")
+                try { mlsManager.deleteLocalGroup(convId) } catch (_: Exception) {}
+                chatRepository.deleteChat(convId)
+                mlsManager.flushState()
             }
         }
     }
@@ -469,11 +584,21 @@ class ChatsViewModel(
     fun logout(onDone: () -> Unit) {
         viewModelScope.launch {
             try {
+                val deleted = api.deleteMyKeyPackages()
+                sessionManager.clearPendingKpCleanup()
+                println("MemegramDebug [Logout] Server KPs purged: $deleted")
+            } catch (e: Exception) {
+                sessionManager.markPendingKpCleanup()
+                println("MemegramDebug [Logout] KP purge FAILED (${e.message}) — will retry on next login")
+            }
+
+            try {
                 sessionManager.getAccessToken()?.let { api.logout(LogoutRequest(it)) }
             } catch (_: Exception) {}
             finally {
                 pollingJob?.cancel()
                 sseJob?.cancel()
+                blockedUnreadOffset.clear()
                 mlsManager.clearAll()
                 sessionManager.clear()
                 onDone()

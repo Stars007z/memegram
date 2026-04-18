@@ -53,6 +53,11 @@ import org.koin.dsl.koinConfiguration
 @Serializable object BlackListRoute
 @Serializable object ContactsRoute
 @Serializable object StorageRoute
+@Serializable data class ChatStorageDetailRoute(
+    val conversationId: String,
+    val chatName: String,
+    val avatarMediaId: String = ""
+)
 @Serializable object LinkedDevicesRoute
 @Serializable object AddDeviceRoute
 @Serializable object CreateGroupRoute
@@ -340,6 +345,23 @@ fun App() {
                         StorageScreen(
                             topBarColor = topBarColor,
                             onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
+                            onChatClick = { convId, name, avatarId ->
+                                navController.navigate(
+                                    ChatStorageDetailRoute(convId, name, avatarId)
+                                ) { launchSingleTop = true }
+                            },
+                            viewModel = viewModel
+                        )
+                    }
+                    composable<ChatStorageDetailRoute> { backStackEntry ->
+                        val route = backStackEntry.toRoute<ChatStorageDetailRoute>()
+                        val viewModel = koinViewModel<StorageViewModel>()
+                        ChatStorageDetailScreen(
+                            topBarColor = topBarColor,
+                            conversationId = route.conversationId,
+                            chatName = route.chatName,
+                            avatarMediaId = route.avatarMediaId,
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
                             viewModel = viewModel
                         )
                     }
@@ -412,6 +434,8 @@ fun App() {
                                 }
                             }
                         }
+
+                        BlockedByPeerDialog(contactsVm)
 
                         UserProfileScreen(
                             topBarColor = topBarColor,

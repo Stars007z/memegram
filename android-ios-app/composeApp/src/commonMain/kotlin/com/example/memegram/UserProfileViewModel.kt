@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -41,6 +42,9 @@ class UserProfileViewModel(
     val isBlocked: StateFlow<Boolean> = combine(
         _userProfile, blockedUsersCache.blockedIds
     ) { profile, ids -> profile?.id?.let { it in ids } ?: false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isBlockedByPeer: StateFlow<Boolean> = _userProfile
+        .map { it?.isBlockedByPeer == true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun loadUser(userId: String) {

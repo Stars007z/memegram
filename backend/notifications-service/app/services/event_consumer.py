@@ -16,6 +16,7 @@ import redis.asyncio as aioredis
 from app.config import settings
 from app.logging_config import get_logger
 from app.database.session import get_session
+from app.infrastructure.contacts_client import IContactsClient
 from app.infrastructure.item_storage_client import IItemStorageClient
 from app.infrastructure.messaging_client import IMessagingClient
 from app.infrastructure.user_client import IUserClient
@@ -52,12 +53,14 @@ class EventConsumer:
         messaging_client: IMessagingClient,
         user_client: IUserClient,
         item_storage_client: IItemStorageClient,
+        contacts_client: IContactsClient,
     ) -> None:
         self._messaging_redis = messaging_redis
         self._own_redis = own_redis
         self._messaging_client = messaging_client
         self._user_client = user_client
         self._item_storage_client = item_storage_client
+        self._contacts_client = contacts_client
 
         self._fcm_sender: IPushSender = FcmSender()
         self._apns_sender: IPushSender = ApnsSender()
@@ -188,6 +191,19 @@ class EventConsumer:
         recipient_ids = [m.user_id for m in members if m.user_id != sender_user_id]
         if not recipient_ids:
             return
+
+        # 1b. Filter out recipients who blocked the sender (no push for blocked senders).
+        if sender_user_id:
+            recipient_ids = await self._filter_blocked_recipients(
+                recipient_ids, sender_user_id,
+            )
+            if not recipient_ids:
+                logger.debug(
+                    "push.all_recipients_blocked_sender",
+                    sender_user_id=sender_user_id,
+                    conversation_id=conversation_id,
+                )
+                return
 
         # 2. Get sender info
         sender_info = await self._get_user_cached(sender_user_id)
@@ -346,6 +362,31 @@ class EventConsumer:
             )
 
     # ── Caching helpers ──────────────────────────────────────────────
+
+    async def _filter_blocked_recipients(
+        self, recipient_ids: list[str], sender_user_id: str,
+    ) -> list[str]:
+        """Return subset of recipient_ids that did NOT block the sender.
+
+        Result is cached per (recipient, sender) pair for 60s to avoid bursts of
+        gRPC calls during chat storms. Fail-open via GrpcContactsClient.
+        """
+        async def _check(recipient_id: str) -> tuple[str, bool]:
+            cache_key = f"notif:blocked:{recipient_id}:{sender_user_id}"
+            cached = await self._own_redis.get(cache_key)
+            if cached is not None:
+                value = cached.decode() if isinstance(cached, bytes) else cached
+                return recipient_id, value == "1"
+
+            blocked = await self._contacts_client.is_blocked(
+                user_id=recipient_id,
+                blocked_user_id=sender_user_id,
+            )
+            await self._own_redis.set(cache_key, "1" if blocked else "0", ex=60)
+            return recipient_id, blocked
+
+        results = await asyncio.gather(*[_check(rid) for rid in recipient_ids])
+        return [rid for rid, blocked in results if not blocked]
 
     async def _get_members_cached(self, conversation_id: str) -> list:
         cache_key = f"notif:members:{conversation_id}"

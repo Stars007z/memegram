@@ -276,6 +276,13 @@ class MlsManager(
                     println("MemegramDebug [MLS] ────────────────────────")
                 } catch (e: Exception) {
                     println("MemegramDebug [MLS] ❌ processWelcome FAILED: ${e.message}")
+                    val msg = e.message.orEmpty()
+                    val isStaleKp = msg.contains("No matching key package", ignoreCase = true) ||
+                                    msg.contains("key package", ignoreCase = true) && msg.contains("not found", ignoreCase = true)
+                    if (isStaleKp) {
+                        settings["mls_broken_$conversationId"] = true
+                        println("MemegramDebug [MLS] ⛔ Conversation $conversationId marked as MLS-broken (stale KP).")
+                    }
                     throw e
                 }
             }
@@ -468,9 +475,27 @@ class MlsManager(
         settings.remove(KEY_PROVIDER_STATE)
         settings.remove(KEY_SIGNING_KEY)
         settings.remove(KEY_KP_COUNT)
+        val staleKeys = settings.keys.filter {
+            it.startsWith("mls_mapping_") ||
+            it.startsWith(KEY_GROUP_PREFIX) ||
+            it.startsWith("mls_broken_")
+        }
+        for (k in staleKeys) settings.remove(k)
+
         _client     = null
         _stateDirty = false
-        println("MemegramDebug [MLS] clearAll() завершён — всё удалено")
+        println("MemegramDebug [MLS] clearAll() завершён — всё удалено (+${staleKeys.size} per-conv entries)")
+    }
+
+    fun isChatMlsBroken(conversationId: String): Boolean =
+        settings.getBoolean("mls_broken_$conversationId", false)
+
+    fun clearChatMlsBroken(conversationId: String) {
+        settings.remove("mls_broken_$conversationId")
+    }
+
+    fun markChatMlsBroken(conversationId: String) {
+        settings["mls_broken_$conversationId"] = true
     }
 
     fun migrateGroupId(oldConversationId: String, newConversationId: String) {

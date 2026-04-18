@@ -7,7 +7,10 @@ CREATE TABLE chatEntity (
     avatarMediaId TEXT,
     isLastMessageMine INTEGER NOT NULL DEFAULT 0,
     lastSenderName TEXT,
-    lastSenderAvatarMediaId TEXT
+    lastSenderAvatarMediaId TEXT,
+    isGroup INTEGER NOT NULL DEFAULT 0,
+    peerUserId TEXT,
+    muteUntil INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE messageEntity (
@@ -29,7 +32,11 @@ CREATE TABLE messageEntity (
     originalText         TEXT,
     translatedText       TEXT,
     translatedFromLang   TEXT,
-    isTranslated         INTEGER NOT NULL DEFAULT 0
+    isTranslated         INTEGER NOT NULL DEFAULT 0,
+    fileName             TEXT,
+    fileSize             INTEGER,
+    fileMime             TEXT,
+    localFilePath        TEXT
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -38,11 +45,34 @@ selectAllChats:
 SELECT * FROM chatEntity ORDER BY timestamp DESC;
 
 insertOrUpdateChat:
-INSERT OR REPLACE INTO chatEntity(conversationId, name, lastMessage, timestamp, unreadCount, avatarMediaId, isLastMessageMine, lastSenderName, lastSenderAvatarMediaId)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO chatEntity(conversationId, name, lastMessage, timestamp, unreadCount, avatarMediaId, isLastMessageMine, lastSenderName, lastSenderAvatarMediaId, isGroup, peerUserId, muteUntil)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(conversationId) DO UPDATE SET
+    name = excluded.name,
+    lastMessage = excluded.lastMessage,
+    timestamp = excluded.timestamp,
+    unreadCount = excluded.unreadCount,
+    avatarMediaId = excluded.avatarMediaId,
+    isLastMessageMine = excluded.isLastMessageMine,
+    lastSenderName = excluded.lastSenderName,
+    lastSenderAvatarMediaId = excluded.lastSenderAvatarMediaId,
+    isGroup = excluded.isGroup,
+    peerUserId = excluded.peerUserId;
 
 deleteChat:
 DELETE FROM chatEntity WHERE conversationId = ?;
+
+deleteChatsByIds:
+DELETE FROM chatEntity WHERE conversationId IN ?;
+
+deleteMessagesByConversationIds:
+DELETE FROM messageEntity WHERE conversationId IN ?;
+
+updateChatMuteUntil:
+UPDATE chatEntity SET muteUntil = ? WHERE conversationId = ?;
+
+updateChatMuteUntilForIds:
+UPDATE chatEntity SET muteUntil = ? WHERE conversationId IN ?;
 
 selectMessagesByConversation:
 SELECT * FROM messageEntity WHERE conversationId = ? ORDER BY timestamp ASC;
@@ -52,9 +82,10 @@ INSERT OR IGNORE INTO messageEntity(
     serverId, conversationId, text, isOutgoing, timestamp, status,
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
-    originalText, translatedText, translatedFromLang, isTranslated
+    originalText, translatedText, translatedFromLang, isTranslated,
+    fileName, fileSize, fileMime, localFilePath
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMessagesByConversation:
 DELETE FROM messageEntity WHERE conversationId = ?;
@@ -100,16 +131,31 @@ INSERT OR IGNORE INTO messageEntity(
     serverId, conversationId, text, isOutgoing, timestamp, status,
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
-    originalText, translatedText, translatedFromLang, isTranslated
+    originalText, translatedText, translatedFromLang, isTranslated,
+    fileName, fileSize, fileMime, localFilePath
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateExistingMessage:
 UPDATE messageEntity
 SET text = CASE WHEN isTranslated = 1 THEN text ELSE ? END,
     status = ?, type = ?, mediaId = ?,
     encryptionMetadata = ?, localPreviewBytes = ?, mediaUrl = ?,
-    lastAccessedAt = ?, timestamp = ?, senderUserId = ?, groupId = ?
+    lastAccessedAt = ?, timestamp = ?, senderUserId = ?, groupId = ?,
+    fileName = COALESCE(?, fileName),
+    fileSize = COALESCE(?, fileSize),
+    fileMime = COALESCE(?, fileMime),
+    localFilePath = COALESCE(?, localFilePath)
+WHERE serverId = ?;
+
+updateMessageLocalFile:
+UPDATE messageEntity
+SET localFilePath = ?, localPreviewBytes = ?
+WHERE serverId = ?;
+
+updateMessageLocalPreview:
+UPDATE messageEntity
+SET localPreviewBytes = ?
 WHERE serverId = ?;
 
 deleteMessageByServerId:
@@ -144,3 +190,161 @@ showCachedTranslation:
 UPDATE messageEntity
 SET text = translatedText, isTranslated = 1
 WHERE serverId = ? AND translatedText IS NOT NULL;
+
+storageByType:
+WITH normalized AS (
+    SELECT
+        CASE
+            WHEN type IN ('image', 'photo')      THEN 'photo'
+            WHEN type = 'video'                  THEN 'video'
+            WHEN type = 'voice'                  THEN 'voice'
+            WHEN type IN ('music', 'audio')      THEN 'music'
+            WHEN type IN ('file', 'document')    THEN 'file'
+            WHEN type = 'text'                   THEN 'text'
+            ELSE 'other'
+        END AS type,
+        localPreviewBytes,
+        text
+    FROM messageEntity
+    WHERE type != 'system'
+)
+SELECT type,
+       COUNT(*) AS messageCount,
+       COALESCE(SUM(COALESCE(length(localPreviewBytes), 0) + COALESCE(length(text), 0)), 0) AS totalSize
+FROM normalized
+GROUP BY type;
+
+storagePerConversationPerType:
+WITH normalized AS (
+    SELECT
+        m.conversationId,
+        c.name AS chatName,
+        c.avatarMediaId AS avatarMediaId,
+        CASE
+            WHEN m.type IN ('image', 'photo')      THEN 'photo'
+            WHEN m.type = 'video'                  THEN 'video'
+            WHEN m.type = 'voice'                  THEN 'voice'
+            WHEN m.type IN ('music', 'audio')      THEN 'music'
+            WHEN m.type IN ('file', 'document')    THEN 'file'
+            WHEN m.type = 'text'                   THEN 'text'
+            ELSE 'other'
+        END AS type,
+        m.localPreviewBytes,
+        m.text
+    FROM messageEntity m
+    LEFT JOIN chatEntity c ON m.conversationId = c.conversationId
+    WHERE m.type != 'system'
+)
+SELECT conversationId,
+       MAX(COALESCE(chatName, conversationId)) AS chatName,
+       MAX(avatarMediaId) AS avatarMediaId,
+       type,
+       COUNT(*) AS messageCount,
+       COALESCE(SUM(COALESCE(length(localPreviewBytes), 0) + COALESCE(length(text), 0)), 0) AS typeSize
+FROM normalized
+GROUP BY conversationId, type;
+
+storageByConversationAndType:
+WITH normalized AS (
+    SELECT
+        CASE
+            WHEN type IN ('image', 'photo')      THEN 'photo'
+            WHEN type = 'video'                  THEN 'video'
+            WHEN type = 'voice'                  THEN 'voice'
+            WHEN type IN ('music', 'audio')      THEN 'music'
+            WHEN type IN ('file', 'document')    THEN 'file'
+            WHEN type = 'text'                   THEN 'text'
+            ELSE 'other'
+        END AS type,
+        localPreviewBytes,
+        text
+    FROM messageEntity
+    WHERE conversationId = ? AND type != 'system'
+)
+SELECT type,
+       COUNT(*) AS messageCount,
+       COALESCE(SUM(COALESCE(length(localPreviewBytes), 0) + COALESCE(length(text), 0)), 0) AS totalSize
+FROM normalized
+GROUP BY type;
+
+totalStorageSize:
+SELECT COUNT(*) AS messageCount,
+       COALESCE(SUM(COALESCE(length(localPreviewBytes), 0) + COALESCE(length(text), 0)), 0) AS totalSize
+FROM messageEntity
+WHERE type != 'system';
+
+deleteMessagesByType:
+DELETE FROM messageEntity
+WHERE type != 'system' AND (
+    CASE
+        WHEN type IN ('image', 'photo')      THEN 'photo'
+        WHEN type = 'video'                  THEN 'video'
+        WHEN type = 'voice'                  THEN 'voice'
+        WHEN type IN ('music', 'audio')      THEN 'music'
+        WHEN type IN ('file', 'document')    THEN 'file'
+        WHEN type = 'text'                   THEN 'text'
+        ELSE 'other'
+    END
+) = ?;
+
+deleteMessagesByConversationAndType:
+DELETE FROM messageEntity
+WHERE conversationId = ? AND type != 'system' AND (
+    CASE
+        WHEN type IN ('image', 'photo')      THEN 'photo'
+        WHEN type = 'video'                  THEN 'video'
+        WHEN type = 'voice'                  THEN 'voice'
+        WHEN type IN ('music', 'audio')      THEN 'music'
+        WHEN type IN ('file', 'document')    THEN 'file'
+        WHEN type = 'text'                   THEN 'text'
+        ELSE 'other'
+    END
+) = ?;
+
+selectMediaItemsByConversation:
+SELECT serverId,
+       CASE
+           WHEN type IN ('image', 'photo')      THEN 'photo'
+           WHEN type = 'video'                  THEN 'video'
+           WHEN type = 'voice'                  THEN 'voice'
+           WHEN type IN ('music', 'audio')      THEN 'music'
+           WHEN type IN ('file', 'document')    THEN 'file'
+           ELSE 'other'
+       END AS type,
+       mediaId,
+       localPreviewBytes,
+       COALESCE(length(localPreviewBytes), 0) + COALESCE(length(text), 0) AS estimatedSize,
+       timestamp
+FROM messageEntity
+WHERE conversationId = ? AND type != 'text' AND type != 'system'
+ORDER BY timestamp DESC;
+
+deleteOldPrivateChatMedia:
+DELETE FROM messageEntity
+WHERE groupId IS NULL
+  AND type != 'text'
+  AND (CASE WHEN lastAccessedAt > 0 THEN lastAccessedAt ELSE timestamp END) < ?;
+
+deleteOldGroupChatMedia:
+DELETE FROM messageEntity
+WHERE groupId IS NOT NULL
+  AND type != 'text'
+  AND (CASE WHEN lastAccessedAt > 0 THEN lastAccessedAt ELSE timestamp END) < ?;
+
+CREATE TABLE blockedUserEntity (
+    blockedUserId TEXT NOT NULL PRIMARY KEY,
+    blockedAt INTEGER NOT NULL DEFAULT 0
+);
+
+selectAllBlockedUsers:
+SELECT blockedUserId FROM blockedUserEntity;
+
+insertBlockedUser:
+INSERT OR REPLACE INTO blockedUserEntity(blockedUserId, blockedAt)
+VALUES (?, ?);
+
+deleteBlockedUser:
+DELETE FROM blockedUserEntity WHERE blockedUserId = ?;
+
+clearBlockedUsers:
+DELETE FROM blockedUserEntity;

@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -40,9 +41,9 @@ actual fun rememberGalleryLoader(): GalleryLoader {
                 if (!isGranted) launcher.launch(permission)
             }
 
-            override suspend fun loadRecent(limit: Int): List<GalleryThumb> = withContext(Dispatchers.IO) {
+            override suspend fun loadAll(): List<GalleryThumb> = withContext(Dispatchers.IO) {
                 if (!isGranted) return@withContext emptyList()
-                val results    = mutableListOf<GalleryThumb>()
+                val results    = ArrayList<GalleryThumb>(1024)
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                     MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
                 else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -60,30 +61,44 @@ actual fun rememberGalleryLoader(): GalleryLoader {
                     val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
                     val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-                    var n = 0
-                    while (cursor.moveToNext() && n < limit) {
+                    while (cursor.moveToNext()) {
                         val id        = cursor.getLong(idCol)
-                        val name      = cursor.getString(nameCol)
+                        val name      = cursor.getString(nameCol) ?: id.toString()
                         val dateAdded = cursor.getLong(dateCol)
                         val uri       = ContentUris.withAppendedId(collection, id)
-                        try {
-                            val bmp: Bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                                context.contentResolver.loadThumbnail(uri, Size(256, 256), null)
-                            else {
-                                @Suppress("DEPRECATION")
-                                MediaStore.Images.Thumbnails.getThumbnail(context.contentResolver, id,
-                                    MediaStore.Images.Thumbnails.MINI_KIND, null) ?: continue
-                            }
-                            ByteArrayOutputStream().use { out ->
-                                bmp.compress(Bitmap.CompressFormat.JPEG, 80, out)
-                                results += GalleryThumb(uri.toString(), out.toByteArray(), name, dateAdded)
-                                n++
-                            }
-                        } catch (_: Exception) { }
+                        results += GalleryThumb(
+                            id        = uri.toString(),
+                            bytes     = EMPTY_BYTES,
+                            name      = name,
+                            dateAdded = dateAdded
+                        )
                     }
                 }
                 results
             }
+
+            override suspend fun loadThumbBytes(id: String): ByteArray? = withContext(Dispatchers.IO) {
+                runCatching {
+                    val uri = id.toUri()
+                    val bmp: Bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        context.contentResolver.loadThumbnail(uri, Size(256, 256), null)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val mediaId = ContentUris.parseId(uri)
+                        MediaStore.Images.Thumbnails.getThumbnail(
+                            context.contentResolver, mediaId,
+                            MediaStore.Images.Thumbnails.MINI_KIND, null
+                        ) ?: return@runCatching null
+                    }
+                    ByteArrayOutputStream().use { out ->
+                        bmp.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                        bmp.recycle()
+                        out.toByteArray()
+                    }
+                }.getOrNull()
+            }
         }
     }
 }
+
+private val EMPTY_BYTES = ByteArray(0)

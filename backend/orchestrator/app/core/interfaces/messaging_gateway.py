@@ -177,6 +177,11 @@ class IMessagingGateway(ABC):
         self, target_user_id: str,
     ) -> list[UserDeviceKeyPackageResult]: ...
 
+    @abstractmethod
+    async def delete_key_packages_for_device(
+        self, user_id: str, device_id: str,
+    ) -> int: ...
+
     # Conversations
     @abstractmethod
     async def create_direct_conversation(
@@ -229,6 +234,11 @@ class IMessagingGateway(ABC):
     @abstractmethod
     async def update_group_name(
         self, user_id: str, conversation_id: str, name: str,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def delete_conversation(
+        self, user_id: str, conversation_id: str,
     ) -> bool: ...
 
     # Messages

@@ -9,6 +9,7 @@ import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_session
+from app.infrastructure.contacts_client import IContactsClient
 from app.infrastructure.item_storage_client import IItemStorageClient
 from app.infrastructure.messaging_client import IMessagingClient
 from app.infrastructure.user_client import IUserClient
@@ -32,12 +33,14 @@ class Container:
         messaging_client: IMessagingClient,
         user_client: IUserClient,
         item_storage_client: IItemStorageClient,
+        contacts_client: IContactsClient,
     ) -> None:
         self._own_redis = own_redis
         self._messaging_redis = messaging_redis
         self._messaging_client = messaging_client
         self._user_client = user_client
         self._item_storage_client = item_storage_client
+        self._contacts_client = contacts_client
         self._consumer: EventConsumer | None = None
 
     @property
@@ -49,6 +52,7 @@ class Container:
                 messaging_client=self._messaging_client,
                 user_client=self._user_client,
                 item_storage_client=self._item_storage_client,
+                contacts_client=self._contacts_client,
             )
         return self._consumer
 

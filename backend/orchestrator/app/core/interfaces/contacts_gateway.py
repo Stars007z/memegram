@@ -66,6 +66,11 @@ class GetBlockedUsersResult:
 
 
 @dataclass
+class IsBlockedResult:
+    is_blocked: bool = False
+
+
+@dataclass
 class ContactsHealthResult:
     status: str = "degraded"
     version: str = "1.0.0"
@@ -96,6 +101,9 @@ class IContactsGateway(ABC):
     async def get_blocked_users(
         self, user_id: str, limit: int, offset: int
     ) -> GetBlockedUsersResult: ...
+
+    @abstractmethod
+    async def is_blocked(self, user_id: str, blocked_user_id: str) -> IsBlockedResult: ...
 
     @abstractmethod
     async def health_check(self) -> ContactsHealthResult: ...

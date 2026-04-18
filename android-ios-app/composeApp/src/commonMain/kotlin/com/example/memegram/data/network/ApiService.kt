@@ -267,6 +267,13 @@ class ApiService(
         }
     }
 
+    suspend fun deleteMyKeyPackages(): Int {
+        val resp = client.delete("$baseUrl/api/v1/messaging/key-packages") {
+            bearerAuth(token())
+        }
+        return runCatching { resp.body<Map<String, Int>>()["deleted_count"] ?: 0 }.getOrDefault(0)
+    }
+
     suspend fun setTyping(conversationId: String) {
         client.post("$baseUrl/api/v1/messaging/typing") {
             bearerAuth(token())
@@ -395,6 +402,12 @@ class ApiService(
             bearerAuth(token())
             contentType(ContentType.Application.Json)
             setBody(request)
+        }
+    }
+
+    suspend fun deleteConversation(conversationId: String) {
+        client.delete("$baseUrl/api/v1/messaging/conversations/$conversationId") {
+            bearerAuth(token())
         }
     }
 

@@ -82,7 +82,12 @@ class UserServiceClient:
             return False, False
 
     async def get_users_batch(self, user_ids: list[str]) -> dict[str, UserBriefProfile]:
-        """Вернуть словарь {user_id: UserBriefProfile}."""
+        """Вернуть словарь {user_id: UserBriefProfile}.
+
+        user-service GetUsersBatch returns proto UserBriefProfile with only
+        {id, username, avatar_media_id, is_deleted}. user_public_key/bio
+        are NOT available in the batch endpoint and remain empty here.
+        """
         if not user_ids:
             return {}
         resp: user_pb2.GetUsersBatchResponse = await self._stub.GetUsersBatch(
@@ -91,12 +96,15 @@ class UserServiceClient:
         )
         result: dict[str, UserBriefProfile] = {}
         for p in resp.users:
+            # NOTE: avatar_media_id is a plain (non-optional) string in canonical
+            # proto, so we read it directly. Calling HasField on a plain scalar
+            # raises ValueError in proto3, which previously silently broke avatars.
             result[p.id] = UserBriefProfile(
                 user_id=p.id,
                 username=p.username,
-                user_public_key=p.user_public_key,
-                bio=p.bio,
-                avatar_media_id=p.avatar_media_id if p.HasField("avatar_media_id") else "",
+                user_public_key="",  # not provided by GetUsersBatch
+                bio="",              # not provided by GetUsersBatch
+                avatar_media_id=p.avatar_media_id or "",
             )
         return result
 

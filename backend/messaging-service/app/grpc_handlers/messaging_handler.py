@@ -38,6 +38,9 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def GetKeyPackagesForUser(self, request, context):
         return await self._mls.get_key_packages_for_user(request, context)
 
+    async def DeleteKeyPackagesForDevice(self, request, context):
+        return await self._mls.delete_key_packages_for_device(request, context)
+
     # ── Conversations ───────────────────────────────
 
     async def CreateDirectConversation(self, request, context):
@@ -66,6 +69,9 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
 
     async def UpdateGroupName(self, request, context):
         return await self._conversations.update_group_name(request, context)
+
+    async def DeleteConversation(self, request, context):
+        return await self._conversations.delete_conversation(request, context)
 
     # ── Messages ────────────────────────────────────
 

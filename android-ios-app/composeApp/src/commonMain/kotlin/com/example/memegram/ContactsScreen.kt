@@ -57,6 +57,8 @@ fun ContactsScreen(
 
     val chatCreated by viewModel.chatCreated.collectAsState()
 
+    BlockedByPeerDialog(viewModel)
+
     LaunchedEffect(chatCreated) {
         val conversationId = chatCreated
         if (conversationId != null) {

@@ -3,6 +3,7 @@ package com.example.memegram
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.models.*
+import com.example.memegram.data.network.ApiException
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ContactsRepository
 import com.example.memegram.mls.MlsManager
@@ -38,6 +39,10 @@ class ContactsViewModel(
 
     private val _isCreatingChat = MutableStateFlow(false)
     val isCreatingChat: StateFlow<Boolean> = _isCreatingChat.asStateFlow()
+
+    private val _blockedByPeerError = MutableStateFlow<String?>(null)
+    val blockedByPeerError: StateFlow<String?> = _blockedByPeerError.asStateFlow()
+    fun clearBlockedByPeerError() { _blockedByPeerError.value = null }
 
     init { loadContacts() }
 
@@ -206,6 +211,12 @@ class ContactsViewModel(
                 mlsManager.onKeyPackageConsumed()
                 _chatCreated.value = conv.id
 
+            } catch (e: ApiException) {
+                if (e.isBlocked) {
+                    _blockedByPeerError.value = displayName
+                } else {
+                    _error.value = "Не удалось создать чат: ${e.message}"
+                }
             } catch (e: Exception) {
                 _error.value = "Не удалось создать чат: ${e.message}"
             } finally {
@@ -405,6 +416,12 @@ class ContactsViewModel(
                 }
                 mlsManager.onKeyPackageConsumed()
                 _chatCreated.value = conv.id
+            } catch (e: ApiException) {
+                if (e.isBlocked) {
+                    _blockedByPeerError.value = userId.take(8)
+                } else {
+                    _error.value = "Не удалось создать чат: ${e.message}"
+                }
             } catch (e: Exception) {
                 _error.value = "Не удалось создать чат: ${e.message}"
             } finally {

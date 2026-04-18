@@ -203,10 +203,18 @@ class ProfileViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                sessionManager.getAccessToken()?.let { token ->
-                    api.logout(LogoutRequest(token))
+                try {
+                    val deleted = api.deleteMyKeyPackages()
+                    sessionManager.clearPendingKpCleanup()
+                    println("MemegramDebug [Logout] Server KPs purged: $deleted")
+                } catch (e: Exception) {
+                    sessionManager.markPendingKpCleanup()
+                    println("MemegramDebug [Logout] KP purge FAILED (${e.message}) — will retry on next login")
                 }
-            } catch (_: Exception) {
+
+                sessionManager.getAccessToken()?.let { token ->
+                    try { api.logout(LogoutRequest(token)) } catch (_: Exception) {}
+                }
             } finally {
                 chatRepository.clearAllLocalData()
                 mlsManager.clearAll()

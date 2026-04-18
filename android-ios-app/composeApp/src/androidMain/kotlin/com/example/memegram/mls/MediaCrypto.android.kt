@@ -25,9 +25,12 @@ actual fun encryptMediaBytes(plainBytes: ByteArray): MediaEncryptResult {
 }
 
 actual fun decryptMediaBytes(encryptedBytes: ByteArray, encryptionMetadataB64: String): ByteArray {
+    require(encryptionMetadataB64.isNotBlank()) { "Encryption metadata is empty" }
     val metaJson = Base64.decode(encryptionMetadataB64, Base64.NO_WRAP).decodeToString()
-    val keyB64 = Regex(""""key"\s*:\s*"([^"]+)"""").find(metaJson)!!.groupValues[1]
-    val ivB64  = Regex(""""iv"\s*:\s*"([^"]+)"""").find(metaJson)!!.groupValues[1]
+    val keyB64 = Regex(""""key"\s*:\s*"([^"]+)"""").find(metaJson)?.groupValues?.get(1)
+        ?: throw IllegalArgumentException("Encryption metadata is missing 'key' field")
+    val ivB64  = Regex(""""iv"\s*:\s*"([^"]+)"""").find(metaJson)?.groupValues?.get(1)
+        ?: throw IllegalArgumentException("Encryption metadata is missing 'iv' field")
 
     val key = Base64.decode(keyB64, Base64.NO_WRAP)
     val iv  = Base64.decode(ivB64,  Base64.NO_WRAP)

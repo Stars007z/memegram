@@ -202,6 +202,23 @@ class ConversationHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.UpdateGroupAvatarResponse()
 
+    async def delete_conversation(self, request, context):
+        if not request.user_id or not request.conversation_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id and conversation_id are required")
+            return messaging_pb2.DeleteConversationResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                success = await scope.conversation_service.delete_conversation(
+                    caller_user_id=uuid.UUID(request.user_id),
+                    conversation_id=uuid.UUID(request.conversation_id),
+                )
+                return messaging_pb2.DeleteConversationResponse(success=success)
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.DeleteConversationResponse()
+
     @staticmethod
     def _to_response(result) -> messaging_pb2.ConversationResponse:
         return messaging_pb2.ConversationResponse(

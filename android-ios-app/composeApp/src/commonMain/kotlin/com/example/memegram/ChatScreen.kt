@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalDensity
@@ -70,6 +73,8 @@ import io.github.vinceglb.filekit.core.PickerMode
 import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -78,6 +83,7 @@ import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
 import com.example.memegram.utils.LocalScreenWidthDp
+import com.example.memegram.utils.rememberAsyncImageBitmap
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -99,6 +105,7 @@ fun ChatScreen(
     val myBubbleImage  by viewModel.myBubbleImage.collectAsState()
     val theirBubbleImage by viewModel.theirBubbleImage.collectAsState()
     val mediaCache by viewModel.mediaCache.collectAsState()
+    val downloadingFiles by viewModel.downloadingFiles.collectAsState()
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
@@ -184,7 +191,7 @@ fun ChatScreen(
     LaunchedEffect(showAttachSheet, galleryLoader.isPermissionGranted) {
         if (showAttachSheet && galleryLoader.isPermissionGranted && galleryThumbs.isEmpty() && !galleryLoading) {
             galleryLoading = true
-            galleryThumbs  = galleryLoader.loadRecent(48)
+            galleryThumbs  = galleryLoader.loadAll()
             galleryLoading = false
         }
     }
@@ -200,7 +207,7 @@ fun ChatScreen(
         type = PickerType.File(),
         mode = PickerMode.Multiple()
     ) { files ->
-        files?.forEach { attachments = attachments + AttachItem.FromPicker(it) }
+        files?.forEach { attachments = attachments + AttachItem.FromPicker(it, asFile = true) }
     }
 
     var isSearchMode     by remember { mutableStateOf(false) }
@@ -240,6 +247,8 @@ fun ChatScreen(
     val memberProfiles by viewModel.memberProfiles.collectAsState()
     val peerAvatarMediaId by viewModel.peerAvatarMediaId.collectAsState()
     val isPeerBlocked by viewModel.isPeerBlocked.collectAsState()
+    val isBlockedByPeer by viewModel.isBlockedByPeer.collectAsState()
+    val isMlsBroken by viewModel.isMlsBroken.collectAsState()
     var showBlockConfirm by remember { mutableStateOf(false) }
 
     val replyingTo by viewModel.replyingTo.collectAsState()
@@ -247,6 +256,16 @@ fun ChatScreen(
     val clipboardManager = LocalClipboardManager.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    val errorMessage by viewModel.error.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
     var contextMenuMessage by remember { mutableStateOf<Message?>(null) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var messagesToDelete by remember { mutableStateOf<List<Message>?>(null) }
@@ -261,12 +280,12 @@ fun ChatScreen(
     if (showAttachSheet) {
         ModalBottomSheet(
             onDismissRequest = { showAttachSheet = false; pendingGallery = emptySet() },
-            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(460.sdp)
+                    .fillMaxHeight()
                     .navigationBarsPadding()
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -384,10 +403,11 @@ fun ChatScreen(
                                         val isSelected = thumb in pendingGallery
                                         val selIdx     = if (isSelected) pendingGallery.toList().indexOf(thumb) + 1 else 0
                                         GalleryGridItem(
-                                            thumb      = thumb,
-                                            isSelected = isSelected,
-                                            selNumber  = selIdx,
-                                            onClick    = {
+                                            thumb        = thumb,
+                                            galleryLoader = galleryLoader,
+                                            isSelected   = isSelected,
+                                            selNumber    = selIdx,
+                                            onClick      = {
                                                 pendingGallery =
                                                     if (isSelected) pendingGallery - thumb
                                                     else pendingGallery + thumb
@@ -556,6 +576,7 @@ fun ChatScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ImageTopAppBarBox(topBarColor) { bgColor ->
             TopAppBar(
@@ -632,11 +653,68 @@ fun ChatScreen(
                             .padding(horizontal = 16.sdp, vertical = 12.sdp)
                             .navigationBarsPadding(),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Block, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.sdp))
+                            Spacer(Modifier.width(8.sdp))
+                            Text(
+                                s.userBlockedBanner,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        TextButton(onClick = { viewModel.unblockPeer() }) {
+                            Text(s.unblockUser, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                } else if (isMlsBroken) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp)
+                            .navigationBarsPadding(),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.Block, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.sdp))
+                        Icon(
+                            Icons.Default.Block,
+                            null,
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.sdp)
+                        )
                         Spacer(Modifier.width(8.sdp))
-                        Text(s.userBlockedBanner, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            s.mlsChatBrokenBanner,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else if (isBlockedByPeer && !isGroupChat) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp)
+                            .navigationBarsPadding(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Block,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.sdp)
+                        )
+                        Spacer(Modifier.width(8.sdp))
+                        Text(
+                            s.cannotMessageBlockedByPeer,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 } else {
                 Column {
@@ -645,7 +723,7 @@ fun ChatScreen(
                             modifier = Modifier.fillMaxWidth().padding(8.sdp),
                             horizontalArrangement = Arrangement.spacedBy(8.sdp)
                         ) {
-                            items(attachments) { item -> AttachmentThumbnail(item) { attachments = attachments - item } }
+                            items(attachments) { item -> AttachmentThumbnail(item, galleryLoader) { attachments = attachments - item } }
                         }
                         HorizontalDivider()
                     }
@@ -673,6 +751,7 @@ fun ChatScreen(
                                 Text(
                                     text = when {
                                         replyingTo!!.type == "voice" -> s.voiceMessage
+                                        replyingTo!!.type == "file" -> "\uD83D\uDCCE " + (replyingTo!!.fileName ?: s.file)
                                         replyingTo!!.type == "image" && replyingTo!!.text.isBlank() -> s.photo
                                         replyingTo!!.type == "image" -> replyingTo!!.text.take(100)
                                         else -> replyingTo!!.text.take(100)
@@ -858,9 +937,10 @@ fun ChatScreen(
                     .weight(1f)
                     .background(chatBgColor)
             ) {
-            val chatBgBitmap = remember(chatBgImage) {
-                chatBgImage?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
-            }
+            val chatBgBitmap = rememberAsyncImageBitmap(
+                bytes = chatBgImage,
+                cacheKey = if (chatBgImage != null) "chatbg" else null
+            )
             if (chatBgBitmap != null) {
                 Image(
                     bitmap = chatBgBitmap,
@@ -957,6 +1037,56 @@ fun ChatScreen(
                                                 modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
                                             )
 
+                                            SwipeToReplyContainer(onReply = { viewModel.setReplyTo(message) }) {
+                                                MessageBubble(
+                                                    message          = message,
+                                                    myBubbleColor    = myBubbleColor,
+                                                    theirBubbleColor = theirBubbleColor,
+                                                    myBubbleImage    = myBubbleImage,
+                                                    theirBubbleImage = theirBubbleImage,
+                                                    searchQuery      = searchQuery,
+                                                    isCurrentMatch   = message.id == currentMatchMsgId,
+                                                    mediaCache       = mediaCache,
+                                                    onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
+                                                    globalAudioPlayer = globalAudioPlayer,
+                                                    chatName         = chatName,
+                                                    replyToMessage   = replyToMessage,
+                                                    replyToSenderName = replyToSenderName,
+                                                    onReplyClick     = replyToMessage?.let { replied ->
+                                                        {
+                                                            val idx = chatItems.indexOfFirst { item ->
+                                                                item.allMessages.any { it.serverId == replied.serverId }
+                                                            }
+                                                            if (idx >= 0) {
+                                                                coroutineScope.launch { listState.animateScrollToItem(idx) }
+                                                            }
+                                                        }
+                                                    },
+                                                    downloadingFiles = downloadingFiles,
+                                                    onFileTap        = { viewModel.onFileBubbleTap(it) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(message.id) {
+                                                detectTapGestures(
+                                                    onLongPress = { offset ->
+                                                        with(density) {
+                                                            contextMenuOffset = DpOffset(
+                                                                x = offset.x.toDp(),
+                                                                y = offset.y.toDp()
+                                                            )
+                                                        }
+                                                        contextMenuMessage = message
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        SwipeToReplyContainer(onReply = { viewModel.setReplyTo(message) }) {
                                             MessageBubble(
                                                 message          = message,
                                                 myBubbleColor    = myBubbleColor,
@@ -980,53 +1110,11 @@ fun ChatScreen(
                                                             coroutineScope.launch { listState.animateScrollToItem(idx) }
                                                         }
                                                     }
-                                                }
+                                                },
+                                                downloadingFiles = downloadingFiles,
+                                                onFileTap        = { viewModel.onFileBubbleTap(it) }
                                             )
                                         }
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .pointerInput(message.id) {
-                                                detectTapGestures(
-                                                    onLongPress = { offset ->
-                                                        with(density) {
-                                                            contextMenuOffset = DpOffset(
-                                                                x = offset.x.toDp(),
-                                                                y = offset.y.toDp()
-                                                            )
-                                                        }
-                                                        contextMenuMessage = message
-                                                    }
-                                                )
-                                            }
-                                    ) {
-                                        MessageBubble(
-                                            message          = message,
-                                            myBubbleColor    = myBubbleColor,
-                                            theirBubbleColor = theirBubbleColor,
-                                            myBubbleImage    = myBubbleImage,
-                                            theirBubbleImage = theirBubbleImage,
-                                            searchQuery      = searchQuery,
-                                            isCurrentMatch   = message.id == currentMatchMsgId,
-                                            mediaCache       = mediaCache,
-                                            onLoadMedia      = { id, meta -> viewModel.loadMedia(id, meta) },
-                                            globalAudioPlayer = globalAudioPlayer,
-                                            chatName         = chatName,
-                                            replyToMessage   = replyToMessage,
-                                            replyToSenderName = replyToSenderName,
-                                            onReplyClick     = replyToMessage?.let { replied ->
-                                                {
-                                                    val idx = chatItems.indexOfFirst { item ->
-                                                        item.allMessages.any { it.serverId == replied.serverId }
-                                                    }
-                                                    if (idx >= 0) {
-                                                        coroutineScope.launch { listState.animateScrollToItem(idx) }
-                                                    }
-                                                }
-                                            }
-                                        )
                                     }
                                 }
 
@@ -1171,18 +1259,24 @@ fun ChatScreen(
                                                 modifier = Modifier.padding(start = 4.sdp, bottom = 2.sdp)
                                             )
 
-                                            AlbumBubble(
-                                                albumMessages = albumMessages,
-                                                isOutgoing = isOut,
-                                                myBubbleColor = myBubbleColor,
-                                                theirBubbleColor = theirBubbleColor,
-                                                myBubbleImage = myBubbleImage,
-                                                theirBubbleImage = theirBubbleImage,
-                                                mediaCache = mediaCache,
-                                                onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
-                                                searchQuery = searchQuery,
-                                                isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
-                                            )
+                                            SwipeToReplyContainer(onReply = {
+                                                albumMessages.firstOrNull()?.let { viewModel.setReplyTo(it) }
+                                            }) {
+                                                AlbumBubble(
+                                                    albumMessages = albumMessages,
+                                                    isOutgoing = isOut,
+                                                    myBubbleColor = myBubbleColor,
+                                                    theirBubbleColor = theirBubbleColor,
+                                                    myBubbleImage = myBubbleImage,
+                                                    theirBubbleImage = theirBubbleImage,
+                                                    mediaCache = mediaCache,
+                                                    onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
+                                                    downloadingFiles = downloadingFiles,
+                                                    onFileTap = { viewModel.onFileBubbleTap(it) },
+                                                    searchQuery = searchQuery,
+                                                    isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
@@ -1203,18 +1297,24 @@ fun ChatScreen(
                                                 )
                                             }
                                     ) {
-                                        AlbumBubble(
-                                            albumMessages = albumMessages,
-                                            isOutgoing = isOut,
-                                            myBubbleColor = myBubbleColor,
-                                            theirBubbleColor = theirBubbleColor,
-                                            myBubbleImage = myBubbleImage,
-                                            theirBubbleImage = theirBubbleImage,
-                                            mediaCache = mediaCache,
-                                            onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
-                                            searchQuery = searchQuery,
-                                            isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
-                                        )
+                                        SwipeToReplyContainer(onReply = {
+                                            albumMessages.firstOrNull()?.let { viewModel.setReplyTo(it) }
+                                        }) {
+                                            AlbumBubble(
+                                                albumMessages = albumMessages,
+                                                isOutgoing = isOut,
+                                                myBubbleColor = myBubbleColor,
+                                                theirBubbleColor = theirBubbleColor,
+                                                myBubbleImage = myBubbleImage,
+                                                theirBubbleImage = theirBubbleImage,
+                                                mediaCache = mediaCache,
+                                                onLoadMedia = { id, meta -> viewModel.loadMedia(id, meta) },
+                                                downloadingFiles = downloadingFiles,
+                                                onFileTap = { viewModel.onFileBubbleTap(it) },
+                                                searchQuery = searchQuery,
+                                                isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                            )
+                                        }
                                     }
                                 }
 
@@ -1223,24 +1323,27 @@ fun ChatScreen(
                                     onDismissRequest = { showAlbumContextMenu = false },
                                     offset = albumContextOffset
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text(s.saveAllNPhotos(albumMessages.size)) },
-                                        leadingIcon = { Icon(Icons.Default.Download, null) },
-                                        onClick = {
-                                            showAlbumContextMenu = false
-                                            coroutineScope.launch {
-                                                albumMessages.forEach { msg ->
-                                                    val mid = msg.mediaId
-                                                    if (mid != null) {
-                                                        val bytes = mediaCache[mid]
-                                                        if (bytes != null) {
-                                                            saveImageToGallery(bytes, "memegram_$mid.jpg")
+                                    val photoInAlbum = albumMessages.filter { it.type == "image" }
+                                    if (photoInAlbum.isNotEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.saveAllNPhotos(photoInAlbum.size)) },
+                                            leadingIcon = { Icon(Icons.Default.Download, null) },
+                                            onClick = {
+                                                showAlbumContextMenu = false
+                                                coroutineScope.launch {
+                                                    photoInAlbum.forEach { msg ->
+                                                        val mid = msg.mediaId
+                                                        if (mid != null) {
+                                                            val bytes = mediaCache[mid]
+                                                            if (bytes != null) {
+                                                                saveImageToGallery(bytes, "memegram_$mid.jpg")
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
 
                                     val captionMsg = albumMessages.firstOrNull { it.text.isNotBlank() }
                                     if (captionMsg != null) {
@@ -1285,13 +1388,23 @@ fun ChatScreen(
 @Composable
 fun GalleryGridItem(
     thumb: GalleryThumb,
+    galleryLoader: com.example.memegram.data.gallery.GalleryLoader,
     isSelected: Boolean,
     selNumber: Int,
     onClick: () -> Unit
 ) {
-    val bitmap = remember(thumb.id) {
-        runCatching { thumb.bytes.decodeToImageBitmap() }.getOrNull()
+    val bytes: ByteArray? by produceState<ByteArray?>(
+        initialValue = if (thumb.bytes.isNotEmpty()) thumb.bytes else null,
+        thumb.id
+    ) {
+        if (value == null) {
+            value = galleryLoader.loadThumbBytes(thumb.id)
+        }
     }
+    val bitmap = rememberAsyncImageBitmap(
+        bytes    = bytes,
+        cacheKey = "gallery:${thumb.id}"
+    )
 
     Box(
         modifier = Modifier
@@ -1335,18 +1448,24 @@ fun GalleryGridItem(
 }
 
 @Composable
-fun AttachmentThumbnail(item: AttachItem, onRemove: () -> Unit) {
-    var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-
-    LaunchedEffect(item) {
-        try {
-            val bytes: ByteArray = when (item) {
-                is AttachItem.FromPicker  -> item.file.readBytes()
-                is AttachItem.FromGallery -> item.thumb.bytes
+fun AttachmentThumbnail(
+    item: AttachItem,
+    galleryLoader: com.example.memegram.data.gallery.GalleryLoader,
+    onRemove: () -> Unit
+) {
+    val bytes by produceState<ByteArray?>(initialValue = null, item) {
+        value = runCatching {
+            withContext(Dispatchers.Default) {
+                when (item) {
+                    is AttachItem.FromPicker  -> item.file.readBytes()
+                    is AttachItem.FromGallery ->
+                        if (item.thumb.bytes.isNotEmpty()) item.thumb.bytes
+                        else galleryLoader.loadThumbBytes(item.thumb.id)
+                }
             }
-            bitmap = bytes.decodeToImageBitmap()
-        } catch (_: Exception) { }
+        }.getOrNull()
     }
+    val bitmap = rememberAsyncImageBitmap(bytes = bytes)
 
     Box(
         modifier = Modifier
@@ -1409,7 +1528,9 @@ fun MessageBubble(
     chatName: String = "",
     replyToMessage: Message? = null,
     replyToSenderName: String? = null,
-    onReplyClick: (() -> Unit)? = null
+    onReplyClick: (() -> Unit)? = null,
+    downloadingFiles: Set<String> = emptySet(),
+    onFileTap: (Message) -> Unit = {}
 ) {
     val isOut       = message.isOutgoing
     val s = LocalStrings.current
@@ -1417,20 +1538,21 @@ fun MessageBubble(
     else if (isOut) myBubbleColor else theirBubbleColor
     val bubbleImageBytes = if (isCurrentMatch) null
     else if (isOut) myBubbleImage else theirBubbleImage
-    val bubbleImageBitmap = remember(bubbleImageBytes) {
-        bubbleImageBytes?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
-    }
+    val bubbleImageBitmap = rememberAsyncImageBitmap(
+        bytes = bubbleImageBytes,
+        cacheKey = if (bubbleImageBytes != null) "bubble:${if (isOut) "out" else "in"}" else null
+    )
     val textColor   = if (bubbleImageBitmap != null) Color.White
     else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
     val timeText    = remember(message.timestamp) { formatMessageTime(message.timestamp) }
     val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
     val cachedBytes = message.mediaId?.let { mediaCache[it] }
-    val localBitmap = remember(message.localPreviewBytes, cachedBytes) {
-        (cachedBytes ?: message.localPreviewBytes)?.let {
-            runCatching { it.decodeToImageBitmap() }.getOrNull()
-        }
-    }
+    val bytesForDecode = cachedBytes ?: message.localPreviewBytes
+    val localBitmap = rememberAsyncImageBitmap(
+        bytes = bytesForDecode,
+        cacheKey = message.mediaId?.let { "msg:$it" }
+    )
     val mediaId = message.mediaId
     val encMeta = message.encryptionMetadata
     LaunchedEffect(mediaId) {
@@ -1438,15 +1560,17 @@ fun MessageBubble(
             onLoadMedia(mediaId, encMeta)
         }
     }
-    val isImageMsg = message.type == "image" || localBitmap != null
+    val isFileMsg  = message.type == "file"
+    val isImageMsg = !isFileMsg && (message.type == "image" || localBitmap != null)
     val hasText    = message.text.isNotBlank() && message.type != "voice"
+    val isPhotoOnly = isImageMsg && !hasText
 
     Row(
         modifier              = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment     = Alignment.Bottom
     ) {
-        if (isOut && timeText.isNotEmpty()) {
+        if (isOut && timeText.isNotEmpty() && !isPhotoOnly) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
                 modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp))
         }
@@ -1505,6 +1629,7 @@ fun MessageBubble(
                             Text(
                                 text = when {
                                     replyToMessage.type == "voice" -> s.voiceMessage
+                                    replyToMessage.type == "file" -> "\uD83D\uDCCE " + (replyToMessage.fileName ?: s.file)
                                     replyToMessage.type == "image" && replyToMessage.text.isBlank() -> s.photo
                                     replyToMessage.type == "image" -> replyToMessage.text.take(50)
                                     else -> replyToMessage.text.take(100)
@@ -1596,15 +1721,92 @@ fun MessageBubble(
                             Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
                         }
                     }
+                } else if (isFileMsg) {
+                    val mid = message.mediaId
+                    val isDownloading = mid != null && mid in downloadingFiles
+                    val hasLocal = !message.localFilePath.isNullOrBlank()
+                    val isFailed = message.status == MessageStatus.FAILED
+                    val sizeText = message.fileSize?.takeIf { it > 0 }?.let { formatSizeBytes(it) } ?: ""
+                    val mime = message.fileMime ?: ""
+                    val fileEmoji = when {
+                        mime.startsWith("image/") -> "\uD83D\uDDBC"
+                        mime.startsWith("video/") -> "\uD83C\uDFAC"
+                        mime.startsWith("audio/") -> "\uD83C\uDFB5"
+                        mime == "application/pdf" -> "\uD83D\uDCD5"
+                        mime.contains("zip") || mime.contains("rar") || mime.contains("7z") || mime.contains("tar") -> "\uD83D\uDDC4"
+                        mime.contains("word") || mime.contains("document") -> "\uD83D\uDCC4"
+                        mime.contains("sheet") || mime.contains("excel") -> "\uD83D\uDCCA"
+                        mime.contains("presentation") || mime.contains("powerpoint") -> "\uD83D\uDCCA"
+                        mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") -> "\uD83D\uDCDD"
+                        else -> "\uD83D\uDCCE"
+                    }
+                    val errorColor = MaterialTheme.colorScheme.error
+                    val iconBgColor = if (isFailed) errorColor.copy(alpha = 0.18f) else textColor.copy(alpha = 0.15f)
+                    val fileNameColor = if (isFailed) errorColor else textColor
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .widthIn(min = 180.sdp, max = 210.sdp)
+                            .clickable(enabled = !isDownloading && !isFailed) { onFileTap(message) }
+                            .padding(vertical = 4.sdp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.sdp)
+                                .clip(CircleShape)
+                                .background(iconBgColor),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            when {
+                                isFailed -> Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = errorColor
+                                )
+                                isDownloading -> CircularProgressIndicator(
+                                    modifier = Modifier.size(22.sdp),
+                                    color = textColor,
+                                    strokeWidth = 2.sdp
+                                )
+                                !hasLocal && message.status == MessageStatus.SENT -> Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = s.downloadFile,
+                                    tint = textColor
+                                )
+                                else -> Text(fileEmoji, fontSize = 22.ssp)
+                            }
+                        }
+                        Spacer(Modifier.width(10.sdp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = message.fileName ?: s.file,
+                                color = fileNameColor,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (sizeText.isNotEmpty()) {
+                                Text(
+                                    text = sizeText,
+                                    color = textColor.copy(alpha = 0.65f),
+                                    fontSize = 11.ssp
+                                )
+                            }
+                        }
+                    }
+                    if (hasText) Spacer(Modifier.height(6.sdp))
                 } else if (isImageMsg) {
                     if (localBitmap != null) {
+                        val ratio = (localBitmap.width.toFloat() / localBitmap.height.toFloat())
+                            .takeIf { it.isFinite() && it > 0f } ?: 1f
                         Image(
                             bitmap             = localBitmap,
                             contentDescription = null,
-                            contentScale       = ContentScale.Crop,
+                            contentScale       = ContentScale.Fit,
                             modifier           = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 240.sdp)
+                                .aspectRatio(ratio)
                                 .clip(RoundedCornerShape(
                                     topStart    = 16.sdp, topEnd = 16.sdp,
                                     bottomStart = if (!hasText && isOut) 16.sdp else if (!hasText) 4.sdp else 0.sdp,
@@ -1683,9 +1885,34 @@ fun MessageBubble(
                 }
             }
             }
+            if (isPhotoOnly && timeText.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.sdp)
+                        .clip(RoundedCornerShape(10.sdp))
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .padding(horizontal = 8.sdp, vertical = 3.sdp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = timeText,
+                        color = Color.White,
+                        fontSize = 11.ssp
+                    )
+                if (isOut && message.status != MessageStatus.SENT && !isPhotoOnly) {
+                        Spacer(Modifier.width(4.sdp))
+                        Text(
+                            text = if (message.status == MessageStatus.SENDING) "⏳" else "❌",
+                            fontSize = 11.ssp,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
         }
 
-        if (!isOut && timeText.isNotEmpty()) {
+        if (!isOut && timeText.isNotEmpty() && !isPhotoOnly) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
                 modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp))
         }
@@ -1762,7 +1989,7 @@ fun groupMessages(messages: List<Message>): List<ChatItem> {
 
     for (msg in messages) {
         val gid = msg.groupId
-        if (gid != null && msg.type == "image") {
+        if (gid != null && (msg.type == "image" || msg.type == "file")) {
             if (gid == currentGroupId) {
                 buffer += msg
             } else {
@@ -1789,6 +2016,8 @@ fun AlbumBubble(
     theirBubbleImage: ByteArray? = null,
     mediaCache: Map<String, ByteArray> = emptyMap(),
     onLoadMedia: (String, String?) -> Unit = { _, _ -> },
+    downloadingFiles: Set<String> = emptySet(),
+    onFileTap: (Message) -> Unit = {},
     searchQuery: String = "",
     isCurrentMatch: Boolean = false
 ) {
@@ -1797,9 +2026,10 @@ fun AlbumBubble(
     else if (isOutgoing) myBubbleColor else theirBubbleColor
     val bubbleImageBytes = if (isCurrentMatch) null
     else if (isOutgoing) myBubbleImage else theirBubbleImage
-    val bubbleImageBitmap = remember(bubbleImageBytes) {
-        bubbleImageBytes?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
-    }
+    val bubbleImageBitmap = rememberAsyncImageBitmap(
+        bytes = bubbleImageBytes,
+        cacheKey = if (bubbleImageBytes != null) "bubble:${if (isOutgoing) "out" else "in"}" else null
+    )
     val textColor = if (bubbleImageBitmap != null) Color.White
     else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
     val timeText = remember(albumMessages.lastOrNull()?.timestamp) {
@@ -1809,13 +2039,16 @@ fun AlbumBubble(
 
     val caption = albumMessages.firstOrNull { it.text.isNotBlank() && it.status != MessageStatus.FAILED }?.text
 
-    val photoBitmaps = albumMessages.map { msg ->
+    val photoMessages = albumMessages.filter { it.type == "image" }
+    val fileMessages = albumMessages.filter { it.type == "file" }
+
+    val photoBitmaps = photoMessages.map { msg ->
         val cachedBytes = msg.mediaId?.let { mediaCache[it] }
-        val bitmap = remember(msg.localPreviewBytes, cachedBytes) {
-            (cachedBytes ?: msg.localPreviewBytes)?.let {
-                runCatching { it.decodeToImageBitmap() }.getOrNull()
-            }
-        }
+        val bytesForDecode = cachedBytes ?: msg.localPreviewBytes
+        val bitmap = rememberAsyncImageBitmap(
+            bytes = bytesForDecode,
+            cacheKey = msg.mediaId?.let { "msg:$it" }
+        )
         val mediaId = msg.mediaId
         val encMeta = msg.encryptionMetadata
         LaunchedEffect(mediaId) {
@@ -1827,6 +2060,8 @@ fun AlbumBubble(
     }
 
     val hasCaption = !caption.isNullOrBlank()
+    val hasFiles = fileMessages.isNotEmpty()
+    val hasPhotos = photoMessages.isNotEmpty()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1862,14 +2097,35 @@ fun AlbumBubble(
             }
 
             Column {
-                AlbumPhotoGrid(
-                    bitmaps = photoBitmaps,
-                    messages = albumMessages,
-                    bubbleColor = bubbleColor,
-                    textColor = textColor,
-                    hasCaption = hasCaption,
-                    isOutgoing = isOutgoing
-                )
+                if (hasPhotos) {
+                    AlbumPhotoGrid(
+                        bitmaps = photoBitmaps,
+                        messages = photoMessages,
+                        bubbleColor = bubbleColor,
+                        textColor = textColor,
+                        hasCaption = hasCaption || hasFiles,
+                        isOutgoing = isOutgoing
+                    )
+                }
+
+                if (hasFiles) {
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = 8.sdp,
+                            vertical = if (hasPhotos) 6.sdp else 8.sdp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(6.sdp)
+                    ) {
+                        fileMessages.forEach { fileMsg ->
+                            AlbumFileRow(
+                                message = fileMsg,
+                                textColor = textColor,
+                                isDownloading = fileMsg.mediaId?.let { it in downloadingFiles } == true,
+                                onTap = { onFileTap(fileMsg) }
+                            )
+                        }
+                    }
+                }
 
                 if (hasCaption) {
                     val annotated = buildAnnotatedString {
@@ -1920,6 +2176,88 @@ fun AlbumBubble(
                 timeText, color = timeColor, fontSize = 11.ssp,
                 modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp)
             )
+        }
+    }
+}
+
+@Composable
+private fun AlbumFileRow(
+    message: Message,
+    textColor: Color,
+    isDownloading: Boolean,
+    onTap: () -> Unit
+) {
+    val s = LocalStrings.current
+    val isFailed = message.status == MessageStatus.FAILED
+    val hasLocal = !message.localFilePath.isNullOrBlank()
+    val sizeText = message.fileSize?.takeIf { it > 0 }?.let { formatSizeBytes(it) } ?: ""
+    val mime = message.fileMime ?: ""
+    val fileEmoji = when {
+        mime.startsWith("image/") -> "\uD83D\uDDBC"
+        mime.startsWith("video/") -> "\uD83C\uDFAC"
+        mime.startsWith("audio/") -> "\uD83C\uDFB5"
+        mime == "application/pdf" -> "\uD83D\uDCD5"
+        mime.contains("zip") || mime.contains("rar") || mime.contains("7z") || mime.contains("tar") -> "\uD83D\uDDC4"
+        mime.contains("word") || mime.contains("document") -> "\uD83D\uDCC4"
+        mime.contains("sheet") || mime.contains("excel") -> "\uD83D\uDCCA"
+        mime.contains("presentation") || mime.contains("powerpoint") -> "\uD83D\uDCCA"
+        mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") -> "\uD83D\uDCDD"
+        else -> "\uD83D\uDCCE"
+    }
+    val errorColor = MaterialTheme.colorScheme.error
+    val iconBgColor = if (isFailed) errorColor.copy(alpha = 0.18f) else textColor.copy(alpha = 0.15f)
+    val nameColor = if (isFailed) errorColor else textColor
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.sdp))
+            .clickable(enabled = !isDownloading && !isFailed) { onTap() }
+            .padding(horizontal = 4.sdp, vertical = 4.sdp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.sdp)
+                .clip(CircleShape)
+                .background(iconBgColor),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                isFailed -> Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = errorColor
+                )
+                isDownloading -> CircularProgressIndicator(
+                    modifier = Modifier.size(20.sdp),
+                    color = textColor,
+                    strokeWidth = 2.sdp
+                )
+                !hasLocal && message.status == MessageStatus.SENT -> Icon(
+                    Icons.Default.Download,
+                    contentDescription = s.downloadFile,
+                    tint = textColor
+                )
+                else -> Text(fileEmoji, fontSize = 20.ssp)
+            }
+        }
+        Spacer(Modifier.width(10.sdp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = message.fileName ?: s.file,
+                color = nameColor,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (sizeText.isNotEmpty()) {
+                Text(
+                    text = sizeText,
+                    color = textColor.copy(alpha = 0.65f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
@@ -2143,6 +2481,99 @@ private fun AlbumPhotoCell(
             ) {
                 Text("❌", fontSize = 20.ssp)
             }
+        }
+    }
+}
+
+@Composable
+private fun SwipeToReplyContainer(
+    enabled: Boolean = true,
+    onReply: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val density = LocalDensity.current
+    val maxDragPx  = with(density) { 80.sdp.toPx() }
+    val triggerPx  = with(density) { 56.sdp.toPx() }
+    val slopPx     = with(density) { 10.sdp.toPx() }
+
+    var offsetX by remember { mutableStateOf(0f) }
+    val animatedOffset by animateFloatAsState(
+        targetValue = offsetX,
+        animationSpec = tween(durationMillis = 180),
+        label = "swipeReplyOffset"
+    )
+    var triggered by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        val progress = (-animatedOffset / triggerPx).coerceIn(0f, 1f)
+        if (progress > 0.05f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 8.sdp)
+                    .size((28.sdp.value * (0.6f + 0.4f * progress)).sdp)
+                    .clip(CircleShape)
+                    .background(
+                        if (triggered) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = progress)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Reply,
+                    contentDescription = null,
+                    tint = if (triggered) Color.White
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = progress),
+                    modifier = Modifier.size(16.sdp)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(animatedOffset.roundToInt(), 0) }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var totalDx = 0f
+                        var horizontalLockEngaged = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Main)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.changedToUp()) {
+                                if (offsetX <= -triggerPx) {
+                                    triggered = true
+                                    onReply()
+                                }
+                                offsetX = 0f
+                                triggered = false
+                                break
+                            }
+                            val dx = change.position.x - change.previousPosition.x
+                            val dy = change.position.y - change.previousPosition.y
+                            totalDx += dx
+                            if (!horizontalLockEngaged) {
+                                if (kotlin.math.abs(totalDx) > slopPx &&
+                                    kotlin.math.abs(totalDx) > kotlin.math.abs(dy) * 1.5f &&
+                                    totalDx < 0f
+                                ) {
+                                    horizontalLockEngaged = true
+                                }
+                            }
+                            if (horizontalLockEngaged) {
+                                offsetX = (offsetX + dx).coerceIn(-maxDragPx, 0f)
+                                change.consume()
+                            }
+                        }
+                    }
+                }
+        ) {
+            content()
         }
     }
 }

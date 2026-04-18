@@ -4,8 +4,10 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -157,10 +159,14 @@ fun AuthScreen(
                 .widthIn(max = 480.dp)
                 .fillMaxSize()
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 28.sdp),
+                .statusBarsPadding()
+                .padding(horizontal = 28.sdp)
+                .padding(top = 76.sdp)
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
         ) {
+            Spacer(modifier = Modifier.height(40.sdp))
 
             Text(
                 text = buildAnnotatedString {
@@ -311,6 +317,10 @@ fun AuthScreen(
                 Spacer(Modifier.width(8.sdp))
                 Text(s.loginFromOtherDevice)
             }
+            Spacer(modifier = Modifier.height(24.sdp))
+            Spacer(
+                modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars)
+            )
         }
     }
 }

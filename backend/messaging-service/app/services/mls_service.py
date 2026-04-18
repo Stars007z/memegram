@@ -59,6 +59,22 @@ class MlsServiceImpl(IMlsService):
         device_id: uuid.UUID,
         key_packages: list[bytes],
     ) -> int:
+        # Self-healing: when the client re-uploads a batch, its local MLS
+        # key-store has been regenerated (e.g. logout→login, fresh install,
+        # add-device). Any previously uploaded, still-unconsumed KPs belong
+        # to private keys that no longer exist on the client — serving them
+        # to peers would cause "No matching key package" on processWelcome.
+        # We wipe them before inserting the new batch so only fresh KPs
+        # backed by live private material remain.
+        purged = await self._key_packages.delete_by_device(
+            user_id=user_id, device_id=device_id, only_unconsumed=True,
+        )
+        if purged:
+            logger.info(
+                "mls.key_packages.purged_on_upload",
+                user_id=str(user_id), device_id=str(device_id), purged=purged,
+            )
+
         items = []
         for kp_data in key_packages:
             kp_ref = hashlib.sha256(kp_data).digest()
@@ -78,6 +94,20 @@ class MlsServiceImpl(IMlsService):
             count=len(created),
         )
         return len(created)
+
+    async def delete_key_packages_for_device(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+    ) -> int:
+        deleted = await self._key_packages.delete_by_device(
+            user_id=user_id, device_id=device_id, only_unconsumed=True,
+        )
+        logger.info(
+            "mls.key_packages.deleted_for_device",
+            user_id=str(user_id), device_id=str(device_id), deleted=deleted,
+        )
+        return deleted
 
     async def get_key_package(
         self,
