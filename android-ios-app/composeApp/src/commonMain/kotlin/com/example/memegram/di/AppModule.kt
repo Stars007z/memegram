@@ -12,11 +12,18 @@ import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.ChatRepositoryImpl
 import com.example.memegram.data.repository.ContactsRepository
 import com.example.memegram.data.repository.ContactsRepositoryImpl
+import com.example.memegram.data.repository.NotificationsRepository
+import com.example.memegram.data.repository.NotificationsRepositoryImpl
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
 import com.example.memegram.database.AppDatabase
 import com.example.memegram.audio.GlobalAudioPlayer
+import com.example.memegram.auth.SessionRefresher
+import com.example.memegram.lifecycle.AppLifecycleObserver
+import com.example.memegram.lifecycle.createAppLifecycleObserver
 import com.example.memegram.mls.MlsManager
+import com.example.memegram.push.PushTokenProvider
+import com.example.memegram.push.createPushTokenProvider
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationSettings
 import com.example.memegram.translation.createTranslationService
@@ -49,6 +56,11 @@ val appModule = module {
     single { BlockedUsersCache(get(), get()) }
     single<TranslationService> { createTranslationService() }
     single { TranslationSettings(get()) }
+
+    single<PushTokenProvider> { createPushTokenProvider() }
+    single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }
+    single<AppLifecycleObserver> { createAppLifecycleObserver() }
+    single { SessionRefresher(get(), get(), get(), get(), get()) }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)
