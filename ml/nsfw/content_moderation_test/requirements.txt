@@ -1,0 +1,18 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+onnxruntime>=1.20.0
+numpy>=1.24.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+python-multipart>=0.0.9
+jinja2>=3.1.0
+nudenet>=3.4.0
+# Anime NSFW detection (nipple_f/penis/pussy bounding boxes).
+# ВАЖНО: ставить с --no-deps, иначе тянет numpy<2 и ломает окружение:
+#   pip install --no-deps dghs-imgutils
+# dghs-imgutils
+# Zero-shot hate-symbol detection (OWL-ViTv2) — медленный инференс на CPU.
+transformers>=4.40.0
+torch>=2.0.0
+# scipy требуется Owlv2ImageProcessor для resize
+scipy>=1.10.0

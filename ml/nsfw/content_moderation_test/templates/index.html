@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Moderation Tester</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f13;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 24px 40px;
+            border-bottom: 1px solid #2a2a3e;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .header p {
+            font-size: 14px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        /* --- Controls --- */
+        .controls {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+        }
+        .control-group select,
+        .control-group input[type="range"] {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .control-group select:focus { outline: 2px solid #4a6cf7; }
+        .threshold-val {
+            font-size: 18px;
+            font-weight: 700;
+            color: #4a6cf7;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        /* --- Upload Zone --- */
+        .upload-zone {
+            border: 2px dashed #2a2a3e;
+            border-radius: 12px;
+            padding: 60px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #13131a;
+            margin-bottom: 32px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #4a6cf7;
+            background: #1a1a2e;
+        }
+        .upload-zone svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            color: #4a6cf7;
+        }
+        .upload-zone h3 { font-size: 18px; margin-bottom: 8px; color: #ccc; }
+        .upload-zone p { font-size: 13px; color: #666; }
+        .upload-zone input { display: none; }
+
+        /* --- Loading --- */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        .loading.active { display: block; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid #2a2a3e;
+            border-top-color: #4a6cf7;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- Result --- */
+        .result {
+            display: none;
+            margin-bottom: 32px;
+        }
+        .result.active { display: block; }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .result-header h2 { font-size: 20px; }
+
+        .verdict {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .verdict.safe {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .verdict.unsafe {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .images-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 768px) {
+            .images-row { grid-template-columns: 1fr; }
+        }
+
+        .image-card {
+            background: #13131a;
+            border: 1px solid #2a2a3e;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .image-card-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #2a2a3e;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+        }
+        .image-card img {
+            width: 100%;
+            display: block;
+            max-height: 400px;
+            object-fit: contain;
+            background: #0a0a0f;
+        }
+
+
+        /* --- Scores --- */
+        .scores-panel {
+            background: #13131a;
+            border: 1px solid #2a2a3e;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .scores-panel h3 {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            margin-bottom: 16px;
+        }
+        .score-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .score-row:last-child { margin-bottom: 0; }
+        .score-label {
+            font-size: 13px;
+            min-width: 140px;
+            color: #ccc;
+        }
+        .score-bar-bg {
+            flex: 1;
+            height: 24px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .score-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.6s ease;
+            min-width: 2px;
+        }
+        .score-bar.low { background: #22c55e; }
+        .score-bar.medium { background: #eab308; }
+        .score-bar.high { background: #ef4444; }
+        .score-value {
+            font-size: 13px;
+            font-weight: 600;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .meta-info {
+            display: flex;
+            gap: 24px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #2a2a3e;
+            font-size: 12px;
+            color: #666;
+        }
+        .meta-info span { color: #4a6cf7; font-weight: 600; }
+
+        /* --- Batch results table --- */
+        .batch-results {
+            display: none;
+            margin-top: 32px;
+        }
+        .batch-results.active { display: block; }
+        .batch-results h2 { font-size: 20px; margin-bottom: 16px; }
+
+        .batch-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #13131a;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #2a2a3e;
+        }
+        .batch-table th, .batch-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #1a1a2e;
+            font-size: 13px;
+        }
+        .batch-table th {
+            background: #1a1a2e;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            font-size: 11px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge.allowed { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .badge.blurred { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+
+        .btn-clear {
+            background: #2a2a3e;
+            color: #ccc;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .btn-clear:hover { background: #3a3a4e; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Content Moderation Tester</h1>
+    <p>ViT-L/14 @ 336px &mdash; 6 classes: alcohol, gore, military, nudity, smoking, negative</p>
+</div>
+
+<div class="container">
+
+    <!-- Controls -->
+    <div class="controls">
+        <div class="control-group">
+            <label>Sensitivity (multiplier over baseline 16.7%)</label>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <input type="range" id="thresholdSlider" min="1.8" max="4.0" step="0.1" value="1.8" style="width:200px;">
+                <span class="threshold-val" id="thresholdValue">1.8x</span>
+                <span style="font-size:12px;color:#666;" id="effectiveThreshold">= unsafe at >= 30.0%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="uploadZone">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+        <h3>Drop image(s) here or click to upload</h3>
+        <p>JPG, PNG, WEBP &mdash; single or multiple files</p>
+        <input type="file" id="fileInput" accept="image/*" multiple>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <!-- Single result -->
+    <div class="result" id="singleResult">
+        <div class="result-header">
+            <h2 id="resultFilename">result.jpg</h2>
+            <div>
+                <span class="verdict" id="verdictBadge"></span>
+                <button class="btn-clear" onclick="clearResults()" style="margin-left:12px;">Clear</button>
+            </div>
+        </div>
+
+        <div class="images-row">
+            <div class="image-card">
+                <div class="image-card-header">Original</div>
+                <img id="originalImg" src="" alt="Original">
+            </div>
+            <div class="image-card">
+                <div class="image-card-header" id="processedLabel">Result</div>
+                <img id="processedImg" src="" alt="Processed">
+            </div>
+        </div>
+
+        <div class="scores-panel">
+            <h3>Classification scores</h3>
+            <div id="scoresContainer"></div>
+            <div class="meta-info" id="metaInfo"></div>
+        </div>
+    </div>
+
+    <!-- Batch results -->
+    <div class="batch-results" id="batchResults">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2>Batch Results</h2>
+            <button class="btn-clear" onclick="clearResults()">Clear</button>
+        </div>
+        <table class="batch-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Filename</th>
+                    <th>Predicted class</th>
+                    <th>Confidence</th>
+                    <th>Action</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="batchTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const loading = document.getElementById('loading');
+const singleResult = document.getElementById('singleResult');
+const batchResults = document.getElementById('batchResults');
+const thresholdSlider = document.getElementById('thresholdSlider');
+const thresholdValue = document.getElementById('thresholdValue');
+
+const CLASS_LABELS_RU = {
+    alcohol: 'Alcohol',
+    gore: 'Gore / Violence',
+    military: 'Military / Weapons',
+    nudity: 'Nudity',
+    smoking: 'Smoking',
+    negative: 'Negative Content'
+};
+
+// --- Threshold slider ---
+const BASELINE = 100.0 / 6;  // ~16.67%
+thresholdSlider.addEventListener('input', () => {
+    const val = parseFloat(thresholdSlider.value);
+    thresholdValue.textContent = val.toFixed(1) + 'x';
+    const eff = (BASELINE * val).toFixed(1);
+    document.getElementById('effectiveThreshold').textContent = `= unsafe at >= ${eff}%`;
+});
+
+// --- Upload zone ---
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('dragover');
+});
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+function handleFiles(files) {
+    if (!files || files.length === 0) return;
+    if (files.length === 1) {
+        moderateSingle(files[0]);
+    } else {
+        moderateBatch(files);
+    }
+}
+
+// --- Single image moderation ---
+async function moderateSingle(file) {
+    clearResults();
+    loading.classList.add('active');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('threshold', thresholdSlider.value);
+
+    try {
+        const resp = await fetch('/api/moderate', { method: 'POST', body: formData });
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('Error: ' + (err.detail || resp.statusText));
+            return;
+        }
+        const data = await resp.json();
+        showSingleResult(data);
+    } catch (e) {
+        alert('Connection error: ' + e.message);
+    } finally {
+        loading.classList.remove('active');
+    }
+}
+
+function showSingleResult(data) {
+    singleResult.classList.add('active');
+
+    // Filename
+    document.getElementById('resultFilename').textContent = data.filename || 'image';
+
+    // Verdict badge
+    const badge = document.getElementById('verdictBadge');
+    if (data.is_unsafe) {
+        badge.className = 'verdict unsafe';
+        badge.innerHTML = `&#x26A0; UNSAFE &mdash; ${data.predicted_class_ru} (${(data.confidence * 100).toFixed(1)}%)`;
+    } else {
+        badge.className = 'verdict safe';
+        badge.innerHTML = `&#x2713; SAFE (${(data.confidence * 100).toFixed(1)}%)`;
+    }
+
+    // Images
+    document.getElementById('originalImg').src = data.original_image;
+
+    const processedImg = document.getElementById('processedImg');
+    const processedLabel = document.getElementById('processedLabel');
+
+    processedImg.src = data.processed_image;
+
+    if (data.action_taken === 'partial_blur' && data.patch_results) {
+        const pr = data.patch_results;
+        const areaPct = pr.unsafe_area_pct || 0;
+        if (pr.blurred) {
+            const stageInfo = (pr.stages || []).map(s => {
+                if (s.method === 'nudenet') {
+                    return `NudeNet:${s.detections_relevant || 0}`;
+                } else if (s.method === 'anime_censor') {
+                    return `Anime:${s.detections_relevant || 0}`;
+                } else if (s.method === 'owl_hate_symbols') {
+                    return `OWL:${s.detections_relevant || 0}`;
+                } else if (s.method === 'sliding_window') {
+                    return `SlidingWindow:${s.unsafe_scans || 0}/${s.total_scans || 0}`;
+                }
+                return s.method;
+            }).join(' + ');
+            processedLabel.textContent = `Partial blur (${stageInfo}, ${areaPct}% blurred)`;
+        } else {
+            processedLabel.textContent = `Partial blur — no unsafe regions detected`;
+        }
+    } else {
+        processedLabel.textContent = 'Allowed (original)';
+    }
+
+    // Scores
+    const container = document.getElementById('scoresContainer');
+    container.innerHTML = '';
+    const scores = data.all_scores;
+    for (const [label, score] of Object.entries(scores)) {
+        const pct = (score * 100).toFixed(1);
+        let barClass = 'low';
+        if (score > 0.5) barClass = 'high';
+        else if (score > 0.2) barClass = 'medium';
+
+        const isMax = label === data.predicted_class;
+        container.innerHTML += `
+            <div class="score-row">
+                <div class="score-label" style="${isMax ? 'color:#fff;font-weight:700;' : ''}">${CLASS_LABELS_RU[label] || label}</div>
+                <div class="score-bar-bg">
+                    <div class="score-bar ${barClass}" style="width:${pct}%"></div>
+                </div>
+                <div class="score-value" style="${isMax ? 'color:#4a6cf7;' : ''}">${pct}%</div>
+            </div>`;
+    }
+
+    // Meta
+    const effPct = data.effective_threshold_pct || (BASELINE * data.threshold).toFixed(1);
+    document.getElementById('metaInfo').innerHTML = `
+        <div>Inference time: <span>${data.inference_time_ms} ms</span></div>
+        <div>Sensitivity: <span>${data.threshold}x</span></div>
+        <div>Unsafe at: <span>>= ${effPct}%</span></div>
+        <div>Action: <span>${data.action_taken}</span></div>`;
+}
+
+// --- Batch moderation ---
+async function moderateBatch(files) {
+    clearResults();
+    loading.classList.add('active');
+
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+    formData.append('threshold', thresholdSlider.value);
+
+    try {
+        const resp = await fetch('/api/moderate/batch', { method: 'POST', body: formData });
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('Error: ' + (err.detail || resp.statusText));
+            return;
+        }
+        const data = await resp.json();
+        showBatchResults(data);
+    } catch (e) {
+        alert('Connection error: ' + e.message);
+    } finally {
+        loading.classList.remove('active');
+    }
+}
+
+function showBatchResults(data) {
+    batchResults.classList.add('active');
+    const tbody = document.getElementById('batchTableBody');
+    tbody.innerHTML = '';
+
+    data.results.forEach((r, i) => {
+        if (r.error) {
+            tbody.innerHTML += `<tr><td>${i+1}</td><td>${r.filename}</td><td colspan="4" style="color:#ef4444;">${r.error}</td></tr>`;
+            return;
+        }
+        const badgeClass = r.action_taken === 'allowed' ? 'allowed' : 'blurred';
+        tbody.innerHTML += `
+            <tr>
+                <td>${i+1}</td>
+                <td>${r.filename}</td>
+                <td>${r.predicted_class_ru}</td>
+                <td>${(r.confidence * 100).toFixed(1)}%</td>
+                <td><span class="badge ${badgeClass}">${r.action_taken.toUpperCase()}</span></td>
+                <td>${r.inference_time_ms} ms</td>
+            </tr>`;
+    });
+}
+
+function clearResults() {
+    singleResult.classList.remove('active');
+    batchResults.classList.remove('active');
+    fileInput.value = '';
+}
+</script>
+
+</body>
+</html>
