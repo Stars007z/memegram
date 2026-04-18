@@ -25,6 +25,7 @@ filekit = "0.8.8"
 qrose = "1.1.2"
 runtime = "1.10.3"
 libsodium = "0.9.5"
+cryptographyKotlin = "0.4.0"
 securityCryptoKtx = "1.1.0"
 sqlcipher = "4.14.1"
 mlkitLanguageId = "17.0.6"
@@ -64,7 +65,10 @@ qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "runtime" }
 ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 multiplatform-crypto-libsodium = { module = "com.ionspin.kotlin:multiplatform-crypto-libsodium-bindings", version.ref = "libsodium" }
+cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptographyKotlin" }
+cryptography-provider-apple = { module = "dev.whyoleg.cryptography:cryptography-provider-apple", version.ref = "cryptographyKotlin" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "coroutinesExtensions" }
+sqldelight-dialect-sqlite324 = { module = "app.cash.sqldelight:sqlite-3-24-dialect", version.ref = "coroutinesExtensions" }
 sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "sqlcipher" }
 mlkit-language-id = { module = "com.google.mlkit:language-id", version.ref = "mlkitLanguageId" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }

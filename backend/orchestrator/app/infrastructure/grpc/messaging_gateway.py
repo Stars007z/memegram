@@ -156,6 +156,20 @@ class GrpcMessagingGateway(IMessagingGateway):
             for kp in resp.key_packages
         ]
 
+    async def delete_key_packages_for_device(
+        self, user_id: str, device_id: str,
+    ) -> int:
+        try:
+            resp = await self._stub().DeleteKeyPackagesForDevice(
+                messaging_pb2.DeleteKeyPackagesForDeviceRequest(
+                    user_id=user_id, device_id=device_id,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.deleted_count
+
     # ── Conversations ─────────────────────────────────────────────────
 
     async def create_direct_conversation(
@@ -320,6 +334,21 @@ class GrpcMessagingGateway(IMessagingGateway):
                     user_id=user_id,
                     conversation_id=conversation_id,
                     name=name,
+                ),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
+
+    async def delete_conversation(
+        self, user_id: str, conversation_id: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().DeleteConversation(
+                messaging_pb2.DeleteConversationRequest(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
                 ),
                 timeout=self._timeout,
             )
@@ -664,6 +693,10 @@ class GrpcMessagingGateway(IMessagingGateway):
                 "revoked_device_id": dr.revoked_device_id,
                 "conversation_ids": list(dr.conversation_ids),
             }
+        elif which == "conversation_deleted":
+            cd = event.conversation_deleted
+            result["type"] = "conversation_deleted"
+            result["data"] = {"deleted_by": cd.deleted_by}
         return result
 
     # ── Device revocation notification ────────────────────────────────

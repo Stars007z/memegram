@@ -7,14 +7,58 @@ from app.api.v1.user.schemas import (
     UserSettingsResponseSchema, UpdateUserSettingsRequestSchema, UserHealthResponseSchema,
     SyncSettingsRequestSchema, SyncSettingsResponseSchema, MediaDownloadInfoSchema,
 )
-from app.api.dependencies import get_current_session, get_user_gateway, get_item_storage_gateway
+from app.api.dependencies import (
+    get_current_session, get_user_gateway, get_item_storage_gateway,
+    get_contacts_gateway,
+)
 from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, UpdateUserSettingsRequest
+from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
 from app.core.session_context import SessionContext
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user", tags=["user"])
+
+
+async def _build_profile_with_blocks(
+    profile_dc,
+    requester_user_id: str,
+    contacts_gw: IContactsGateway,
+) -> UserProfileResponseSchema:
+    """Build a UserProfileResponseSchema, populating block flags.
+
+    For self-profile (requester == target) we skip block lookups entirely
+    since they are meaningless and would just be two no-op gRPC calls."""
+    target_id = profile_dc.id
+    is_peer_blocked = False
+    is_blocked_by_peer = False
+    if target_id and target_id != requester_user_id:
+        try:
+            a, b = await asyncio.gather(
+                contacts_gw.is_blocked(
+                    user_id=requester_user_id, blocked_user_id=target_id,
+                ),
+                contacts_gw.is_blocked(
+                    user_id=target_id, blocked_user_id=requester_user_id,
+                ),
+                return_exceptions=True,
+            )
+            if not isinstance(a, Exception):
+                is_peer_blocked = a.is_blocked
+            else:
+                logger.warning("user.profile.is_blocked_lookup_failed", side="peer", error=str(a))
+            if not isinstance(b, Exception):
+                is_blocked_by_peer = b.is_blocked
+            else:
+                logger.warning("user.profile.is_blocked_lookup_failed", side="by_peer", error=str(b))
+        except Exception as e:
+            # Never fail profile fetch because of contacts service issues.
+            logger.warning("user.profile.block_flags_failed", error=str(e))
+    data = profile_dc.__dict__.copy()
+    data["is_peer_blocked"] = is_peer_blocked
+    data["is_blocked_by_peer"] = is_blocked_by_peer
+    return UserProfileResponseSchema(**data)
 
 
 @router.get("/health", response_model=UserHealthResponseSchema)
@@ -29,7 +73,10 @@ async def get_me(
     gateway: IUserGateway = Depends(get_user_gateway),
 ):
     result = await gateway.get_user(user_id=session.user_id, requester_user_id=session.user_id)
-    return UserProfileResponseSchema(**result.__dict__)
+    data = result.__dict__.copy()
+    data["is_peer_blocked"] = False
+    data["is_blocked_by_peer"] = False
+    return UserProfileResponseSchema(**data)
 
 
 @router.get("/{user_id}", response_model=UserProfileResponseSchema)
@@ -37,9 +84,10 @@ async def get_user(
     user_id: str,
     session: SessionContext = Depends(get_current_session),
     gateway: IUserGateway = Depends(get_user_gateway),
+    contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
 ):
     result = await gateway.get_user(user_id=user_id, requester_user_id=session.user_id)
-    return UserProfileResponseSchema(**result.__dict__)
+    return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
 
 
 @router.get("/by-key/{user_public_key}", response_model=UserProfileResponseSchema)
@@ -47,12 +95,13 @@ async def get_user_by_public_key(
     user_public_key: str,
     session: SessionContext = Depends(get_current_session),
     gateway: IUserGateway = Depends(get_user_gateway),
+    contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
 ):
     result = await gateway.get_user_by_public_key(
         user_public_key=user_public_key,
         requester_user_id=session.user_id,
     )
-    return UserProfileResponseSchema(**result.__dict__)
+    return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
 
 
 @router.patch("/me", response_model=UserProfileResponseSchema)
@@ -69,7 +118,10 @@ async def update_me(
         profile_background_media_id=body.profile_background_media_id,
     )
     result = await gateway.update_user(request)
-    return UserProfileResponseSchema(**result.__dict__)
+    data = result.__dict__.copy()
+    data["is_peer_blocked"] = False
+    data["is_blocked_by_peer"] = False
+    return UserProfileResponseSchema(**data)
 
 
 @router.delete("/me", response_model=DeleteUserResponseSchema)

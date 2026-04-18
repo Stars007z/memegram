@@ -87,6 +87,7 @@ class RequestScope:
                 redis=self._redis,
                 stream_service=self._stream,
                 media_service=self.media_service,
+                contacts_client=self._contacts,
             )
         return self._cache["message"]  # type: ignore[return-value]
 

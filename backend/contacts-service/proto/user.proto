@@ -1,164 +1,187 @@
 syntax = "proto3";
 package user;
 
+// IMPORTANT: this file MUST stay byte-for-byte identical to
+//   backend/user-service/proto/user.proto
+//   backend/notifications-service/proto/user.proto
+//   backend/orchestrator/proto/user.proto
+// Otherwise gRPC wire format will diverge silently and fields like
+// avatar_media_id will end up in the wrong slot after deserialization
+// (this exact bug was the reason avatars weren't loading in contacts).
+
 service UserService {
-    // Пользователь
-    rpc CreateUser(CreateUserRequest) returns (UserProfileResponse);
-    rpc GetUser(GetUserRequest) returns (UserProfileResponse);
-    rpc GetUserByUserPublicKey(GetUserByUserPublicKeyRequest) returns (UserProfileResponse);
-    rpc UpdateUser(UpdateUserRequest) returns (UserProfileResponse);
-    rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
-    rpc CheckAndProcessAutoDelete(CheckAndProcessAutoDeleteRequest) returns (CheckAndProcessAutoDeleteResponse);
+  // Пользователь
+  rpc CreateUser(CreateUserRequest)   returns (UserProfileResponse);
+  rpc GetUser(GetUserRequest)         returns (UserProfileResponse);
+  rpc GetUserByUserPublicKey(GetUserByUserPublicKeyRequest) returns (UserProfileResponse);
+  rpc UpdateUser(UpdateUserRequest)   returns (UserProfileResponse);
+  rpc DeleteUser(DeleteUserRequest)   returns (DeleteUserResponse);
+  rpc CheckAndProcessAutoDelete(CheckAndProcessAutoDeleteRequest) returns (CheckAndProcessAutoDeleteResponse);
 
-    // Настройки
-    rpc GetUserSettings(GetUserSettingsRequest) returns (UserSettingsResponse);
-    rpc UpdateUserSettings(UpdateUserSettingsRequest) returns (UserSettingsResponse);
+  // Настройки
+  rpc GetUserSettings(GetUserSettingsRequest)       returns (UserSettingsResponse);
+  rpc UpdateUserSettings(UpdateUserSettingsRequest) returns (UserSettingsResponse);
 
-    // Internal-методы
-    rpc GetUsersBatch(GetUsersBatchRequest) returns (GetUsersBatchResponse);
-    rpc UserExists(UserExistsRequest) returns (UserExistsResponse);
-    rpc UpdateLastActive(UpdateLastActiveRequest) returns (UpdateLastActiveResponse);
-    rpc GetPrivacySettings(GetPrivacySettingsRequest) returns (GetPrivacySettingsResponse);
+  // Internal-методы
+  rpc GetUsersBatch(GetUsersBatchRequest)     returns (GetUsersBatchResponse);
+  rpc UserExists(UserExistsRequest)           returns (UserExistsResponse);
+  rpc UpdateLastActive(UpdateLastActiveRequest) returns (UpdateLastActiveResponse);
+  rpc GetPrivacySettings(GetPrivacySettingsRequest) returns (GetPrivacySettingsResponse);
 
-    // Системные
-    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  // Системные
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
 message UserProfile {
-    string id           = 1;
-    string username     = 2;
-    string user_public_key = 3;
-    string bio          = 4;
-    bool   is_deleted   = 5;
-    optional string avatar_media_id              = 6;
-    optional string profile_background_media_id  = 7;
-    optional int64  last_active                  = 8;
+  string id                         = 1;  // UUID
+  string username                   = 2;
+  string avatar_media_id            = 3;  // UUID, optional
+  string profile_background_media_id = 4; // UUID, optional
+  string user_public_key            = 5;  // base64
+  string bio                        = 6;
+  int64  last_active                = 7;  // Unix timestamp
+  bool   is_deleted                 = 8;
 }
 
-message UserProfileResponse {
-    UserProfile profile = 1;
+message UserSettings {
+  string id                             = 1;  // UUID
+  string user_id                        = 2;  // UUID
+  string theme                          = 3;  // light / dark / system
+  string language                       = 4;
+  bool   is_translator_active           = 5;
+  bool   animations_enabled             = 6;
+  int32  account_auto_delete_after_days = 7;
+  string profile_visible_to            = 8;  // everybody / contacts / nobody
+  string last_active_visible_to        = 9;  // everybody / contacts / nobody
+  string chat_background_media_id      = 10; // UUID, optional
+  string top_bar_color                 = 11;
+  string ringtone_media_id             = 12; // UUID, optional
+  int32  ringtone_vibration_strength   = 13;
+  string notification_sound            = 14; // UUID, optional
+  int32  notification_vibration_strength = 15;
+  string top_bar_media_id              = 16; // UUID, optional
+  string my_bubble_media_id            = 17; // UUID, optional
+  string their_bubble_media_id         = 18; // UUID, optional
 }
+
 
 message CreateUserRequest {
-    string user_id   = 1;
-    string username  = 2;
+  string username = 1;
 }
 
+
 message GetUserRequest {
-    string user_id           = 1;
-    string requester_user_id = 2;
+  string user_id           = 1; // чей профиль
+  string requester_user_id = 2; // кто запрашивает
 }
 
 message GetUserByUserPublicKeyRequest {
-    string user_public_key   = 1;
-    string requester_user_id = 2;
+  string user_public_key   = 1; // base64
+  string requester_user_id = 2;
 }
 
 message UpdateUserRequest {
-    string user_id                          = 1;
-    optional string bio                     = 2;
-    optional string username                = 3;
-    optional string avatar_media_id         = 4;
-    optional string profile_background_media_id = 5;
+  string user_id                              = 1;
+  optional string bio                         = 2;
+  optional string username                    = 3;
+  optional string avatar_media_id             = 4;
+  optional string profile_background_media_id = 5;
+}
+
+
+message UserProfileResponse {
+  UserProfile profile = 1;
 }
 
 message DeleteUserRequest {
-    string user_id = 1;
+  string user_id = 1;
 }
 
 message DeleteUserResponse {
-    bool  success    = 1;
-    int64 deleted_at = 2;
+  bool   success    = 1;
 }
 
 message CheckAndProcessAutoDeleteRequest {}
 
 message CheckAndProcessAutoDeleteResponse {
-    int32            deleted_count = 1;
-    repeated string  user_ids      = 2;
+  int32           deleted_count = 1;
+  repeated string user_ids      = 2;
 }
 
 message GetUserSettingsRequest {
-    string user_id = 1;
-}
-
-message UserSettings {
-    string user_id                  = 1;
-    string theme                    = 2;
-    string language                 = 3;
-    bool   is_translator_active     = 4;
-    bool   animations_enabled       = 5;
-    optional int32  account_auto_delete_after_days = 6;
-    string profile_visible_to       = 7;
-    string last_active_visible_to   = 8;
-    optional string chat_background_media_id = 9;
-    optional string top_bar_color            = 10;
-    optional string ringtone_media_id        = 11;
-    optional int32  ringtone_vibration_strength = 12;
-    optional string notification_sound          = 13;
-    optional int32  notification_vibration_strength = 14;
-}
-
-message UserSettingsResponse {
-    UserSettings settings = 1;
+  string user_id = 1;
 }
 
 message UpdateUserSettingsRequest {
-    string          user_id                 = 1;
-    optional string theme                   = 2;
-    optional string language                = 3;
-    optional bool   is_translator_active    = 4;
-    optional bool   animations_enabled      = 5;
-    optional int32  account_auto_delete_after_days = 6;
-    optional string profile_visible_to      = 7;
-    optional string last_active_visible_to  = 8;
-    optional string chat_background_media_id    = 9;
-    optional string top_bar_color               = 10;
-    optional string ringtone_media_id           = 11;
-    optional int32  ringtone_vibration_strength = 12;
-    optional string notification_sound          = 13;
-    optional int32  notification_vibration_strength = 14;
+  string user_id                                  = 1;
+  optional string theme                           = 2;
+  optional string language                        = 3;
+  optional bool   is_translator_active            = 4;
+  optional bool   animations_enabled              = 5;
+  optional int32  account_auto_delete_after_days  = 6;
+  optional string profile_visible_to              = 7;
+  optional string last_active_visible_to          = 8;
+  optional string chat_background_media_id        = 9;
+  optional string top_bar_color                   = 10;
+  optional string ringtone_media_id               = 11;
+  optional int32  ringtone_vibration_strength     = 12;
+  optional string notification_sound              = 13;
+  optional int32  notification_vibration_strength = 14;
+  optional string top_bar_media_id                = 15;
+  optional string my_bubble_media_id              = 16;
+  optional string their_bubble_media_id           = 17;
+}
+
+message UserSettingsResponse {
+  UserSettings settings = 1;
 }
 
 message GetUsersBatchRequest {
-    repeated string user_ids = 1;
+  repeated string user_ids = 1;
+}
+
+message UserBriefProfile {
+  string id              = 1;
+  string username        = 2;
+  string avatar_media_id = 3; // UUID, optional
+  bool   is_deleted      = 4;
 }
 
 message GetUsersBatchResponse {
-    repeated UserProfile users = 1;
+  repeated UserBriefProfile users = 1;
 }
 
 message UserExistsRequest {
-    string user_id = 1;
+  string user_id = 1;
 }
 
 message UserExistsResponse {
-    bool exists     = 1;
-    bool is_deleted = 2;
+  bool exists     = 1;
+  bool is_deleted = 2;
 }
 
 message UpdateLastActiveRequest {
-    string user_id = 1;
+  string user_id = 1;
 }
 
 message UpdateLastActiveResponse {
-    bool success = 1;
+  bool success = 1;
 }
 
 message GetPrivacySettingsRequest {
-    string user_id = 1;
+  string user_id = 1;
 }
 
 message GetPrivacySettingsResponse {
-    string profile_visible_to     = 1;
-    string last_active_visible_to = 2;
+  string profile_visible_to      = 1; // everybody / contacts / nobody
+  string last_active_visible_to  = 2;
 }
 
 message HealthCheckRequest {}
 
 message HealthCheckResponse {
-    string status      = 1;
-    string db_status   = 2;
+    string status = 1;
+    string db_status = 2;
     string redis_status = 3;
-    string version     = 4;
+    string version = 4;
 }

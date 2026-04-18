@@ -75,6 +75,19 @@ class IMlsService(ABC):
         ...
 
     @abstractmethod
+    async def delete_key_packages_for_device(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+    ) -> int:
+        """
+        Purge unconsumed key packages for (user_id, device_id).
+        Called by client when its local MLS key-store is reset
+        (logout, register, add-device). Returns number of deleted rows.
+        """
+        ...
+
+    @abstractmethod
     async def commit_group_change(
         self,
         user_id: uuid.UUID,

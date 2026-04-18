@@ -64,4 +64,15 @@ class SessionManager(private val settings: Settings) {
         settings.putString("device_type",   "secondary")
         settings.putLong("expires_at",      response.expiresAt)
     }
+
+    fun markPendingKpCleanup() {
+        settings.putBoolean("pending_kp_cleanup", true)
+    }
+
+    fun hasPendingKpCleanup(): Boolean =
+        settings.getBoolean("pending_kp_cleanup", false)
+
+    fun clearPendingKpCleanup() {
+        settings.remove("pending_kp_cleanup")
+    }
 }

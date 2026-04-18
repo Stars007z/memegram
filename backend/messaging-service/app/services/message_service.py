@@ -5,6 +5,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
+from app.infrastructure.contacts_client import IContactsClient
 from app.logging_config import get_logger
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
@@ -31,6 +32,7 @@ class MessageServiceImpl(IMessageService):
         redis: aioredis.Redis,
         stream_service: IStreamService,
         media_service: IMediaService,
+        contacts_client: IContactsClient,
     ) -> None:
         self._messages = message_repo
         self._members = member_repo
@@ -38,6 +40,7 @@ class MessageServiceImpl(IMessageService):
         self._redis = redis
         self._stream = stream_service
         self._media = media_service
+        self._contacts = contacts_client
 
     # ── SendMessage ─────────────────────────────────
 
@@ -54,6 +57,17 @@ class MessageServiceImpl(IMessageService):
     ) -> SendResult:
         if not await self._members.is_member(conversation_id, sender_user_id):
             raise ValueError("PERMISSION_DENIED: Not a member of this conversation")
+
+        # Block check for 1-to-1 conversations: forbid sending if either side blocked the other.
+        conv = await self._conversations.get_by_id(conversation_id)
+        if conv is not None and conv.type == "direct":
+            members = await self._members.get_active_members(conversation_id)
+            peer = next((m for m in members if m.user_id != sender_user_id), None)
+            if peer is not None:
+                if await self._contacts.is_blocked(peer.user_id, sender_user_id):
+                    raise ValueError("PERMISSION_DENIED: You are blocked by this user")
+                if await self._contacts.is_blocked(sender_user_id, peer.user_id):
+                    raise ValueError("PERMISSION_DENIED: You have blocked this user")
 
         existing = await self._messages.get_by_client_message_id(client_message_id)
         if existing:

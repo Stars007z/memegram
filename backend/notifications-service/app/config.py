@@ -57,6 +57,9 @@ class Settings:
     ITEM_STORAGE_GRPC_HOST: str = os.getenv("ITEM_STORAGE_GRPC_HOST", "localhost")
     ITEM_STORAGE_GRPC_PORT: int = int(os.getenv("ITEM_STORAGE_GRPC_PORT", 50056))
 
+    CONTACTS_GRPC_HOST: str = os.getenv("CONTACTS_GRPC_HOST", "localhost")
+    CONTACTS_GRPC_PORT: int = int(os.getenv("CONTACTS_GRPC_PORT", 50053))
+
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SERVICE_VERSION: str = os.getenv("SERVICE_VERSION", "1.0.0")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -81,6 +84,10 @@ class Settings:
     @property
     def item_storage_grpc_address(self) -> str:
         return f"{self.ITEM_STORAGE_GRPC_HOST}:{self.ITEM_STORAGE_GRPC_PORT}"
+
+    @property
+    def contacts_grpc_address(self) -> str:
+        return f"{self.CONTACTS_GRPC_HOST}:{self.CONTACTS_GRPC_PORT}"
 
 
 @lru_cache(maxsize=1)

@@ -3,8 +3,11 @@ package com.example.memegram.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.example.memegram.ChatModel
+import com.example.memegram.ChatStorageStat
+import com.example.memegram.MediaItemInfo
 import com.example.memegram.Message
 import com.example.memegram.MessageStatus
+import com.example.memegram.StorageTypeStat
 import com.example.memegram.data.models.MarkAsReadRequest
 import com.example.memegram.database.AppDatabase
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +42,10 @@ class ChatRepositoryImpl(
                         isLastMessageMine = entity.isLastMessageMine == 1L,
                         lastSenderName = entity.lastSenderName,
                         avatarMediaId = entity.avatarMediaId,
-                        lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId
+                        lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId,
+                        peerUserId = entity.peerUserId,
+                        isGroup = entity.isGroup == 1L,
+                        muteUntil = entity.muteUntil
                     )
                 }
             }
@@ -56,7 +62,10 @@ class ChatRepositoryImpl(
                 avatarMediaId = chat.avatarMediaId,
                 isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
                 lastSenderName = chat.lastSenderName,
-                lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId
+                lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId,
+                isGroup = if (chat.isGroup) 1L else 0L,
+                peerUserId = chat.peerUserId,
+                muteUntil = chat.muteUntil
             )
         }
     }
@@ -74,7 +83,10 @@ class ChatRepositoryImpl(
                         avatarMediaId = chat.avatarMediaId,
                         isLastMessageMine = if (chat.isLastMessageMine) 1L else 0L,
                         lastSenderName = chat.lastSenderName,
-                        lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId
+                        lastSenderAvatarMediaId = chat.lastSenderAvatarMediaId,
+                        isGroup = if (chat.isGroup) 1L else 0L,
+                        peerUserId = chat.peerUserId,
+                        muteUntil = chat.muteUntil
                     )
                 }
             }
@@ -87,6 +99,29 @@ class ChatRepositoryImpl(
                 chatQueries.deleteMessagesByConversation(conversationId)
                 chatQueries.deleteChat(conversationId)
             }
+        }
+    }
+
+    override suspend fun deleteChats(conversationIds: List<String>) {
+        if (conversationIds.isEmpty()) return
+        withContext(ioDispatcher) {
+            chatQueries.transaction {
+                chatQueries.deleteMessagesByConversationIds(conversationIds)
+                chatQueries.deleteChatsByIds(conversationIds)
+            }
+        }
+    }
+
+    override suspend fun setMuteUntil(conversationId: String, muteUntil: Long) {
+        withContext(ioDispatcher) {
+            chatQueries.updateChatMuteUntil(muteUntil, conversationId)
+        }
+    }
+
+    override suspend fun setMuteUntilForIds(conversationIds: List<String>, muteUntil: Long) {
+        if (conversationIds.isEmpty()) return
+        withContext(ioDispatcher) {
+            chatQueries.updateChatMuteUntilForIds(muteUntil, conversationIds)
         }
     }
 
@@ -105,7 +140,10 @@ class ChatRepositoryImpl(
                 isLastMessageMine = entity.isLastMessageMine == 1L,
                 lastSenderName = entity.lastSenderName,
                 avatarMediaId = entity.avatarMediaId,
-                lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId
+                lastSenderAvatarMediaId = entity.lastSenderAvatarMediaId,
+                peerUserId = entity.peerUserId,
+                isGroup = entity.isGroup == 1L,
+                muteUntil = entity.muteUntil
             )
         }
     }
@@ -137,7 +175,11 @@ class ChatRepositoryImpl(
                         originalText       = entity.originalText,
                         translatedText     = entity.translatedText,
                         translatedFromLang = entity.translatedFromLang,
-                        isTranslated       = entity.isTranslated == 1L
+                        isTranslated       = entity.isTranslated == 1L,
+                        fileName           = entity.fileName,
+                        fileSize           = entity.fileSize,
+                        fileMime           = entity.fileMime,
+                        localFilePath      = entity.localFilePath
                     )
 
                 }
@@ -161,13 +203,15 @@ class ChatRepositoryImpl(
                     message.localPreviewBytes, message.mediaUrl, now, message.senderUserId,
                     message.groupId,
                     message.originalText, message.translatedText, message.translatedFromLang,
-                    if (message.isTranslated) 1L else 0L
+                    if (message.isTranslated) 1L else 0L,
+                    message.fileName, message.fileSize, message.fileMime, message.localFilePath
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
                     message.type, message.mediaId, message.encryptionMetadata,
                     message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
                     message.senderUserId, message.groupId,
+                    message.fileName, message.fileSize, message.fileMime, message.localFilePath,
                     realId
                 )
                 runGarbageCollector(conversationId)
@@ -202,13 +246,18 @@ class ChatRepositoryImpl(
                         originalText       = message.originalText,
                         translatedText     = message.translatedText,
                         translatedFromLang = message.translatedFromLang,
-                        isTranslated       = if (message.isTranslated) 1L else 0L
+                        isTranslated       = if (message.isTranslated) 1L else 0L,
+                        fileName           = message.fileName,
+                        fileSize           = message.fileSize,
+                        fileMime           = message.fileMime,
+                        localFilePath      = message.localFilePath
                     )
                     chatQueries.updateExistingMessage(
                         message.text, message.status.name,
                         message.type, message.mediaId, message.encryptionMetadata,
                         message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
                         message.senderUserId, message.groupId,
+                        message.fileName, message.fileSize, message.fileMime, message.localFilePath,
                         realId
                     )
                 }
@@ -226,6 +275,25 @@ class ChatRepositoryImpl(
     override suspend fun deleteMessageByServerId(serverId: String) {
         withContext(ioDispatcher) {
             chatQueries.deleteMessageByServerId(serverId)
+        }
+    }
+
+    override suspend fun updateMessageLocalFile(
+        serverId: String,
+        localFilePath: String,
+        previewBytes: ByteArray?
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageLocalFile(localFilePath, previewBytes, serverId)
+        }
+    }
+
+    override suspend fun updateMessageLocalPreview(
+        serverId: String,
+        previewBytes: ByteArray
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageLocalPreview(previewBytes, serverId)
         }
     }
 
@@ -262,7 +330,11 @@ class ChatRepositoryImpl(
                         originalText       = entity.originalText,
                         translatedText     = entity.translatedText,
                         translatedFromLang = entity.translatedFromLang,
-                        isTranslated       = entity.isTranslated == 1L
+                        isTranslated       = entity.isTranslated == 1L,
+                        fileName           = entity.fileName,
+                        fileSize           = entity.fileSize,
+                        fileMime           = entity.fileMime,
+                        localFilePath      = entity.localFilePath
                     )
                 }
         }
@@ -296,6 +368,93 @@ class ChatRepositoryImpl(
     override suspend fun showCachedTranslation(serverId: String) {
         withContext(ioDispatcher) {
             chatQueries.showCachedTranslation(serverId)
+        }
+    }
+
+    // ── Storage analytics ────────────────────────────────────────────
+
+    override suspend fun getStorageByType(): List<StorageTypeStat> {
+        return withContext(ioDispatcher) {
+            chatQueries.storageByType().executeAsList().map {
+                StorageTypeStat(
+                    type = it.type,
+                    messageCount = it.messageCount,
+                    totalSize = it.totalSize
+                )
+            }
+        }
+    }
+
+    override suspend fun getStoragePerConversationPerType(): List<ChatStorageStat> {
+        return withContext(ioDispatcher) {
+            chatQueries.storagePerConversationPerType().executeAsList().map {
+                ChatStorageStat(
+                    conversationId = it.conversationId,
+                    chatName = it.chatName ?: it.conversationId,
+                    avatarMediaId = it.avatarMediaId,
+                    type = it.type,
+                    messageCount = it.messageCount,
+                    typeSize = it.typeSize
+                )
+            }
+        }
+    }
+
+    override suspend fun getStorageByConversationAndType(conversationId: String): List<StorageTypeStat> {
+        return withContext(ioDispatcher) {
+            chatQueries.storageByConversationAndType(conversationId).executeAsList().map {
+                StorageTypeStat(
+                    type = it.type,
+                    messageCount = it.messageCount,
+                    totalSize = it.totalSize
+                )
+            }
+        }
+    }
+
+    override suspend fun getTotalStorageSize(): Pair<Long, Long> {
+        return withContext(ioDispatcher) {
+            val result = chatQueries.totalStorageSize().executeAsOne()
+            Pair(result.messageCount, result.totalSize)
+        }
+    }
+
+    override suspend fun deleteMessagesByType(type: String) {
+        withContext(ioDispatcher) {
+            chatQueries.deleteMessagesByType(type)
+        }
+    }
+
+    override suspend fun deleteMessagesByConversationAndType(conversationId: String, type: String) {
+        withContext(ioDispatcher) {
+            chatQueries.deleteMessagesByConversationAndType(conversationId, type)
+        }
+    }
+
+    override suspend fun getMediaItemsByConversation(conversationId: String): List<MediaItemInfo> {
+        return withContext(ioDispatcher) {
+            chatQueries.selectMediaItemsByConversation(conversationId).executeAsList().map {
+                MediaItemInfo(
+                    serverId = it.serverId,
+                    type = it.type,
+                    mediaId = it.mediaId,
+                    previewBytes = it.localPreviewBytes,
+                    estimatedSize = it.estimatedSize,
+                    timestamp = it.timestamp
+                )
+            }
+        }
+    }
+
+    override suspend fun deleteOldPrivateChatMedia(thresholdMs: Long) {
+        withContext(ioDispatcher) {
+            chatQueries.deleteOldPrivateChatMedia(thresholdMs)
+        }
+    }
+
+    override suspend fun deleteOldGroupChatMedia(thresholdMs: Long) {
+        withContext(ioDispatcher) {
+            chatQueries.deleteOldGroupChatMedia(thresholdMs)
         }
     }
 

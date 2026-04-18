@@ -4,10 +4,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -76,6 +78,11 @@ fun ChatsScreen(
     val chats by viewModel.chats.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val blockedConvIds by viewModel.blockedConversationIds.collectAsState()
+    val selectedIds by viewModel.selectedChatIds.collectAsState()
+    val isSelectionMode by viewModel.isSelectionMode.collectAsState()
+
+    var pendingMuteIds by remember { mutableStateOf<Set<String>?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
     val audioPlaybackState by globalAudioPlayer.state.collectAsState()
@@ -92,6 +99,9 @@ fun ChatsScreen(
     val focusRequester = remember { FocusRequester() }
     val contactsVm: ContactsViewModel = koinViewModel()
     val createdChatId by contactsVm.chatCreated.collectAsState()
+
+    BlockedByPeerDialog(contactsVm)
+
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var newKeyInput by remember { mutableStateOf("") }
 
@@ -241,6 +251,34 @@ fun ChatsScreen(
         Scaffold(
             topBar = {
                 ImageTopAppBarBox(topBarColor) { bgColor ->
+                if (isSelectionMode) {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { viewModel.clearSelection() }) {
+                                Icon(Icons.Default.Close, null, tint = topBarTextColor)
+                            }
+                        },
+                        title = {
+                            Text(
+                                "${selectedIds.size}",
+                                color = topBarTextColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        actions = {
+                            IconButton(onClick = { pendingMuteIds = selectedIds }) {
+                                Icon(Icons.Default.NotificationsOff, null, tint = topBarTextColor)
+                            }
+                            IconButton(onClick = { showDeleteConfirm = true }) {
+                                Icon(Icons.Default.Delete, null, tint = topBarTextColor)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = bgColor,
+                            titleContentColor = topBarTextColor
+                        )
+                    )
+                } else {
                 TopAppBar(
                     navigationIcon = {
                         if (isSearchMode) {
@@ -339,6 +377,7 @@ fun ChatsScreen(
                         titleContentColor = topBarTextColor
                     )
                 )
+                }
                 }
                 if (showAddKeyDialog) {
                     AlertDialog(
@@ -462,6 +501,80 @@ fun ChatsScreen(
                         }
                     )
                 }
+
+                // Mute duration selector
+                pendingMuteIds?.let { ids ->
+                    AlertDialog(
+                        onDismissRequest = { pendingMuteIds = null },
+                        title = { Text(s.muteNotifications) },
+                        text = {
+                            Column {
+                                listOf(
+                                    s.mute1Hour to 60L * 60_000L,
+                                    s.mute8Hours to 8L * 60L * 60_000L,
+                                    s.mute24Hours to 24L * 60L * 60_000L,
+                                    s.muteForever to Long.MAX_VALUE
+                                ).forEach { (label, durMs) ->
+                                    Text(
+                                        text = label,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.muteChats(ids, durMs)
+                                                pendingMuteIds = null
+                                                viewModel.clearSelection()
+                                            }
+                                            .padding(vertical = 12.sdp, horizontal = 8.sdp),
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                                val anyMuted = ids.any { id ->
+                                    chats.any { it.conversationId == id && it.muteUntil > Clock.System.now().toEpochMilliseconds() }
+                                }
+                                if (anyMuted) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = s.muteNotifications + " — " + s.cancel,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.muteChats(ids, 0L)
+                                                pendingMuteIds = null
+                                                viewModel.clearSelection()
+                                            }
+                                            .padding(vertical = 12.sdp, horizontal = 8.sdp),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { pendingMuteIds = null }) { Text(s.cancel) }
+                        }
+                    )
+                }
+
+                // Delete confirmation
+                if (showDeleteConfirm) {
+                    val anyGroup = chats.any { it.conversationId in selectedIds && it.isGroup }
+                    val title = if (anyGroup) s.leaveGroupTitle else s.deleteChatTitle
+                    val msg = if (anyGroup) s.leaveGroupMessage else s.deleteChatMessage
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirm = false },
+                        title = { Text(title) },
+                        text = { Text(msg) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showDeleteConfirm = false
+                                viewModel.deleteSelectedChats()
+                            }) { Text(s.delete, color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteConfirm = false }) { Text(s.cancel) }
+                        }
+                    )
+                }
             }
         ) { paddingValues ->
             Column(
@@ -492,7 +605,20 @@ fun ChatsScreen(
                             items(chats, key = { it.id }) { chat ->
                                 ChatItem(
                                     chat = chat,
-                                    onClick = { onChatClick(chat) },
+                                    isSelected = chat.conversationId in selectedIds,
+                                    isSelectionMode = isSelectionMode,
+                                    onClick = {
+                                        if (isSelectionMode) viewModel.toggleSelection(chat.conversationId)
+                                        else onChatClick(chat)
+                                    },
+                                    onLongClick = {
+                                        viewModel.toggleSelection(chat.conversationId)
+                                    },
+                                    onMute = { pendingMuteIds = setOf(chat.conversationId) },
+                                    onDelete = {
+                                        viewModel.toggleSelection(chat.conversationId)
+                                        showDeleteConfirm = true
+                                    },
                                     isBlocked = chat.conversationId in blockedConvIds
                                 )
                                 HorizontalDivider(
@@ -522,22 +648,57 @@ fun formatChatTime(timestampMs: Long): String {
     } catch (e: Exception) { "" }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChatItem(chat: ChatModel, onClick: () -> Unit, isBlocked: Boolean = false) {
+fun ChatItem(
+    chat: ChatModel,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onMute: () -> Unit = {},
+    onDelete: () -> Unit = {},
+    isBlocked: Boolean = false
+) {
     val s = LocalStrings.current
+    val nowMs = remember { Clock.System.now().toEpochMilliseconds() }
+    val isMuted = chat.muteUntil > nowMs
+    val rowBg = if (isSelected)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    else Color.Transparent
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .background(rowBg)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.sdp, vertical = 12.sdp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AvatarImage(
-            mediaId = chat.avatarMediaId,
-            size = 50.sdp,
-            fallbackLetter = chat.name.take(1).uppercase(),
-            backgroundColor = Color(0xFF6075F2)
-        )
+        Box(contentAlignment = Alignment.BottomEnd) {
+            AvatarImage(
+                mediaId = chat.avatarMediaId,
+                size = 50.sdp,
+                fallbackLetter = chat.name.take(1).uppercase(),
+                backgroundColor = Color(0xFF6075F2)
+            )
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(20.sdp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .border(2.sdp, MaterialTheme.colorScheme.background, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Check, null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(14.sdp)
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.width(16.sdp))
 
@@ -551,6 +712,14 @@ fun ChatItem(chat: ChatModel, onClick: () -> Unit, isBlocked: Boolean = false) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
+                if (isMuted) {
+                    Spacer(Modifier.width(6.sdp))
+                    Icon(
+                        Icons.Default.NotificationsOff, null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(16.sdp)
+                    )
+                }
                 if (isBlocked) {
                     Spacer(Modifier.width(6.sdp))
                     Icon(

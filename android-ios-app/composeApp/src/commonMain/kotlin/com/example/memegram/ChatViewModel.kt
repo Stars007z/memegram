@@ -17,6 +17,8 @@ import com.example.memegram.utils.generateUuid
 import com.example.memegram.data.gallery.AttachItem
 import com.example.memegram.data.gallery.guessMimeType
 import com.example.memegram.data.gallery.readUploadBytes
+import com.example.memegram.data.files.openSavedFile
+import com.example.memegram.data.files.saveDownloadedFile
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
 import com.example.memegram.localization.S
@@ -92,7 +94,8 @@ class ChatViewModel(
     private val _error            = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    /** Unread count at the moment the chat was opened (from the server). */
+    fun clearError() { _error.value = null }
+
     private val _initialUnreadCount = MutableStateFlow(0)
     val initialUnreadCount: StateFlow<Int> = _initialUnreadCount.asStateFlow()
 
@@ -117,6 +120,20 @@ class ChatViewModel(
     ) { peerId, ids -> peerId != null && peerId in ids }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    private val _isBlockedByPeer = MutableStateFlow(false)
+    val isBlockedByPeer: StateFlow<Boolean> = _isBlockedByPeer.asStateFlow()
+
+    private val _isMlsBroken = MutableStateFlow(false)
+    val isMlsBroken: StateFlow<Boolean> = _isMlsBroken.asStateFlow()
+
+    private fun handleBlockedByPeerOnSendError(e: Throwable): Boolean {
+        val api = e as? com.example.memegram.data.network.ApiException ?: return false
+        if (!api.isBlocked) return false
+        if (_isGroupChat.value) return false
+        _isBlockedByPeer.value = true
+        return true
+    }
+
     val audioRecorder = createAudioRecorder()
     private var myUserId: String? = null
     private var myDeviceId: String? = null
@@ -126,6 +143,15 @@ class ChatViewModel(
     private var pollingJob: Job? = null
 
     private val decryptMutex = Mutex()
+
+    private val _downloadingFiles = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingFiles: StateFlow<Set<String>> = _downloadingFiles.asStateFlow()
+
+    companion object {
+        const val MAX_UPLOAD_SIZE_BYTES: Long = 100L * 1024L * 1024L
+        const val AUTO_DOWNLOAD_FILE_LIMIT_BYTES: Long = 5L * 1024L * 1024L
+        const val INLINE_BLOB_LIMIT_BYTES: Int = 2 * 1024 * 1024
+    }
 
     enum class RecordState { IDLE, HOLDING, LOCKED, PAUSED }
     private val _recordState = MutableStateFlow(RecordState.IDLE)
@@ -158,9 +184,18 @@ class ChatViewModel(
         dbObserveJob?.cancel()
 
         dbObserveJob = viewModelScope.launch {
-            chatRepository.getMessagesFlow(conversationId).collect { msgs ->
-                _messages.value = msgs.sortedBy { it.timestamp }
-            }
+            combine(
+                chatRepository.getMessagesFlow(conversationId),
+                blockedUsersCache.blockedIds
+            ) { msgs, blockedIds ->
+                msgs.asSequence()
+                    .filterNot { m ->
+                        val sender = m.senderUserId
+                        sender != null && sender != myUserId && sender in blockedIds
+                    }
+                    .sortedBy { it.timestamp }
+                    .toList()
+            }.collect { _messages.value = it }
         }
 
         viewModelScope.launch {
@@ -169,6 +204,7 @@ class ChatViewModel(
                 _initialUnreadCount.value = conv.unreadCount ?: 0
                 val isGroup = conv.type != "direct"
                 _isGroupChat.value = isGroup
+                _isBlockedByPeer.value = !isGroup && conv.isBlockedByPeer
 
                 if (isGroup) {
                     _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
@@ -214,27 +250,49 @@ class ChatViewModel(
         try {
             val rawMessages = api.getMessages(conversationId)
             val myId = myUserId ?: ""
-            val sortedMessages = rawMessages.sortedBy { it.createdAt }
+            val lastBlockedFromServer = rawMessages
+                .filter { it.effectiveSenderId != myId && blockedUsersCache.isBlocked(it.effectiveSenderId) }
+                .maxByOrNull { it.createdAt }
+            if (lastBlockedFromServer != null) {
+                viewModelScope.launch {
+                    runCatching { api.markAsRead(conversationId, MarkAsReadRequest(lastBlockedFromServer.id)) }
+                }
+            }
+            val sortedMessages = rawMessages
+                .filterNot { msg ->
+                    val sender = msg.effectiveSenderId
+                    sender != myId && blockedUsersCache.isBlocked(sender)
+                }
+                .sortedBy { it.createdAt }
             decryptMutex.withLock {
                 val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
                 val newSenders = mutableMapOf<String, String>()
                 val newReplyCtx = mutableMapOf<String, String>()
 
-                val uiMessages = sortedMessages.map { msg ->
+                val uiMessages = sortedMessages.mapNotNull { msg ->
                     val existing = existingLocalMessages.find { it.serverId == msg.id }
                     val isSentByMe = msg.effectiveSenderId == myId
+
+                    val text: String = run {
+                        val cached = existing?.text
+                        val cachedUsable = existing != null
+                                && cached != null
+                                && !cached.startsWith("🔒")
+                                && (cached.isNotBlank() || existing.type != "text")
+                        if (cachedUsable) return@run cached!!
+
+                        val decrypted = try {
+                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64)
+                        } catch (_: Exception) { null }
+
+                        if (decrypted != null) decrypted
+                        else if (isSentByMe) S.current.sentFromOtherDevice
+                        else return@mapNotNull null
+                    }
+
                     newSenders[msg.id] = msg.effectiveSenderId
                     if (!msg.replyToMessageId.isNullOrBlank()) {
                         newReplyCtx[msg.id] = msg.replyToMessageId
-                    }
-
-                    val text = when {
-                        existing != null && !existing.text.startsWith("🔒") && (existing.text.isNotBlank() || existing.type != "text") -> existing.text
-                        else -> try {
-                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64) ?: S.current.encrypted
-                        } catch (_: Exception) {
-                            if (isSentByMe) S.current.sentFromOtherDevice else S.current.decryptionError
-                        }
                     }
 
                     val parsed = parseMlsPayload(text)
@@ -249,7 +307,12 @@ class ChatViewModel(
                         type         = if (parsed.type != "text") parsed.type else (existing?.type ?: "text"),
                         mediaId      = parsed.mediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
                         senderUserId = msg.effectiveSenderId,
-                        groupId      = parsed.groupId ?: existing?.groupId
+                        groupId      = parsed.groupId ?: existing?.groupId,
+                        fileName     = parsed.fileName ?: existing?.fileName,
+                        fileSize     = parsed.fileSize ?: existing?.fileSize,
+                        fileMime     = parsed.fileMime ?: existing?.fileMime,
+                        localFilePath = existing?.localFilePath,
+                        localPreviewBytes = existing?.localPreviewBytes
                     )
                 }
 
@@ -316,8 +379,15 @@ class ChatViewModel(
         when (event.type) {
             "new_message" -> {
                 val msgId = data.id ?: return
-                data.senderUserId?.let { senderId ->
-                    _messageSenders.update { it + (msgId to senderId) }
+                val senderId = data.senderUserId
+                if (senderId != null && senderId != myId && blockedUsersCache.isBlocked(senderId)) {
+                    viewModelScope.launch {
+                        runCatching { api.markAsRead(convId, MarkAsReadRequest(msgId)) }
+                    }
+                    return
+                }
+                senderId?.let { sId ->
+                    _messageSenders.update { it + (msgId to sId) }
                 }
                 if (!data.replyToMessageId.isNullOrBlank()) {
                     _replyContext.update { it + (msgId to data.replyToMessageId) }
@@ -327,8 +397,8 @@ class ChatViewModel(
                     msgId         = msgId,
                     ciphertextB64 = data.mlsCiphertextB64 ?: "",
                     createdAt     = data.createdAt,
-                    isOutgoing    = data.senderUserId == myId,
-                    senderUserId  = data.senderUserId
+                    isOutgoing    = senderId == myId,
+                    senderUserId  = senderId
                 )
             }
 
@@ -446,6 +516,16 @@ class ChatViewModel(
 
             val newMessages = serverMessages
                 .filter { it.id !in localServerIds }
+                .filterNot { msg ->
+                    val sender = msg.effectiveSenderId
+                    val skip = sender != myId && blockedUsersCache.isBlocked(sender)
+                    if (skip) {
+                        viewModelScope.launch {
+                            runCatching { api.markAsRead(conversationId, MarkAsReadRequest(msg.id)) }
+                        }
+                    }
+                    skip
+                }
                 .sortedBy { it.createdAt }
 
             if (newMessages.isEmpty()) return
@@ -508,9 +588,16 @@ class ChatViewModel(
                 type         = if (parsed.type != "text") parsed.type else "text",
                 mediaId      = parsed.mediaId.takeIf { it.isNotBlank() },
                 senderUserId = senderUserId,
-                groupId      = parsed.groupId
+                groupId      = parsed.groupId,
+                fileName     = parsed.fileName,
+                fileSize     = parsed.fileSize,
+                fileMime     = parsed.fileMime
             )
             chatRepository.saveMessage(msg, convId)
+            if (!isOutgoing && parsed.type == "file" && parsed.mediaId.isNotBlank()
+                && (parsed.fileSize ?: 0L) in 1L..AUTO_DOWNLOAD_FILE_LIMIT_BYTES) {
+                viewModelScope.launch { downloadFile(msg) }
+            }
             val MAX_AUTO_TRANSLATE_LENGTH = 300
             if (!isOutgoing && parsed.type == "text" && parsed.content.isNotBlank()
                 && parsed.content.length <= MAX_AUTO_TRANSLATE_LENGTH) {
@@ -547,21 +634,53 @@ class ChatViewModel(
 
     // ───────────────────────── MLS sync ─────────────────────────
 
+    private suspend fun findWelcomeWithRetry(
+        conversationId: String,
+        maxAttempts: Int = 3,
+        delayMs: Long = 4_000L
+    ): WelcomeResponse? {
+        repeat(maxAttempts) { attempt ->
+            val welcomes = try { api.getPendingWelcomes() } catch (_: Exception) { emptyList() }
+            val match = welcomes.find { it.conversationId == conversationId }
+            if (match != null) return match
+            if (attempt < maxAttempts - 1) {
+                println("MemegramDebug [MLS]: no Welcome for conv=$conversationId (attempt ${attempt + 1}/$maxAttempts), retry in ${delayMs}ms")
+                delay(delayMs)
+            }
+        }
+        return null
+    }
+
     private suspend fun syncMlsPending(conversationId: String): Boolean {
+        if (mlsManager.isChatMlsBroken(conversationId)) {
+            _isMlsBroken.value = true
+            return false
+        }
+
         var justProcessedWelcome = false
 
         if (!mlsManager.hasGroup(conversationId)) {
-            try {
-                val welcomes = api.getPendingWelcomes()
-                val welcome = welcomes.find { it.conversationId == conversationId }
-                if (welcome != null) {
+            val welcome = try {
+                findWelcomeWithRetry(conversationId)
+            } catch (_: Exception) { null }
+
+            if (welcome != null) {
+                try {
                     mlsManager.processWelcome(conversationId, welcome.welcomeDataB64)
                     api.ackWelcome(welcome.id)
                     justProcessedWelcome = true
-                } else {
+                } catch (_: Exception) {
+                    if (mlsManager.isChatMlsBroken(conversationId)) {
+                        _isMlsBroken.value = true
+                    }
                     return false
                 }
-            } catch (_: Exception) { return false }
+            } else {
+                println("MemegramDebug [MLS]: No Welcome for conv=$conversationId after retries, marking mls_broken")
+                mlsManager.markChatMlsBroken(conversationId)
+                _isMlsBroken.value = true
+                return false
+            }
         }
 
         try {
@@ -620,11 +739,18 @@ class ChatViewModel(
         viewModelScope.launch {
             when {
                 attachments.isEmpty() -> sendTextMessageInternal(convId, text)
-                attachments.size == 1 -> sendPhotoMessageInternal(convId, attachments[0], caption = text)
+                attachments.size == 1 -> {
+                    val a = attachments[0]
+                    if (a.asFile) sendFileMessageInternal(convId, a, caption = text)
+                    else sendPhotoMessageInternal(convId, a, caption = text)
+                }
                 else -> {
                     val groupId = generateUuid()
-                    sendPhotoMessageInternal(convId, attachments[0], caption = text, groupId = groupId)
-                    attachments.drop(1).forEach { sendPhotoMessageInternal(convId, it, caption = "", groupId = groupId) }
+                    attachments.forEachIndexed { idx, a ->
+                        val cap = if (idx == 0) text else ""
+                        if (a.asFile) sendFileMessageInternal(convId, a, caption = cap, groupId = groupId)
+                        else sendPhotoMessageInternal(convId, a, caption = cap, groupId = groupId)
+                    }
                 }
             }
         }
@@ -665,6 +791,7 @@ class ChatViewModel(
             }
         } catch (e: Exception) {
             chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
+            handleBlockedByPeerOnSendError(e)
             _error.value = S.current.sendError(e.message ?: "")
         }
     }
@@ -690,6 +817,17 @@ class ChatViewModel(
             }
 
             val rawBytes = previewBytes ?: item.readUploadBytes()
+            if (rawBytes.size.toLong() > MAX_UPLOAD_SIZE_BYTES) {
+                chatRepository.saveMessage(
+                    tempMsg.copy(status = MessageStatus.FAILED, text = S.current.photoSendError), convId
+                )
+                _error.value = S.current.fileTooLarge(
+                    formatSizeBytes(rawBytes.size.toLong()),
+                    formatSizeBytes(MAX_UPLOAD_SIZE_BYTES)
+                )
+                return
+            }
+
             val mime     = item.guessMimeType()
             val encrypted = encryptMediaBytes(rawBytes)
 
@@ -738,7 +876,158 @@ class ChatViewModel(
             chatRepository.saveMessage(
                 tempMsg.copy(status = MessageStatus.FAILED, text = S.current.photoSendError), convId
             )
+            handleBlockedByPeerOnSendError(e)
             _error.value = S.current.photoSendErrorDetail(e.message ?: "")
+        }
+    }
+
+    private suspend fun sendFileMessageInternal(
+        convId: String,
+        item: AttachItem,
+        caption: String = "",
+        groupId: String? = null
+    ) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val replyTo = _replyingTo.value
+        _replyingTo.value = null
+
+        val rawBytes = runCatching { item.readUploadBytes() }.getOrNull()
+        if (rawBytes == null) {
+            _error.value = S.current.fileSendError(S.current.fileReadError)
+            return
+        }
+
+        if (rawBytes.size.toLong() > MAX_UPLOAD_SIZE_BYTES) {
+            _error.value = S.current.fileTooLarge(
+                formatSizeBytes(rawBytes.size.toLong()),
+                formatSizeBytes(MAX_UPLOAD_SIZE_BYTES)
+            )
+            return
+        }
+
+        val mime     = item.guessMimeType()
+        val fileName = item.name
+        val fileSize = rawBytes.size.toLong()
+
+        val inlineBlob = if (rawBytes.size <= INLINE_BLOB_LIMIT_BYTES) rawBytes else null
+
+        val tempMsg = Message(
+            id = now.hashCode(), text = caption, isOutgoing = true,
+            timestamp = now, status = MessageStatus.SENDING,
+            type = "file", localPreviewBytes = inlineBlob,
+            senderUserId = myUserId, groupId = groupId,
+            fileName = fileName, fileSize = fileSize, fileMime = mime
+        )
+        chatRepository.saveMessage(tempMsg, convId)
+
+        try {
+            if (!mlsManager.hasGroup(convId)) {
+                chatRepository.saveMessage(
+                    tempMsg.copy(status = MessageStatus.FAILED, text = S.current.encryptionNotReady),
+                    convId
+                )
+                return
+            }
+
+            val encrypted = encryptMediaBytes(rawBytes)
+
+            val initResp = api.initiateMediaUpload(
+                InitiateMediaUploadRequest(
+                    conversationId     = convId,
+                    mimeType           = mime,
+                    encryptedSize      = encrypted.encryptedBytes.size.toLong(),
+                    encryptionMetadata = encrypted.encryptionMetadataB64
+                )
+            )
+            api.uploadEncryptedBytesToUrl(initResp.uploadUrl, encrypted.encryptedBytes, mime)
+            api.confirmMediaUpload(initResp.mediaId)
+
+            val nameB64 = encodeBase64Utf8(fileName)
+            val mimeB64 = encodeBase64Utf8(mime)
+            val capB64  = encodeBase64Utf8(caption)
+            val mlsPayload = "[file:${initResp.mediaId}:$fileSize:$mimeB64]$nameB64:$capB64"
+
+            val ciphertextB64 = mlsManager.encrypt(convId, mlsPayload)
+            mlsManager.flushState()
+
+            val response = api.sendMessage(
+                conversationId = convId,
+                request = SendMessageRequest(
+                    mlsCiphertextB64 = ciphertextB64,
+                    type             = "file",
+                    clientMessageId  = generateUuid(),
+                    mediaId          = initResp.mediaId,
+                    replyToMessageId = replyTo?.serverId
+                )
+            )
+
+            chatRepository.saveMessage(
+                tempMsg.copy(
+                    serverId           = response.messageId,
+                    status             = MessageStatus.SENT,
+                    text               = caption,
+                    mediaId            = initResp.mediaId,
+                    encryptionMetadata = encrypted.encryptionMetadataB64
+                ),
+                convId
+            )
+            if (replyTo != null && replyTo.serverId.isNotBlank()) {
+                _replyContext.update { it + (response.messageId to replyTo.serverId) }
+            }
+        } catch (e: Exception) {
+            println("MemegramDebug [File] ❌ FATAL: ${e::class.simpleName}: ${e.message}")
+            chatRepository.saveMessage(
+                tempMsg.copy(status = MessageStatus.FAILED, text = S.current.fileSendError(e.message ?: "")),
+                convId
+            )
+            handleBlockedByPeerOnSendError(e)
+            _error.value = S.current.fileSendError(e.message ?: "")
+        }
+    }
+
+    suspend fun downloadFile(message: Message): String? {
+        val mediaId = message.mediaId ?: return null
+        if (mediaId in _downloadingFiles.value) return null
+        if (!message.localFilePath.isNullOrBlank()) return message.localFilePath
+        _downloadingFiles.update { it + mediaId }
+        return try {
+            val resp = api.getMediaDownloadUrl(mediaId)
+            val bytes = api.downloadBytesFromUrl(resp.downloadUrl)
+            val metadata = resp.encryptionMetadata.takeIf { it.isNotBlank() }
+                ?: message.encryptionMetadata.orEmpty()
+            if (metadata.isBlank()) {
+                throw IllegalStateException("Encryption metadata is missing for media $mediaId")
+            }
+            val plain = decryptMediaBytes(bytes, metadata)
+            val name  = message.fileName ?: "file_$mediaId"
+            val mime  = message.fileMime ?: "application/octet-stream"
+            val saved = saveDownloadedFile(plain, name, mime)
+            if (saved == null) {
+                throw IllegalStateException("FileSaver returned null (write failed)")
+            }
+            if (message.serverId.isNotBlank()) {
+                val inlineBlob = if (plain.size <= INLINE_BLOB_LIMIT_BYTES) plain else null
+                chatRepository.updateMessageLocalFile(message.serverId, saved, inlineBlob)
+            }
+            saved
+        } catch (e: Exception) {
+            val reason = "${e::class.simpleName}: ${e.message ?: "unknown"}"
+            println("MemegramDebug [downloadFile] ❌ $reason")
+            _error.value = "${S.current.fileDownloadError}: $reason"
+            null
+        } finally {
+            _downloadingFiles.update { it - mediaId }
+        }
+    }
+
+    fun onFileBubbleTap(message: Message) {
+        viewModelScope.launch {
+            val existing = message.localFilePath
+            if (!existing.isNullOrBlank()) {
+                openSavedFile(existing, message.fileMime ?: "*/*")
+            } else {
+                downloadFile(message)
+            }
         }
     }
 
@@ -765,6 +1054,17 @@ class ChatViewModel(
             try {
                 if (!mlsManager.hasGroup(convId)) {
                     chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED, text = S.current.encryptionNotReady), convId)
+                    return@launch
+                }
+
+                if (recordResult.bytes.size.toLong() > MAX_UPLOAD_SIZE_BYTES) {
+                    chatRepository.saveMessage(
+                        tempMsg.copy(status = MessageStatus.FAILED, text = S.current.voiceSendError("too large")), convId
+                    )
+                    _error.value = S.current.fileTooLarge(
+                        formatSizeBytes(recordResult.bytes.size.toLong()),
+                        formatSizeBytes(MAX_UPLOAD_SIZE_BYTES)
+                    )
                     return@launch
                 }
 
@@ -812,6 +1112,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 println("MemegramDebug [Voice]: 🚨 КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ: ${e.message}")
                 chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
+                handleBlockedByPeerOnSendError(e)
                 _error.value = S.current.voiceSendError(e.message ?: "")
             }
         }
@@ -918,6 +1219,10 @@ class ChatViewModel(
                 val meta           = resp.encryptionMetadata.takeIf { it.isNotBlank() } ?: encryptionMetadata
                 val decryptedBytes = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
                 _mediaCache.value += (mediaId to decryptedBytes)
+                val msg = _messages.value.firstOrNull { it.mediaId == mediaId }
+                if (msg != null && msg.type == "image" && msg.serverId.isNotBlank()) {
+                    chatRepository.updateMessageLocalPreview(msg.serverId, decryptedBytes)
+                }
             } catch (_: Exception) { }
         }
     }
@@ -997,7 +1302,10 @@ class ChatViewModel(
         val type: String,
         val mediaId: String,
         val content: String,
-        val groupId: String? = null
+        val groupId: String? = null,
+        val fileName: String? = null,
+        val fileSize: Long? = null,
+        val fileMime: String? = null
     )
 
     private fun parseMlsPayload(payload: String): ParsedMlsPayload {
@@ -1021,17 +1329,47 @@ class ChatViewModel(
 
             return ParsedMlsPayload("voice", mediaId, "$durationMs|$waveform")
         }
+        if (payload.startsWith("[file:")) {
+            val closeIdx = payload.indexOf(']')
+            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
+            val metaInfo = payload.substring(6, closeIdx).split(":")
+            if (metaInfo.size < 3) return ParsedMlsPayload("text", "", payload)
+            val mediaId  = metaInfo[0]
+            val sizeBytes = metaInfo[1].toLongOrNull() ?: 0L
+            val mime      = runCatching { decodeBase64Utf8(metaInfo[2]) }.getOrDefault("application/octet-stream")
+            val tail      = payload.substring(closeIdx + 1)
+            val parts     = tail.split(":", limit = 2)
+            val fileName  = runCatching { decodeBase64Utf8(parts[0]) }.getOrDefault(parts[0])
+            val caption   = if (parts.size > 1) runCatching { decodeBase64Utf8(parts[1]) }.getOrDefault("") else ""
+            return ParsedMlsPayload(
+                type = "file", mediaId = mediaId, content = caption,
+                fileName = fileName, fileSize = sizeBytes, fileMime = mime
+            )
+        }
         return ParsedMlsPayload("text", "", payload)
     }
+
+    private fun encodeBase64Utf8(s: String): String =
+        kotlin.io.encoding.Base64.encode(s.encodeToByteArray())
+
+    private fun decodeBase64Utf8(s: String): String =
+        kotlin.io.encoding.Base64.decode(s).decodeToString()
 
     // ───────────────────────── Block / Unblock ─────────────────────────
 
     fun blockPeer() {
         val peerId = peerUserId ?: return
+        val convId = currentConversationId
         viewModelScope.launch {
             try {
                 api.blockUser(com.example.memegram.data.models.BlockUserRequest(peerId))
                 blockedUsersCache.add(peerId)
+                if (convId != null) {
+                    val chat = chatRepository.getChatById(convId)
+                    if (chat != null && chat.unreadCount > 0) {
+                        chatRepository.saveChat(chat.copy(unreadCount = 0))
+                    }
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }

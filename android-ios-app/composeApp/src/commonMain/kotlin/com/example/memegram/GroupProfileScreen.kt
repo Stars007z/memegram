@@ -96,6 +96,8 @@ fun GroupProfileScreen(
     }
 
     val createdChatId by contactsViewModel.chatCreated.collectAsState()
+    BlockedByPeerDialog(contactsViewModel)
+
     LaunchedEffect(createdChatId) {
         createdChatId?.let { id ->
             contactsViewModel.clearChatCreated()

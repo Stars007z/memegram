@@ -109,12 +109,24 @@ class AuthViewModel(
 
     private suspend fun initMlsAndUploadKeys() {
         mlsManager.initialize()
+
+        if (sessionManager.hasPendingKpCleanup()) {
+            try {
+                val deleted = api.deleteMyKeyPackages()
+                sessionManager.clearPendingKpCleanup()
+                println("MemegramDebug [MLS] Pending KP cleanup retried: $deleted deleted")
+            } catch (e: Exception) {
+                println("MemegramDebug [MLS] Pending KP cleanup still failing: ${e.message}")
+            }
+        }
+
         if (mlsManager.needsKeyPackages()) {
             val countOnServer = runCatching { api.getKeyPackagesCount() }.getOrDefault(0)
             if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {
                 val packages = mlsManager.generateKeyPackages(MlsManager.BATCH_KEY_PACKAGES)
                 mlsManager.flushState()
                 api.uploadKeyPackages(packages)
+                sessionManager.clearPendingKpCleanup()
             }
         }
     }

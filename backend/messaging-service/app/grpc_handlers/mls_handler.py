@@ -92,6 +92,25 @@ class MlsHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.GetKeyPackagesCountResponse()
 
+    async def delete_key_packages_for_device(self, request, context):
+        if not request.user_id or not request.device_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id and device_id are required")
+            return messaging_pb2.DeleteKeyPackagesForDeviceResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                deleted = await scope.mls_service.delete_key_packages_for_device(
+                    user_id=uuid.UUID(request.user_id),
+                    device_id=uuid.UUID(request.device_id),
+                )
+                return messaging_pb2.DeleteKeyPackagesForDeviceResponse(
+                    deleted_count=deleted,
+                )
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.DeleteKeyPackagesForDeviceResponse()
+
     async def commit_group_change(self, request, context):
         if not request.user_id or not request.conversation_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)

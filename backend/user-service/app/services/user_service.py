@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.user_settings import UserSettings
 from app.database.redis import check_and_set_last_active_debounce
+from app.infrastructure.contacts_gateway import ContactsGateway
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -19,8 +20,9 @@ def _now() -> datetime:
 
 
 class UserService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, contacts_gateway: Optional[ContactsGateway] = None):
         self.session = session
+        self._contacts = contacts_gateway or ContactsGateway()
 
     async def create_user(self, user_id: str, username: str) -> User:
         # username is intentionally NOT unique per architecture — search is by user_public_key
@@ -53,6 +55,12 @@ class UserService:
         if not user or user.is_deleted:
             raise ValueError("User not found")
 
+        # Privacy: if either side blocked the other, hide the profile entirely
+        # (mirror "User not found" to avoid leaking existence).
+        if user_id != requester_user_id:
+            if await self._contacts.is_blocked_either_way(user_id, requester_user_id):
+                raise ValueError("User not found")
+
         settings_result = await self.session.execute(
             select(UserSettings).where(UserSettings.user_id == user.id)
         )
@@ -77,6 +85,11 @@ class UserService:
         user = result.scalar_one_or_none()
         if not user:
             raise ValueError("User not found")
+
+        # Privacy: blocked → "User not found".
+        if str(user.id) != requester_user_id:
+            if await self._contacts.is_blocked_either_way(str(user.id), requester_user_id):
+                raise ValueError("User not found")
 
         settings_result = await self.session.execute(
             select(UserSettings).where(UserSettings.user_id == user.id)

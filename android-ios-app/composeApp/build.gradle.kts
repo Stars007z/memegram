@@ -88,6 +88,8 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.native.driver)
+            implementation(libs.cryptography.core)
+            implementation(libs.cryptography.provider.apple)
         }
 
         commonTest.dependencies {
@@ -140,6 +142,9 @@ sqldelight {
         create("AppDatabase") {
             packageName.set("com.example.memegram.database")
             generateAsync.set(false)
+            dialect(libs.sqldelight.dialect.sqlite324)
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+            verifyMigrations.set(true)
         }
     }
 }
