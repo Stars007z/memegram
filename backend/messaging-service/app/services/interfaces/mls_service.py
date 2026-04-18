@@ -3,12 +3,10 @@ from dataclasses import dataclass
 from typing import Optional
 import uuid
 
-
 @dataclass
 class KeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
-
 
 @dataclass
 class UserDeviceKeyPackageResult:
@@ -16,12 +14,10 @@ class UserDeviceKeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
 
-
 @dataclass
 class CommitResult:
     new_epoch: int
     committed_at: float
-
 
 @dataclass
 class WelcomeEntryResult:
@@ -30,13 +26,11 @@ class WelcomeEntryResult:
     welcome_data: bytes
     created_at: float
 
-
 @dataclass
 class CommitEntryResult:
     epoch: int
     commit_data: bytes
     created_at: float
-
 
 class IMlsService(ABC):
 

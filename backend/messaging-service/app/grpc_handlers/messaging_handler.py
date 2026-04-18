@@ -13,7 +13,6 @@ from app.grpc_handlers.message_handler import MessageHandler
 from app.grpc_handlers.mls_handler import MlsHandler
 from app.grpc_handlers.presence_handler import PresenceHandler
 
-
 class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
 
     def __init__(self, container: Container) -> None:
@@ -23,8 +22,6 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
         self._media = MediaHandler(container)
         self._presence = PresenceHandler(container)
         self._health = HealthHandler(container)
-
-    # ── MLS Key Material ────────────────────────────
 
     async def UploadKeyPackages(self, request, context):
         return await self._mls.upload_key_packages(request, context)
@@ -40,8 +37,6 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
 
     async def DeleteKeyPackagesForDevice(self, request, context):
         return await self._mls.delete_key_packages_for_device(request, context)
-
-    # ── Conversations ───────────────────────────────
 
     async def CreateDirectConversation(self, request, context):
         return await self._conversations.create_direct(request, context)
@@ -73,8 +68,6 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def DeleteConversation(self, request, context):
         return await self._conversations.delete_conversation(request, context)
 
-    # ── Messages ────────────────────────────────────
-
     async def SendMessage(self, request, context):
         return await self._messages.send_message(request, context)
 
@@ -90,13 +83,9 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def MarkAsRead(self, request, context):
         return await self._messages.mark_as_read(request, context)
 
-    # ── Streaming ───────────────────────────────────
-
     async def SubscribeToConversation(self, request, context):
         async for event in self._presence.subscribe(request, context):
             yield event
-
-    # ── MLS Group Management ────────────────────────
 
     async def CommitGroupChange(self, request, context):
         return await self._mls.commit_group_change(request, context)
@@ -113,8 +102,6 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def NotifyDeviceRevoked(self, request, context):
         return await self._mls.notify_device_revoked(request, context)
 
-    # ── Media ───────────────────────────────────────
-
     async def InitiateMediaUpload(self, request, context):
         return await self._media.initiate_media_upload(request, context)
 
@@ -124,20 +111,14 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def GetMediaDownloadUrl(self, request, context):
         return await self._media.get_media_download_url(request, context)
 
-    # ── Presence ────────────────────────────────────
-
     async def SetTyping(self, request, context):
         return await self._presence.set_typing(request, context)
 
     async def SetOnline(self, request, context):
         return await self._presence.set_online(request, context)
 
-    # ── Internal ────────────────────────────────────
-
     async def GetConversationMembers(self, request, context):
         return await self._health.get_conversation_members(request, context)
-
-    # ── Health ──────────────────────────────────────
 
     async def HealthCheck(self, request, context):
         return await self._health.health_check(request, context)

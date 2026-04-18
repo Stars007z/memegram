@@ -23,7 +23,6 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
-
 async def _build_container() -> Container:
     own_redis = await RedisClient.get_instance()
     messaging_redis = await MessagingRedisClient.get_instance()
@@ -49,11 +48,9 @@ async def _build_container() -> Container:
         contacts_client=contacts_client,
     )
 
-
 async def serve() -> None:
     container = await _build_container()
 
-    # Start gRPC server with logging interceptor
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     notifications_pb2_grpc.add_NotificationsServiceServicer_to_server(
         NotificationsHandler(container), server,
@@ -64,7 +61,6 @@ async def serve() -> None:
     logger.info("service.started", port=settings.GRPC_PORT)
     await server.start()
 
-    # Start Redis Streams event consumer as a background task
     consumer_task = asyncio.create_task(container.event_consumer.start())
     logger.info("event_consumer.started")
 
@@ -82,7 +78,6 @@ async def serve() -> None:
         await RedisClient.close()
         await MessagingRedisClient.close()
         logger.info("service.stopped")
-
 
 if __name__ == "__main__":
     asyncio.run(serve())

@@ -21,7 +21,6 @@ from app.services.interfaces.stream_service import IStreamService
 
 logger = get_logger(__name__)
 
-
 class MessageServiceImpl(IMessageService):
 
     def __init__(
@@ -42,8 +41,6 @@ class MessageServiceImpl(IMessageService):
         self._media = media_service
         self._contacts = contacts_client
 
-    # ── SendMessage ─────────────────────────────────
-
     async def send_message(
         self,
         sender_user_id: uuid.UUID,
@@ -58,7 +55,6 @@ class MessageServiceImpl(IMessageService):
         if not await self._members.is_member(conversation_id, sender_user_id):
             raise ValueError("PERMISSION_DENIED: Not a member of this conversation")
 
-        # Block check for 1-to-1 conversations: forbid sending if either side blocked the other.
         conv = await self._conversations.get_by_id(conversation_id)
         if conv is not None and conv.type == "direct":
             members = await self._members.get_active_members(conversation_id)
@@ -106,8 +102,6 @@ class MessageServiceImpl(IMessageService):
 
         return SendResult(message_id=msg.id, created_at=msg.created_at.timestamp())
 
-    # ── GetMessages ─────────────────────────────────
-
     async def get_messages(
         self,
         user_id: uuid.UUID,
@@ -130,8 +124,6 @@ class MessageServiceImpl(IMessageService):
             messages=[self._to_result(m) for m in messages],
             has_more=has_more,
         )
-
-    # ── EditMessage ─────────────────────────────────
 
     async def edit_message(
         self,
@@ -161,8 +153,6 @@ class MessageServiceImpl(IMessageService):
         })
 
         return self._to_result(msg)
-
-    # ── DeleteMessage ───────────────────────────────
 
     async def delete_message(
         self,
@@ -212,8 +202,6 @@ class MessageServiceImpl(IMessageService):
 
         return True
 
-    # ── MarkAsRead ──────────────────────────────────
-
     async def mark_as_read(
         self,
         user_id: uuid.UUID,
@@ -231,8 +219,6 @@ class MessageServiceImpl(IMessageService):
         key = f"unread:{user_id}:{conversation_id}"
         await self._redis.delete(key)
         return 0
-
-    # ── Helpers ──────────────────────────────────────
 
     async def _increment_unread_for_others(
         self, conversation_id: uuid.UUID, sender_user_id: uuid.UUID,

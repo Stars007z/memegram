@@ -15,6 +15,8 @@ private class IosMlsClient : MlsPlatformClient {
     override fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray = notImplemented()
     override fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt = notImplemented()
     override fun leaveGroup(groupId: ByteArray): ByteArray = notImplemented()
+    override fun deleteGroup(groupId: ByteArray) = notImplemented()
+    override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray = notImplemented()
     override fun getGroupEpoch(groupId: ByteArray): ULong = notImplemented()
     override fun memberCount(groupId: ByteArray): ULong = notImplemented()
     override fun mergePendingCommit(groupId: ByteArray) {

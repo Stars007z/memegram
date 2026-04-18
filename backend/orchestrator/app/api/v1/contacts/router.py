@@ -23,14 +23,12 @@ from app.core.session_context import SessionContext
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
-
 @router.get("/health", response_model=ContactsHealthResponseSchema)
 async def contacts_health(
     gateway: IContactsGateway = Depends(get_contacts_gateway),
 ) -> ContactsHealthResponseSchema:
     result = await gateway.health_check()
     return ContactsHealthResponseSchema(status=result.status, version=result.version)
-
 
 @router.post("", response_model=AddContactResponseSchema, status_code=201)
 async def add_contact(
@@ -44,7 +42,6 @@ async def add_contact(
     )
     return AddContactResponseSchema(contact=result.contact.__dict__)
 
-
 @router.delete("/{contact_user_id}", response_model=RemoveContactResponseSchema)
 async def remove_contact(
     contact_user_id: str,
@@ -56,7 +53,6 @@ async def remove_contact(
         contact_user_id=contact_user_id,
     )
     return RemoveContactResponseSchema(success=result.success)
-
 
 @router.get("", response_model=GetContactsResponseSchema)
 async def get_contacts(
@@ -87,8 +83,6 @@ async def get_contacts(
         total_count=result.total_count,
     )
 
-
-
 @router.patch("/{contact_user_id}", response_model=UpdateContactResponseSchema)
 async def update_contact(
     contact_user_id: str,
@@ -103,9 +97,6 @@ async def update_contact(
     )
     return UpdateContactResponseSchema(contact=result.contact.__dict__)
 
-
-# ── Blocked users ──────────────────────────────────────────────────────
-
 @router.post("/blocked", response_model=BlockUserResponseSchema, status_code=201)
 async def block_user(
     body: BlockUserRequestSchema,
@@ -118,7 +109,6 @@ async def block_user(
     )
     return BlockUserResponseSchema(success=result.success, created_at=result.created_at)
 
-
 @router.delete("/blocked/{blocked_user_id}", response_model=UnblockUserResponseSchema)
 async def unblock_user(
     blocked_user_id: str,
@@ -130,7 +120,6 @@ async def unblock_user(
         blocked_user_id=blocked_user_id,
     )
     return UnblockUserResponseSchema(success=result.success)
-
 
 @router.get("/blocked", response_model=GetBlockedUsersResponseSchema)
 async def get_blocked_users(

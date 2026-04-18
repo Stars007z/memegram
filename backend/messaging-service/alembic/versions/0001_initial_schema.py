@@ -15,9 +15,8 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-
 def upgrade() -> None:
-    # ── conversations ───────────────────────────────
+
     op.create_table(
         "conversations",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -34,7 +33,6 @@ def upgrade() -> None:
         [sa.text("last_activity_at DESC")],
     )
 
-    # ── conversation_members ────────────────────────
     op.create_table(
         "conversation_members",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -53,7 +51,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_conv_members_user_id", "conversation_members", ["user_id"])
 
-    # ── messages ────────────────────────────────────
     op.create_table(
         "messages",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -87,7 +84,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_messages_sender", "messages", ["sender_user_id"])
 
-    # ── media_attachments ───────────────────────────
     op.create_table(
         "media_attachments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -102,7 +98,6 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime, nullable=True),
     )
 
-    # ── mls_groups ──────────────────────────────────
     op.create_table(
         "mls_groups",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -113,7 +108,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
     )
 
-    # ── mls_key_packages ────────────────────────────
     op.create_table(
         "mls_key_packages",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -132,7 +126,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("consumed_at IS NULL"),
     )
 
-    # ── mls_welcome_messages ────────────────────────
     op.create_table(
         "mls_welcome_messages",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -143,7 +136,6 @@ def upgrade() -> None:
         sa.Column("delivered_at", sa.DateTime, nullable=True),
     )
 
-    # ── mls_commit_messages ─────────────────────────
     op.create_table(
         "mls_commit_messages",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -158,7 +150,6 @@ def upgrade() -> None:
         "mls_commit_messages",
         ["conversation_id", "epoch"],
     )
-
 
 def downgrade() -> None:
     op.drop_table("mls_commit_messages")

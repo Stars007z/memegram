@@ -36,7 +36,6 @@ from app.exceptions import NotFoundError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
 @router.post("/register", response_model=AuthResponseSchema, status_code=201)
 async def register(
     body: RegisterRequestSchema,
@@ -54,8 +53,6 @@ async def register(
     result = await usecase.execute(request)
     return AuthResponseSchema(**dataclasses.asdict(result))
 
-
-
 @router.post("/login-init", response_model=LoginInitResponseSchema)
 async def login_init(
     body: LoginInitRequestSchema,
@@ -63,7 +60,6 @@ async def login_init(
 ) -> LoginInitResponseSchema:
     result = await use_case.execute(device_id=body.device_id)
     return LoginInitResponseSchema(**result.__dict__)
-
 
 @router.post("/login-complete", response_model=AuthResponseSchema)
 async def login_complete(
@@ -86,7 +82,6 @@ async def login_complete(
         raise HTTPException(status_code=401, detail="Account has been deleted")
     return AuthResponseSchema(**result.__dict__)
 
-
 @router.post("/logout", response_model=LogoutResponseSchema)
 async def logout(
     body: LogoutRequestSchema,
@@ -95,14 +90,12 @@ async def logout(
     result = await use_case.execute(access_token=body.access_token)
     return LogoutResponseSchema(**result.__dict__)
 
-
 @router.get("/health", response_model=HealthResponseSchema)
 async def health_check(
     gateway: IAuthGateway = Depends(get_auth_gateway),
 ) -> HealthResponseSchema:
     result = await gateway.health_check()
     return HealthResponseSchema(**result.__dict__)
-
 
 @router.post("/invite", response_model=CreateInviteResponseSchema, status_code=201)
 async def create_invite(

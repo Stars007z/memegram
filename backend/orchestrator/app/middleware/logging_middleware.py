@@ -20,12 +20,8 @@ from starlette.responses import Response
 
 from app.logging_config import get_logger
 
-
 logger = get_logger("http.access")
 
-# ── Field classification ──────────────────────────────────────────────
-
-# Fields whose values must be redacted in logs
 _SENSITIVE_FIELDS = frozenset({
     "access_token",
     "refresh_token",
@@ -48,7 +44,6 @@ _SENSITIVE_FIELDS = frozenset({
     "upload_url",
 })
 
-# Paths excluded from access logging (noisy / health checks)
 _SKIP_PATHS = frozenset({
     "/health",
     "/api/v1/auth/health",
@@ -60,9 +55,6 @@ _SKIP_PATHS = frozenset({
     "/openapi.json",
     "/redoc",
 })
-
-
-# ── Helpers ───────────────────────────────────────────────────────────
 
 def _sanitize_body(body: dict) -> dict:
     """Replace sensitive values with '***'."""
@@ -76,7 +68,6 @@ def _sanitize_body(body: dict) -> dict:
             sanitized[key] = value
     return sanitized
 
-
 def _extract_caller(request: Request) -> dict[str, str]:
     """Extract caller identity from the session context set by auth dependency."""
     info: dict[str, str] = {}
@@ -87,9 +78,6 @@ def _extract_caller(request: Request) -> dict[str, str]:
         if session.device_id:
             info["device_id"] = session.device_id
     return info
-
-
-# ── Middleware ────────────────────────────────────────────────────────
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Emits one structured log entry per HTTP request.
@@ -109,7 +97,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         trace_id = str(uuid.uuid4())
         start = time.monotonic()
 
-        # Cache request body for error logging (read once, replay later)
         request_body: dict | None = None
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             try:

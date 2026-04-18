@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 class Settings:
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
@@ -13,30 +12,25 @@ class Settings:
     )
     GRPC_PORT: int = int(os.getenv("GRPC_PORT", 50057))
 
-    # Own Redis (cache, deduplication)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6382/0")
 
-    # Messaging-service Redis (consume notifications:events stream)
     MESSAGING_REDIS_URL: str = os.getenv(
         "MESSAGING_REDIS_URL", "redis://localhost:6381/0",
     )
     STREAM_NAME: str = os.getenv("STREAM_NAME", "notifications:events")
     CONSUMER_GROUP: str = os.getenv("CONSUMER_GROUP", "notifications-cg")
 
-    # FCM (Android)
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS", "",
     )
     FCM_PROJECT_ID: str = os.getenv("FCM_PROJECT_ID", "")
 
-    # APNs (iOS)
     APNS_KEY_PATH: str = os.getenv("APNS_KEY_PATH", "")
     APNS_KEY_ID: str = os.getenv("APNS_KEY_ID", "")
     APNS_TEAM_ID: str = os.getenv("APNS_TEAM_ID", "")
     APNS_BUNDLE_ID: str = os.getenv("APNS_BUNDLE_ID", "com.memegram.app")
     APNS_USE_SANDBOX: bool = os.getenv("APNS_USE_SANDBOX", "true").lower() == "true"
 
-    # Retry
     MAX_RETRY_ATTEMPTS: int = int(os.getenv("MAX_RETRY_ATTEMPTS", 5))
     RETRY_BASE_DELAY_SEC: float = float(os.getenv("RETRY_BASE_DELAY_SEC", 1))
     RETRY_JITTER_PERCENT: int = int(os.getenv("RETRY_JITTER_PERCENT", 30))
@@ -47,7 +41,6 @@ class Settings:
         os.getenv("STREAM_DEAD_LETTER_THRESHOLD", 10),
     )
 
-    # gRPC dependencies
     MESSAGING_GRPC_HOST: str = os.getenv("MESSAGING_GRPC_HOST", "localhost")
     MESSAGING_GRPC_PORT: int = int(os.getenv("MESSAGING_GRPC_PORT", 50054))
 
@@ -89,10 +82,8 @@ class Settings:
     def contacts_grpc_address(self) -> str:
         return f"{self.CONTACTS_GRPC_HOST}:{self.CONTACTS_GRPC_PORT}"
 
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-
 
 settings = get_settings()

@@ -6,7 +6,6 @@ from app.generated import notifications_pb2_grpc
 from app.grpc_handlers.health_handler import HealthHandler
 from app.grpc_handlers.token_handler import TokenHandler
 
-
 class NotificationsHandler(notifications_pb2_grpc.NotificationsServiceServicer):
 
     def __init__(self, container: Container) -> None:

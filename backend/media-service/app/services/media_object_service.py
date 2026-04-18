@@ -15,10 +15,8 @@ from app.services.interfaces.media_object_service import (
     VerifyResult,
 )
 
-
 def _mime_prefix(mime_type: str) -> str:
     return mime_type.split("/")[0] if "/" in mime_type else "unknown"
-
 
 class MediaObjectServiceImpl(IMediaObjectService):
     def __init__(
@@ -83,7 +81,6 @@ class MediaObjectServiceImpl(IMediaObjectService):
 
         actual_size = head["content_length"]
 
-        # ±1% tolerance on encrypted size
         if obj.encrypted_size > 0:
             diff = abs(actual_size - obj.encrypted_size) / obj.encrypted_size
             if diff > 0.01:

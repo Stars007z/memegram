@@ -10,7 +10,6 @@ from app.database.session import get_session
 from app.config import settings
 from app.database.redis import RedisClient
 
-# Initialize structured logging before anything else
 setup_logging()
 logger = get_logger(__name__)
 
@@ -45,7 +44,6 @@ async def serve():
         await close_db()
         await RedisClient.close()
         logger.info("service.stopped", message="All connections closed")
-
 
 if __name__ == '__main__':
     asyncio.run(serve())

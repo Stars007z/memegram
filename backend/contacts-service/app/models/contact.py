@@ -5,7 +5,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.base import Base
 
-
 class Contact(Base):
     __tablename__ = "contacts"
     __table_args__ = (

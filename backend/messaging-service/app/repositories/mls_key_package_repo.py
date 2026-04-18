@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mls_key_package import MlsKeyPackage
 from app.repositories.base import BaseRepository
 
-
 class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
     def __init__(self, session: AsyncSession):
         super().__init__(MlsKeyPackage, session)

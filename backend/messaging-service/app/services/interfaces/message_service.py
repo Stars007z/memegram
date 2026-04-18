@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Optional
 import uuid
 
-
 @dataclass
 class MessageResult:
     id: uuid.UUID
@@ -18,18 +17,15 @@ class MessageResult:
     edited_at: Optional[float]
     deleted_at: Optional[float]
 
-
 @dataclass
 class SendResult:
     message_id: uuid.UUID
     created_at: float
 
-
 @dataclass
 class MessageListResult:
     messages: list[MessageResult]
     has_more: bool
-
 
 class IMessageService(ABC):
 

@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
 
-
 class UserProfileResponseSchema(BaseModel):
     id: str
     username: str
@@ -11,11 +10,10 @@ class UserProfileResponseSchema(BaseModel):
     bio: str
     last_active: int
     is_deleted: bool
-    # True if the requester has blocked this user (requester -> user)
-    is_peer_blocked: bool = False
-    # True if this user has blocked the requester (user -> requester)
-    is_blocked_by_peer: bool = False
 
+    is_peer_blocked: bool = False
+
+    is_blocked_by_peer: bool = False
 
 class UpdateUserRequestSchema(BaseModel):
     bio: Optional[str] = None
@@ -23,10 +21,8 @@ class UpdateUserRequestSchema(BaseModel):
     avatar_media_id: Optional[str] = None
     profile_background_media_id: Optional[str] = None
 
-
 class DeleteUserResponseSchema(BaseModel):
     success: bool
-
 
 class UserSettingsResponseSchema(BaseModel):
     id: str
@@ -48,7 +44,6 @@ class UserSettingsResponseSchema(BaseModel):
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
-
 class UpdateUserSettingsRequestSchema(BaseModel):
     theme: Optional[str] = None
     language: Optional[str] = None
@@ -67,10 +62,6 @@ class UpdateUserSettingsRequestSchema(BaseModel):
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
-
-# ── Settings sync (smart media caching) ──────────────────────────────
-
-
 class SyncSettingsRequestSchema(BaseModel):
     """Client sends its locally cached media IDs.
     Server compares them with current values and returns
@@ -82,7 +73,6 @@ class SyncSettingsRequestSchema(BaseModel):
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
-
 class MediaDownloadInfoSchema(BaseModel):
     field: str
     item_id: str
@@ -90,11 +80,9 @@ class MediaDownloadInfoSchema(BaseModel):
     expires_at: int
     mime_type: str
 
-
 class SyncSettingsResponseSchema(BaseModel):
     settings: UserSettingsResponseSchema
     media_updates: List[MediaDownloadInfoSchema] = []
-
 
 class UserHealthResponseSchema(BaseModel):
     status: str

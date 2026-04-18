@@ -7,7 +7,6 @@ from app.services.contacts_service import ContactsService
 from app.services.user_client import get_user_client, UserBriefProfile
 from typing import Optional
 
-
 def _brief_profile_to_proto(profile: Optional[UserBriefProfile]) -> contacts_pb2.UserBriefProfile:
     if not profile:
         return contacts_pb2.UserBriefProfile()
@@ -19,7 +18,6 @@ def _brief_profile_to_proto(profile: Optional[UserBriefProfile]) -> contacts_pb2
         avatar_media_id=profile.avatar_media_id,
     )
 
-
 def _contact_dict_to_proto(d: dict) -> contacts_pb2.ContactEntry:
     return contacts_pb2.ContactEntry(
         contact_user_id=d["contact_user_id"],
@@ -28,7 +26,6 @@ def _contact_dict_to_proto(d: dict) -> contacts_pb2.ContactEntry:
         profile=_brief_profile_to_proto(d.get("profile")),
     )
 
-
 def _blocked_dict_to_proto(d: dict) -> contacts_pb2.BlockedEntry:
     return contacts_pb2.BlockedEntry(
         blocked_user_id=d["blocked_user_id"],
@@ -36,13 +33,11 @@ def _blocked_dict_to_proto(d: dict) -> contacts_pb2.BlockedEntry:
         profile=_brief_profile_to_proto(d.get("profile")),
     )
 
-
 _GRPC_STATUS_MAP = {
     "NOT_FOUND": grpc.StatusCode.NOT_FOUND,
     "ALREADY_EXISTS": grpc.StatusCode.ALREADY_EXISTS,
     "INVALID_ARGUMENT": grpc.StatusCode.INVALID_ARGUMENT,
 }
-
 
 def _map_error(e: ValueError) -> tuple[grpc.StatusCode, str]:
     msg = str(e)
@@ -51,15 +46,12 @@ def _map_error(e: ValueError) -> tuple[grpc.StatusCode, str]:
         return _GRPC_STATUS_MAP.get(code_str, grpc.StatusCode.INTERNAL), detail
     return grpc.StatusCode.INTERNAL, msg
 
-
 class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
     def __init__(self, get_session):
         self.get_session = get_session
 
     def _svc(self, session) -> ContactsService:
         return ContactsService(session, get_user_client())
-
-    # ── AddContact ───────────────────────────────────────────────────────────
 
     async def AddContact(self, request, context):
         if not request.user_id or not request.user_public_key:
@@ -85,8 +77,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.AddContactResponse()
 
-    # ── RemoveContact ────────────────────────────────────────────────────────
-
     async def RemoveContact(self, request, context):
         if not request.user_id or not request.contact_user_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
@@ -106,8 +96,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.RemoveContactResponse(success=False)
-
-    # ── GetContacts ──────────────────────────────────────────────────────────
 
     async def GetContacts(self, request, context):
         if not request.user_id:
@@ -129,8 +117,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.GetContactsResponse()
-
-    # ── UpdateContact ────────────────────────────────────────────────────────
 
     async def UpdateContact(self, request, context):
         if not request.user_id or not request.contact_user_id:
@@ -158,8 +144,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.UpdateContactResponse()
 
-    # ── BlockUser ────────────────────────────────────────────────────────────
-
     async def BlockUser(self, request, context):
         if not request.user_id or not request.blocked_user_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
@@ -183,8 +167,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.BlockUserResponse()
 
-    # ── UnblockUser ──────────────────────────────────────────────────────────
-
     async def UnblockUser(self, request, context):
         if not request.user_id or not request.blocked_user_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
@@ -204,8 +186,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.UnblockUserResponse(success=False)
-
-    # ── GetBlockedUsers ──────────────────────────────────────────────────────
 
     async def GetBlockedUsers(self, request, context):
         if not request.user_id:
@@ -228,8 +208,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.GetBlockedUsersResponse()
 
-    # ── IsContact (internal) ─────────────────────────────────────────────────
-
     async def IsContact(self, request, context):
         if not request.user_id or not request.contact_user_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
@@ -246,8 +224,6 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.IsContactResponse(is_contact=False)
-
-    # ── IsBlocked (internal) ─────────────────────────────────────────────────
 
     async def IsBlocked(self, request, context):
         if not request.user_id or not request.blocked_user_id:

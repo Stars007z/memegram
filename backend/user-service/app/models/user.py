@@ -5,7 +5,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base
 
-
 class User(Base):
     __tablename__ = "users"
 
@@ -13,7 +12,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False, unique=False, index=True)
     avatar_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     profile_background_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
-    user_public_key: Mapped[str] = mapped_column(String(2048), nullable=True)  # base64
+    user_public_key: Mapped[str] = mapped_column(String(2048), nullable=True)
     bio: Mapped[str] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     last_active: Mapped[datetime] = mapped_column(DateTime, nullable=True)

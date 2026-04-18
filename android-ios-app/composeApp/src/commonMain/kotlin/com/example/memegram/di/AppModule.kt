@@ -31,7 +31,7 @@ val appModule = module {
     single { SessionManager(get(named("secure"))) }
     single { createHttpClient() }
     single<KeyManager> { createPlatformKeyManager(get()) }
-    single { ApiService(get(), get(), baseUrl = "http://10.0.2.2:8000") }
+    single { ApiService(get(), get(), baseUrl = "https://memegram.win") }
     single { ThemePreferences(get()) }
     single<UserRepository> { UserRepositoryImpl(get()) }
     single<ContactsRepository> { ContactsRepositoryImpl(get()) }

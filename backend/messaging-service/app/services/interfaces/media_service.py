@@ -3,20 +3,17 @@ from dataclasses import dataclass
 from typing import Optional
 import uuid
 
-
 @dataclass
 class UploadInitResult:
     media_id: uuid.UUID
     upload_url: str
     expires_in: int
 
-
 @dataclass
 class DownloadUrlResult:
     download_url: str
     expires_in: int
     encryption_metadata: bytes
-
 
 class IMediaService(ABC):
 

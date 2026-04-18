@@ -39,7 +39,7 @@ class AudioRecorderIOS : AudioRecorder {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun stopRecording(): AudioRecordResult? {
+    override fun stopRecording(waveform: String): AudioRecordResult? {
         recorder?.stop()
         val duration = kotlin.time.Clock.System.now().toEpochMilliseconds() - startTime
         val data = NSData.dataWithContentsOfURL(recordUrl!!) ?: return null
@@ -49,7 +49,31 @@ class AudioRecorderIOS : AudioRecorder {
         }
 
         recorder = null
-        return AudioRecordResult(bytes, duration)
+        return AudioRecordResult(bytes, duration, waveform)
+    }
+
+    override fun pauseRecording() {
+        // TODO: implement pause/resume on iOS
+        recorder?.pause()
+    }
+
+    override fun resumeRecording() {
+        // TODO: implement pause/resume on iOS
+        recorder?.record()
+    }
+
+    override fun getMaxAmplitude(): Int {
+        // TODO: implement amplitude metering on iOS (updateMeters / averagePowerForChannel)
+        return 0
+    }
+
+    override fun hasPermission(): Boolean {
+        // TODO: implement permission check via AVAudioSession.recordPermission
+        return true
+    }
+
+    override fun requestPermission() {
+        // TODO: implement AVAudioSession.requestRecordPermission
     }
 
     override fun cancelRecording() {

@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.device_registration import DeviceRegistration
 from app.repositories.base import BaseRepository
 
-
 class DeviceRegistrationRepository(BaseRepository[DeviceRegistration]):
     def __init__(self, session: AsyncSession):
         super().__init__(DeviceRegistration, session)

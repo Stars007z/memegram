@@ -18,7 +18,6 @@ logger = get_logger(__name__)
 
 REGISTRATION_TTL_MINUTES = 10
 
-
 class DeviceService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -26,8 +25,6 @@ class DeviceService:
         self.registration_repo = DeviceRegistrationRepository(session)
         self.session_repo = SessionRepository(session)
         self._auth_service = AuthService(session)
-
-    # ── Init device addition ──────────────────────────────────────────
 
     async def init_device_addition(self, user_id: str, device_id: str) -> dict:
         device = await self.device_repo.get_by_device_id(device_id)
@@ -58,8 +55,6 @@ class DeviceService:
             "expires_at": int(expires_at.timestamp()),
             "registration_code": code,
         }
-
-    # ── Submit new device data ────────────────────────────────────────
 
     async def submit_device_data(
         self,
@@ -95,8 +90,6 @@ class DeviceService:
             "expires_at": int(reg.expires_at.timestamp()),
         }
 
-    # ── Get device addition status ────────────────────────────────────
-
     async def get_device_addition_status(self, registration_id: str) -> dict:
         reg = await self.registration_repo.get_by_registration_id(uuid.UUID(registration_id))
         if not reg:
@@ -126,8 +119,6 @@ class DeviceService:
 
         return result
 
-    # ── Get pending device additions ──────────────────────────────────
-
     async def get_pending_device_additions(self, user_id: str, device_id: str) -> list[dict]:
         device = await self.device_repo.get_by_device_id(device_id)
         if not device:
@@ -151,8 +142,6 @@ class DeviceService:
             }
             for r in registrations
         ]
-
-    # ── Confirm device addition ───────────────────────────────────────
 
     async def confirm_device_addition(
         self,
@@ -245,13 +234,9 @@ class DeviceService:
             "expires_at": int(expires_at.timestamp()),
         }
 
-    # ── Get devices ───────────────────────────────────────────────────
-
     async def get_devices(self, user_id: str) -> list[dict]:
         devices = await self.device_repo.get_by_user_id(uuid.UUID(user_id))
         return [self._device_to_dict(d) for d in devices]
-
-    # ── Get single device ─────────────────────────────────────────────
 
     async def get_device(self, user_id: str, device_id: str) -> dict:
         device = await self.device_repo.get_by_device_id(device_id)
@@ -260,8 +245,6 @@ class DeviceService:
         if str(device.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
         return self._device_to_dict(device)
-
-    # ── Revoke device ─────────────────────────────────────────────────
 
     async def revoke_device(
         self,
@@ -312,8 +295,6 @@ class DeviceService:
             "revoked_at": int(now.timestamp()),
         }
 
-    # ── Update device keys ────────────────────────────────────────────
-
     async def update_device_keys(
         self,
         user_id: str,
@@ -343,8 +324,6 @@ class DeviceService:
             "message": "Device keys updated",
             "updated_at": int(now.timestamp()),
         }
-
-    # ── Rename device ─────────────────────────────────────────────────
 
     async def rename_device(
         self,
@@ -380,8 +359,6 @@ class DeviceService:
             "message": "Device renamed successfully",
         }
 
-    # ── Verify device ─────────────────────────────────────────────────
-
     async def verify_device(self, device_id: str, signature: bytes) -> dict:
         device = await self.device_repo.get_by_device_id(device_id)
         if not device:
@@ -397,8 +374,6 @@ class DeviceService:
             return {"valid": False, "message": f"Verification error: {e}"}
 
         return {"valid": True, "message": "Device verified successfully"}
-
-    # ── Transfer primary ──────────────────────────────────────────────
 
     async def transfer_primary(
         self,
@@ -439,8 +414,6 @@ class DeviceService:
             "new_primary_device_id": str(target.id),
             "message": "Primary status transferred successfully",
         }
-
-    # ── Bulk revoke ───────────────────────────────────────────────────
 
     async def bulk_revoke_devices(
         self,
@@ -494,8 +467,6 @@ class DeviceService:
             "revoked_device_ids": revoked_ids,
         }
 
-    # ── Device stats ──────────────────────────────────────────────────
-
     async def get_device_stats(self, user_id: str) -> dict:
         stats = await self.device_repo.get_stats(uuid.UUID(user_id))
         last_activity = stats["last_activity_at"]
@@ -506,8 +477,6 @@ class DeviceService:
             "type_stats": stats["type_stats"],
             "last_activity_at": int(last_activity.timestamp()) if last_activity else 0,
         }
-
-    # ── Helpers ────────────────────────────────────────────────────────
 
     async def _revoke_device_sessions(self, device_id: uuid.UUID) -> None:
         from app.models.session import Session as SessionModel

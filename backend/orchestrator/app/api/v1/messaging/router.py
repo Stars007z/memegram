@@ -66,7 +66,6 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/messaging", tags=["messaging"])
 
-
 def _conv_to_schema(r):
     mls = None
     if r.mls_group:
@@ -83,7 +82,6 @@ def _conv_to_schema(r):
         mls_group=mls, created_at=r.created_at,
         avatar_media_id=r.avatar_media_id,
     )
-
 
 async def _augment_conv_with_blocks(
     schema: ConversationResponseSchema,
@@ -118,7 +116,6 @@ async def _augment_conv_with_blocks(
         logger.warning("conv.block_flags_failed", error=str(e))
     return schema
 
-
 def _msg_to_schema(m):
     return MessageEntrySchema(
         id=m.id,
@@ -134,9 +131,6 @@ def _msg_to_schema(m):
         deleted_at=m.deleted_at,
     )
 
-
-# ── Key Packages ──────────────────────────────────────────────────────
-
 @router.post("/key-packages", response_model=UploadKeyPackagesResponseSchema, status_code=201)
 async def upload_key_packages(
     body: UploadKeyPackagesRequestSchema,
@@ -149,7 +143,6 @@ async def upload_key_packages(
         key_packages=[b64_to_bytes(kp) for kp in body.key_packages],
     )
     return UploadKeyPackagesResponseSchema(uploaded_count=count)
-
 
 @router.delete("/key-packages", response_model=DeleteKeyPackagesResponseSchema)
 async def delete_my_key_packages(
@@ -168,18 +161,17 @@ async def delete_my_key_packages(
     )
     return DeleteKeyPackagesResponseSchema(deleted_count=deleted)
 
-
 @router.get(
     "/key-packages/by-user/{target_user_id}",
     response_model=GetKeyPackagesForUserResponseSchema,
 )
 async def get_key_packages_for_user(
     target_user_id: str,
-    response: Response,  # 🔥 ИНЖЕКТИМ RESPONSE
+    response: Response,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
 ):
-    # 🔥 ЖЕСТКО ОТКЛЮЧАЕМ КЭШ НА МОБИЛКЕ
+
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     results = await gw.get_key_packages_for_user(target_user_id)
     return GetKeyPackagesForUserResponseSchema(
@@ -193,7 +185,6 @@ async def get_key_packages_for_user(
         ],
     )
 
-
 @router.get("/key-packages/count", response_model=KeyPackagesCountResponseSchema)
 async def get_key_packages_count(
     response: Response,
@@ -203,9 +194,6 @@ async def get_key_packages_count(
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     count = await gw.get_key_packages_count(session.user_id, session.device_id)
     return KeyPackagesCountResponseSchema(available_count=count)
-
-
-# ── Conversations ─────────────────────────────────────────────────────
 
 @router.post("/conversations/direct", response_model=ConversationResponseSchema, status_code=201)
 async def create_direct_conversation(
@@ -224,7 +212,6 @@ async def create_direct_conversation(
         ],
     )
     return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
-
 
 @router.post("/conversations/group", response_model=ConversationResponseSchema, status_code=201)
 async def create_group_conversation(
@@ -250,7 +237,6 @@ async def create_group_conversation(
     )
     return _conv_to_schema(result)
 
-
 @router.get("/conversations", response_model=GetConversationsResponseSchema)
 async def get_conversations(
     response: Response,
@@ -275,7 +261,6 @@ async def get_conversations(
         next_cursor=result.next_cursor,
     )
 
-
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponseSchema)
 async def get_conversation(
     conversation_id: str,
@@ -287,7 +272,6 @@ async def get_conversation(
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_conversation(session.user_id, conversation_id)
     return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
-
 
 @router.post(
     "/conversations/{conversation_id}/leave",
@@ -307,7 +291,6 @@ async def leave_conversation(
     )
     return LeaveConversationResponseSchema(success=success)
 
-
 @router.post(
     "/conversations/{conversation_id}/members/{target_user_id}/kick",
     response_model=KickMemberResponseSchema,
@@ -324,7 +307,6 @@ async def kick_member(
         target_user_id=target_user_id,
     )
     return KickMemberResponseSchema(success=success)
-
 
 @router.patch(
     "/conversations/{conversation_id}/members/{target_user_id}/role",
@@ -345,7 +327,6 @@ async def update_member_role(
     )
     return UpdateMemberRoleResponseSchema(success=success)
 
-
 @router.patch(
     "/conversations/{conversation_id}/avatar",
     response_model=SuccessResponseSchema,
@@ -362,7 +343,6 @@ async def update_group_avatar(
         avatar_media_id=body.avatar_media_id,
     )
     return SuccessResponseSchema(success=success)
-
 
 @router.patch(
     "/conversations/{conversation_id}/name",
@@ -381,7 +361,6 @@ async def update_group_name(
     )
     return SuccessResponseSchema(success=success)
 
-
 @router.delete(
     "/conversations/{conversation_id}",
     response_model=SuccessResponseSchema,
@@ -396,9 +375,6 @@ async def delete_conversation(
         conversation_id=conversation_id,
     )
     return SuccessResponseSchema(success=success)
-
-
-# ── Messages ──────────────────────────────────────────────────────────
 
 @router.post(
     "/conversations/{conversation_id}/messages",
@@ -422,7 +398,6 @@ async def send_message(
         client_message_id=body.client_message_id,
     )
     return SendMessageResponseSchema(message_id=result.message_id, created_at=result.created_at)
-
 
 @router.get(
     "/conversations/{conversation_id}/messages",
@@ -448,7 +423,6 @@ async def get_messages(
         has_more=result.has_more,
     )
 
-
 @router.patch("/messages/{message_id}", response_model=MessageEntrySchema)
 async def edit_message(
     message_id: str,
@@ -464,7 +438,6 @@ async def edit_message(
     )
     return _msg_to_schema(result)
 
-
 @router.delete("/messages/{message_id}", response_model=DeleteMessageResponseSchema)
 async def delete_message(
     message_id: str,
@@ -478,7 +451,6 @@ async def delete_message(
         delete_for_everyone=body.delete_for_everyone,
     )
     return DeleteMessageResponseSchema(success=success)
-
 
 @router.post(
     "/conversations/{conversation_id}/read",
@@ -497,9 +469,6 @@ async def mark_as_read(
         last_read_message_id=body.last_read_message_id,
     )
     return MarkAsReadResponseSchema(unread_count=unread)
-
-
-# ── MLS Group Management ─────────────────────────────────────────────
 
 @router.post(
     "/conversations/{conversation_id}/mls/commit",
@@ -530,7 +499,6 @@ async def commit_group_change(
         new_epoch=result.new_epoch, committed_at=result.committed_at,
     )
 
-
 @router.get("/welcomes", response_model=GetPendingWelcomesResponseSchema)
 async def get_pending_welcomes(
     response: Response,
@@ -549,7 +517,6 @@ async def get_pending_welcomes(
         ],
     )
 
-
 @router.post("/welcomes/{welcome_id}/ack", response_model=AckWelcomeResponseSchema)
 async def ack_welcome(
     welcome_id: str,
@@ -558,7 +525,6 @@ async def ack_welcome(
 ):
     success = await gw.ack_welcome(session.device_id, welcome_id)
     return AckWelcomeResponseSchema(success=success)
-
 
 @router.get(
     "/conversations/{conversation_id}/mls/commits",
@@ -584,9 +550,6 @@ async def get_pending_commits(
         ],
     )
 
-
-# ── Media ─────────────────────────────────────────────────────────────
-
 @router.post("/media/upload", response_model=InitiateMediaUploadResponseSchema, status_code=201)
 async def initiate_media_upload(
     body: InitiateMediaUploadRequestSchema,
@@ -604,7 +567,6 @@ async def initiate_media_upload(
         media_id=result.media_id, upload_url=result.upload_url, expires_in=result.expires_in,
     )
 
-
 @router.post("/media/{media_id}/confirm", response_model=ConfirmMediaUploadResponseSchema)
 async def confirm_media_upload(
     media_id: str,
@@ -613,7 +575,6 @@ async def confirm_media_upload(
 ):
     success = await gw.confirm_media_upload(session.user_id, media_id)
     return ConfirmMediaUploadResponseSchema(success=success)
-
 
 @router.get("/media/{media_id}/download", response_model=GetMediaDownloadUrlResponseSchema)
 async def get_media_download_url(
@@ -630,9 +591,6 @@ async def get_media_download_url(
         encryption_metadata=result.encryption_metadata,
     )
 
-
-# ── Presence ──────────────────────────────────────────────────────────
-
 @router.post("/typing", response_model=SuccessResponseSchema)
 async def set_typing(
     body: SetTypingRequestSchema,
@@ -647,7 +605,6 @@ async def set_typing(
     )
     return SuccessResponseSchema(success=success)
 
-
 @router.post("/online", response_model=SuccessResponseSchema)
 async def set_online(
     session: SessionContext = Depends(get_current_session),
@@ -655,9 +612,6 @@ async def set_online(
 ):
     success = await gw.set_online(session.user_id, session.device_id)
     return SuccessResponseSchema(success=success)
-
-
-# ── Streaming (SSE) ──────────────────────────────────────────────────
 
 @router.get("/events")
 async def subscribe_events(
@@ -680,9 +634,6 @@ async def subscribe_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-# ── Health ────────────────────────────────────────────────────────────
 
 @router.get("/health", response_model=MessagingHealthResponseSchema)
 async def messaging_health(

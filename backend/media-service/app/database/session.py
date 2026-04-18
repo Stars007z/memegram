@@ -7,7 +7,7 @@ from app.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,  # SQL logging is controlled by logging_config (sqlalchemy.engine level)
+    echo=False,
     pool_pre_ping=True,
 )
 
@@ -16,7 +16,6 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
 
 @asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -29,7 +28,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         raise
     finally:
         await session.close()
-
 
 async def close_db() -> None:
     await engine.dispose()

@@ -5,7 +5,6 @@ import redis.asyncio as aioredis
 from app.services.interfaces.presence_service import IPresenceService
 from app.services.interfaces.stream_service import IStreamService
 
-
 class PresenceServiceImpl(IPresenceService):
 
     def __init__(self, redis: aioredis.Redis, stream_service: IStreamService) -> None:

@@ -15,7 +15,6 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-
 def upgrade() -> None:
     op.create_table(
         "media_objects",
@@ -36,7 +35,6 @@ def upgrade() -> None:
         ["status", "expires_at"],
         postgresql_where=sa.text("status = 'uploaded' AND expires_at IS NOT NULL"),
     )
-
 
 def downgrade() -> None:
     op.drop_index("ix_media_objects_expiry", table_name="media_objects")
