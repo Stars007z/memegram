@@ -27,7 +27,6 @@ from app.services.interfaces import (
     IStreamService,
 )
 
-
 class RequestScope:
     """Per-request scope: owns a DB session, lazily builds services."""
 
@@ -70,7 +69,7 @@ class RequestScope:
                 redis=self._redis,
                 stream_service=self._stream,
             )
-        return self._cache["conversation"]  # type: ignore[return-value]
+        return self._cache["conversation"]
 
     @property
     def message_service(self) -> IMessageService:
@@ -89,7 +88,7 @@ class RequestScope:
                 media_service=self.media_service,
                 contacts_client=self._contacts,
             )
-        return self._cache["message"]  # type: ignore[return-value]
+        return self._cache["message"]
 
     @property
     def mls_service(self) -> IMlsService:
@@ -111,7 +110,7 @@ class RequestScope:
                 redis=self._redis,
                 stream_service=self._stream,
             )
-        return self._cache["mls"]  # type: ignore[return-value]
+        return self._cache["mls"]
 
     @property
     def media_service(self) -> IMediaService:
@@ -125,8 +124,7 @@ class RequestScope:
                 member_repo=MemberRepository(self._session),
                 media_client=self._media,
             )
-        return self._cache["media"]  # type: ignore[return-value]
-
+        return self._cache["media"]
 
 class Container:
     """Application-level DI container (singleton for the process lifetime)."""

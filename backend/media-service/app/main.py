@@ -19,7 +19,6 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
-
 async def serve() -> None:
     s3_client = S3Client()
     container = Container(s3=s3_client)
@@ -44,7 +43,6 @@ async def serve() -> None:
         from app.database.session import close_db
         await close_db()
         logger.info("service.stopped")
-
 
 if __name__ == "__main__":
     asyncio.run(serve())

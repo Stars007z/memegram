@@ -92,7 +92,9 @@ private data class HsvColor(val hue: Float, val saturation: Float, val value: Fl
 
 private fun Color.toHexString(): String {
     val argb = this.toArgb()
-    return String.format("%06X", argb and 0xFFFFFF)
+    val rgb = argb and 0xFFFFFF
+    val hex = rgb.toString(16).uppercase()
+    return hex.padStart(6, '0')
 }
 
 private fun hexToColor(hex: String): Color? {

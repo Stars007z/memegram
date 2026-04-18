@@ -4,7 +4,6 @@ from app.services.auth_service import AuthService
 from app.services.device_service import DeviceService
 from app.database.redis import check_redis_health
 
-
 class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
     def __init__(self, get_session):
         self.get_session = get_session
@@ -191,8 +190,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 return auth_pb2.ValidateTokenResponse(**result)
             except Exception:
                 return auth_pb2.ValidateTokenResponse(valid=False)
-
-    # ── Device management handlers ────────────────────────────────────
 
     async def InitDeviceAddition(self, request, context):
         if not request.user_id or not request.device_id:
@@ -579,8 +576,6 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return auth_pb2.GetDeviceStatsResponse()
-
-    # ── Helper ────────────────────────────────────────────────────────
 
     @staticmethod
     def _device_dict_to_pb(d: dict) -> auth_pb2.DeviceInfo:

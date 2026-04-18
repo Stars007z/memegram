@@ -14,7 +14,6 @@ from app.infrastructure.grpc.generated import item_storage_pb2, item_storage_pb2
 
 _SERVICE = "Item-storage service"
 
-
 class GrpcItemStorageGateway(IItemStorageGateway):
 
     def __init__(self, channels: GrpcChannelManager, settings: Settings):

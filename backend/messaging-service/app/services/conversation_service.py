@@ -26,7 +26,6 @@ from app.services.interfaces.stream_service import IStreamService
 
 logger = get_logger(__name__)
 
-
 class ConversationServiceImpl(IConversationService):
 
     def __init__(
@@ -51,8 +50,6 @@ class ConversationServiceImpl(IConversationService):
         self._redis = redis
         self._stream = stream_service
 
-    # ── CreateDirect ────────────────────────────────
-
     async def create_direct(
         self,
         initiator_user_id: uuid.UUID,
@@ -66,9 +63,7 @@ class ConversationServiceImpl(IConversationService):
             initiator_user_id, recipient_user_id,
         )
         if existing:
-            # Idempotent: return the existing direct conversation instead of erroring.
-            # This makes "open chat from contacts" work even if it was created earlier
-            # from a different device or after a local DB wipe.
+
             existing_members = await self._members.get_active_members(existing.id)
             existing_mls = await self._mls_groups.get_by_conversation_id(existing.id)
             logger.info(
@@ -125,8 +120,6 @@ class ConversationServiceImpl(IConversationService):
         return self._build_conversation_result(
             conv, [initiator_member, recipient_member], epoch=1, cipher_suite=1,
         )
-
-    # ── CreateGroup ─────────────────────────────────
 
     async def create_group(
         self,
@@ -187,8 +180,6 @@ class ConversationServiceImpl(IConversationService):
             conv, all_members, epoch=0, cipher_suite=1,
         )
 
-    # ── GetConversations ────────────────────────────
-
     async def get_conversations(
         self,
         user_id: uuid.UUID,
@@ -226,8 +217,6 @@ class ConversationServiceImpl(IConversationService):
 
         return ConversationListResult(items=items, next_cursor=next_cursor)
 
-    # ── GetConversation ─────────────────────────────
-
     async def get_conversation(
         self,
         user_id: uuid.UUID,
@@ -250,8 +239,6 @@ class ConversationServiceImpl(IConversationService):
             cipher_suite=mls_group.cipher_suite if mls_group else 1,
         )
 
-    # ── LeaveConversation ───────────────────────────
-
     async def leave_conversation(
         self,
         user_id: uuid.UUID,
@@ -263,8 +250,6 @@ class ConversationServiceImpl(IConversationService):
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
 
-        # Mark the member as left (no MLS epoch change here —
-        # a remaining member will create the Remove Commit per RFC 9420 §12.2).
         await self._members.update(member, {"left_at": datetime.utcnow()})
 
         logger.info(
@@ -280,39 +265,32 @@ class ConversationServiceImpl(IConversationService):
 
         return True
 
-    # ── KickMember ──────────────────────────────────
-
     async def kick_member(
         self,
         caller_user_id: uuid.UUID,
         conversation_id: uuid.UUID,
         target_user_id: uuid.UUID,
     ) -> bool:
-        # Verify caller is an active admin/owner
+
         caller = await self._members.get_active_member(conversation_id, caller_user_id)
         if not caller:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
         if caller.role not in ("owner", "admin"):
             raise ValueError("PERMISSION_DENIED: Only admins can kick members")
 
-        # Cannot kick yourself (use leave instead)
         if caller_user_id == target_user_id:
             raise ValueError("INVALID_ARGUMENT: Cannot kick yourself — use leave instead")
 
-        # Verify target is an active member
         target = await self._members.get_active_member(conversation_id, target_user_id)
         if not target:
             raise ValueError("NOT_FOUND: Target user is not an active member")
 
-        # Cannot kick the owner
         if target.role == "owner":
             raise ValueError("PERMISSION_DENIED: Cannot kick the group owner")
 
-        # Admins cannot kick other admins (only owner can)
         if target.role == "admin" and caller.role != "owner":
             raise ValueError("PERMISSION_DENIED: Only the owner can kick admins")
 
-        # Mark as left
         await self._members.update(target, {"left_at": datetime.utcnow()})
 
         logger.info(
@@ -330,8 +308,6 @@ class ConversationServiceImpl(IConversationService):
 
         return True
 
-    # ── UpdateMemberRole ────────────────────────────
-
     async def update_member_role(
         self,
         caller_user_id: uuid.UUID,
@@ -342,31 +318,25 @@ class ConversationServiceImpl(IConversationService):
         if new_role not in ("admin", "member"):
             raise ValueError("INVALID_ARGUMENT: Role must be 'admin' or 'member'")
 
-        # Verify caller is an active admin/owner
         caller = await self._members.get_active_member(conversation_id, caller_user_id)
         if not caller:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
         if caller.role not in ("owner", "admin"):
             raise ValueError("PERMISSION_DENIED: Only admins can change roles")
 
-        # Cannot change own role
         if caller_user_id == target_user_id:
             raise ValueError("INVALID_ARGUMENT: Cannot change your own role")
 
-        # Verify target is an active member
         target = await self._members.get_active_member(conversation_id, target_user_id)
         if not target:
             raise ValueError("NOT_FOUND: Target user is not an active member")
 
-        # Cannot change owner's role
         if target.role == "owner":
             raise ValueError("PERMISSION_DENIED: Cannot change the owner's role")
 
-        # Only owner can demote admins
         if target.role == "admin" and new_role == "member" and caller.role != "owner":
             raise ValueError("PERMISSION_DENIED: Only the owner can demote admins")
 
-        # No-op if already that role
         if target.role == new_role:
             return True
 
@@ -387,8 +357,6 @@ class ConversationServiceImpl(IConversationService):
         })
 
         return True
-
-    # ── UpdateGroupAvatar ───────────────────────────
 
     async def update_group_avatar(
         self,
@@ -418,8 +386,6 @@ class ConversationServiceImpl(IConversationService):
         })
 
         return True
-
-    # ── UpdateGroupName ─────────────────────────────
 
     async def update_group_name(
         self,
@@ -453,8 +419,6 @@ class ConversationServiceImpl(IConversationService):
 
         return True
 
-    # ── DeleteConversation ──────────────────────────
-
     async def delete_conversation(
         self,
         caller_user_id: uuid.UUID,
@@ -464,8 +428,6 @@ class ConversationServiceImpl(IConversationService):
         if not conv:
             raise ValueError("NOT_FOUND: Conversation not found")
 
-        # Caller must currently be (or have been) a member to delete.
-        # For DMs we allow any active participant; for groups only the owner.
         caller = await self._members.get_active_member(conversation_id, caller_user_id)
         if not caller:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
@@ -476,17 +438,11 @@ class ConversationServiceImpl(IConversationService):
                 "use leave instead",
             )
 
-        # Publish deletion event BEFORE the row goes away so subscribers can
-        # purge the chat locally on every device of every participant.
         await self._stream.publish_event(conversation_id, {
             "event_type": "conversation_deleted",
             "deleted_by": str(caller_user_id),
         })
 
-        # Hard-delete dependent rows in FK-safe order. Most tables don't have
-        # ON DELETE CASCADE on conversation_id, so we wipe them explicitly.
-        # conversation_members has CASCADE on conversations.id and is removed
-        # automatically when the parent row is deleted.
         session = self._conversations.session
         cid = conversation_id
 
@@ -524,8 +480,6 @@ class ConversationServiceImpl(IConversationService):
         )
 
         return True
-
-    # ── Helpers ──────────────────────────────────────
 
     async def _check_blocks_both_ways(
         self, user_a: uuid.UUID, user_b: uuid.UUID,

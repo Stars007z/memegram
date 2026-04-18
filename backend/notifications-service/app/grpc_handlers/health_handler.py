@@ -5,7 +5,6 @@ from app.container import Container
 from app.database.redis import check_redis_health
 from app.generated import notifications_pb2
 
-
 class HealthHandler:
 
     def __init__(self, container: Container) -> None:
@@ -17,7 +16,6 @@ class HealthHandler:
         fcm_status = "unknown"
         apns_status = "unknown"
 
-        # Check PostgreSQL
         try:
             async with self._container.request_scope() as scope:
                 from sqlalchemy import text
@@ -26,14 +24,12 @@ class HealthHandler:
         except Exception as e:
             db_status = f"failed: {e}"
 
-        # Check own Redis
         try:
             redis_ok = await check_redis_health()
             redis_status = "connected" if redis_ok else "disconnected"
         except Exception as e:
             redis_status = f"failed: {e}"
 
-        # Check FCM credentials
         try:
             if settings.GOOGLE_APPLICATION_CREDENTIALS:
                 fcm_status = "configured"
@@ -42,7 +38,6 @@ class HealthHandler:
         except Exception as e:
             fcm_status = f"failed: {e}"
 
-        # Check APNs credentials
         try:
             if settings.APNS_KEY_PATH and settings.APNS_KEY_ID and settings.APNS_TEAM_ID:
                 apns_status = "configured"

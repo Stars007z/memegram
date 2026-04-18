@@ -18,7 +18,6 @@ logger = get_logger(__name__)
 ACCESS_TOKEN_MINUTES = 60
 REFRESH_TOKEN_DAYS = 7
 
-
 class AuthService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -30,7 +29,7 @@ class AuthService:
         self,
         username: str,
         invite_code: str,
-        device_id: str,          # client-provided device identifier
+        device_id: str,
         device_name: str,
         identity_key_pub: bytes,
         init_key_pub: bytes,
@@ -43,13 +42,12 @@ class AuthService:
         user_id = uuid.uuid4()
         device_uuid = uuid.uuid4()
 
-        # Admin invite creates admin device, otherwise primary
         device_type = "admin" if invite.is_admin else "primary"
 
         await self.device_repo.create({
             "id": device_uuid,
             "user_id": user_id,
-            "client_device_id": device_id,   # store client identifier separately
+            "client_device_id": device_id,
             "device_name": device_name,
             "device_type": device_type,
             "is_active": True,
@@ -92,7 +90,7 @@ class AuthService:
         }
 
     async def login_init(self, device_id: str) -> dict:
-        # device_id here is the UUID (devices.id) returned at registration
+
         device = await self.device_repo.get_by_device_id(device_id)
         if not device:
             raise ValueError("Device not found")
@@ -189,7 +187,6 @@ class AuthService:
         if session.refresh_expires_at < datetime.utcnow():
             raise ValueError("Refresh token expired")
 
-        # Revoke old session
         await self.session_repo.update(session, {
             "is_revoked": True,
             "last_used": datetime.utcnow(),

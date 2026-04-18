@@ -11,7 +11,6 @@ _CHANNEL_OPTIONS = [
     ("grpc.keepalive_permit_without_calls", True),
 ]
 
-
 class GrpcChannelManager:
     """Manages lazy-created gRPC channels keyed by service name."""
 

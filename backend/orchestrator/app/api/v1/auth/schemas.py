@@ -2,8 +2,6 @@ import base64
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
-
-
 class RegisterRequestSchema(BaseModel):
     username: str = Field(..., min_length=3, max_length=64)
     invite_code: str = Field(..., min_length=1)
@@ -27,10 +25,8 @@ class RegisterRequestSchema(BaseModel):
     def credential_data_bytes(self) -> bytes:
         return base64.b64decode(self.credential_data_b64)
 
-
 class LoginInitRequestSchema(BaseModel):
     device_id: str = Field(..., min_length=1)
-
 
 class LoginCompleteRequestSchema(BaseModel):
     device_id: str = Field(..., min_length=1)
@@ -44,15 +40,11 @@ class LoginCompleteRequestSchema(BaseModel):
     def signature_bytes(self) -> bytes:
         return base64.b64decode(self.signature_b64)
 
-
 class LogoutRequestSchema(BaseModel):
     access_token: str = Field(..., min_length=1)
 
-
 class CreateInviteRequestSchema(BaseModel):
     expires_in_days: int = Field(..., ge=1, le=365)
-
-
 
 class AuthResponseSchema(BaseModel):
     user_id: str
@@ -62,24 +54,20 @@ class AuthResponseSchema(BaseModel):
     refresh_token: str
     expires_at: int
 
-
 class LoginInitResponseSchema(BaseModel):
     challenge: str
     expires_at: int
     device_id: str
 
-
 class LogoutResponseSchema(BaseModel):
     success: bool
     message: str
-
 
 class HealthResponseSchema(BaseModel):
     status: str
     db_status: str
     redis_status: str
     version: str
-
 
 class CreateInviteResponseSchema(BaseModel):
     code: str

@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media_attachment import MediaAttachment
 from app.repositories.base import BaseRepository
 
-
 class MediaAttachmentRepository(BaseRepository[MediaAttachment]):
     def __init__(self, session: AsyncSession):
         super().__init__(MediaAttachment, session)

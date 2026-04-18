@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.blocked_user import BlockedUser
 from app.repositories.base import BaseRepository
 
-
 class BlockedUserRepository(BaseRepository[BlockedUser]):
     def __init__(self, session: AsyncSession):
         super().__init__(BlockedUser, session)

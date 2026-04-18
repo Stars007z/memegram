@@ -16,7 +16,6 @@ from app.database.session import get_session
 from app.infrastructure.s3_client import S3Client
 from app.services.interfaces import IMediaObjectService
 
-
 class RequestScope:
     """Per-request scope: owns a DB session, lazily builds services."""
 
@@ -35,8 +34,7 @@ class RequestScope:
                 repo=MediaObjectRepository(self._session),
                 s3=self._s3,
             )
-        return self._cache["media_object"]  # type: ignore[return-value]
-
+        return self._cache["media_object"]
 
 class Container:
     """Application-level DI container (singleton for the process lifetime)."""

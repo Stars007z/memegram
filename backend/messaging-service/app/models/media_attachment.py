@@ -7,7 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
-
 class MediaAttachment(Base):
     __tablename__ = "media_attachments"
 

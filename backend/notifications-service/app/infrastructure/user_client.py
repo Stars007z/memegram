@@ -12,7 +12,6 @@ from app.generated import user_pb2, user_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class UserInfo:
     user_id: str
@@ -20,12 +19,10 @@ class UserInfo:
     username: str
     avatar_media_id: str
 
-
 class IUserClient(ABC):
     @abstractmethod
     async def get_users_batch(self, user_ids: list[str]) -> list[UserInfo]:
         ...
-
 
 class GrpcUserClient(IUserClient):
 

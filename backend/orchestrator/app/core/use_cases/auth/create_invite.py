@@ -1,7 +1,6 @@
 from typing import Optional
 from app.core.interfaces.auth_gateway import IAuthGateway, CreateInviteResult
 
-
 class CreateInviteUseCase:
     def __init__(self, auth_gateway: IAuthGateway):
         self._gateway = auth_gateway

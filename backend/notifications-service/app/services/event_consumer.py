@@ -33,7 +33,6 @@ from app.services.push_sender import (
 
 logger = get_logger(__name__)
 
-# message_type → human-readable label
 MESSAGE_TYPE_LABELS: dict[str, str] = {
     "text": "Новое сообщение",
     "image": "Фото",
@@ -41,7 +40,6 @@ MESSAGE_TYPE_LABELS: dict[str, str] = {
     "audio": "Голосовое сообщение",
     "file": "Файл",
 }
-
 
 class EventConsumer:
     """Consumes ``notifications:events`` Redis Stream and dispatches push."""
@@ -78,7 +76,7 @@ class EventConsumer:
             )
             logger.info("consumer_group.created", group=self._group, stream=self._stream)
         except Exception:
-            # Group already exists
+
             pass
 
         self._running = True
@@ -90,8 +88,6 @@ class EventConsumer:
 
     async def stop(self) -> None:
         self._running = False
-
-    # ── Main consume loop ────────────────────────────────────────────
 
     async def _consume_loop(self) -> None:
         while self._running:
@@ -114,8 +110,6 @@ class EventConsumer:
                 logger.error("event_consumer.loop_error", error=str(e))
                 await asyncio.sleep(1)
 
-    # ── Claim stale messages ─────────────────────────────────────────
-
     async def _claim_loop(self) -> None:
         """Periodically claim messages stuck in pending for >60s."""
         while self._running:
@@ -129,7 +123,7 @@ class EventConsumer:
                     start_id="0",
                     count=10,
                 )
-                # result = (next_start_id, [(id, fields), ...], [deleted_ids])
+
                 if result and len(result) > 1:
                     claimed = result[1]
                     for entry_id, fields in claimed:
@@ -137,12 +131,10 @@ class EventConsumer:
             except Exception as e:
                 logger.error("event_consumer.claim_error", error=str(e))
 
-    # ── Entry processing ─────────────────────────────────────────────
-
     async def _process_entry(self, entry_id: bytes | str, fields: dict) -> None:
         entry_id_str = entry_id.decode() if isinstance(entry_id, bytes) else entry_id
         try:
-            # Decode fields
+
             decoded: dict[str, str] = {}
             for k, v in fields.items():
                 key = k.decode() if isinstance(k, bytes) else k
@@ -153,7 +145,6 @@ class EventConsumer:
             payload_raw = decoded.get("payload", "{}")
             payload = json.loads(payload_raw)
 
-            # Deduplication
             dedup_key = f"notif:dedup:{entry_id_str}"
             was_set = await self._own_redis.set(dedup_key, "1", nx=True, ex=3600)
             if not was_set:
@@ -175,8 +166,6 @@ class EventConsumer:
         except Exception as e:
             logger.error("event_consumer.process_failed", entry_id=entry_id_str, error=str(e))
 
-    # ── new_message ──────────────────────────────────────────────────
-
     async def _handle_new_message(self, event: dict) -> None:
         conversation_id = event.get("conversation_id", "")
         conversation_type = event.get("conversation_type", "")
@@ -186,13 +175,11 @@ class EventConsumer:
         avatar_media_id = event.get("avatar_media_id", "")
         created_at = event.get("created_at", "")
 
-        # 1. Get conversation members
         members = await self._get_members_cached(conversation_id)
         recipient_ids = [m.user_id for m in members if m.user_id != sender_user_id]
         if not recipient_ids:
             return
 
-        # 1b. Filter out recipients who blocked the sender (no push for blocked senders).
         if sender_user_id:
             recipient_ids = await self._filter_blocked_recipients(
                 recipient_ids, sender_user_id,
@@ -205,16 +192,13 @@ class EventConsumer:
                 )
                 return
 
-        # 2. Get sender info
         sender_info = await self._get_user_cached(sender_user_id)
         sender_name = sender_info.display_name if sender_info else "Unknown"
         sender_avatar_media_id = sender_info.avatar_media_id if sender_info else ""
 
-        # 3. Determine avatar
         effective_avatar_media_id = avatar_media_id if conversation_type == "group" else sender_avatar_media_id
         avatar_url = await self._get_avatar_url_cached(effective_avatar_media_id) if effective_avatar_media_id else None
 
-        # 4. Build title/body
         type_label = MESSAGE_TYPE_LABELS.get(message_type, "Новое сообщение")
         if conversation_type == "group":
             title = conversation_name or "Группа"
@@ -223,7 +207,6 @@ class EventConsumer:
             title = sender_name
             body = type_label
 
-        # 5. Get tokens and send
         data = {
             "event_type": "new_message",
             "conversation_id": conversation_id,
@@ -245,8 +228,6 @@ class EventConsumer:
             event_type="new_message",
             conversation_id=conversation_id,
         )
-
-    # ── member_added ─────────────────────────────────────────────────
 
     async def _handle_member_added(self, event: dict) -> None:
         conversation_id = event.get("conversation_id", "")
@@ -274,8 +255,6 @@ class EventConsumer:
             conversation_id=conversation_id,
         )
 
-    # ── member_kicked ────────────────────────────────────────────────
-
     async def _handle_member_kicked(self, event: dict) -> None:
         conversation_id = event.get("conversation_id", "")
         conversation_name = event.get("conversation_name", "Группа")
@@ -298,8 +277,6 @@ class EventConsumer:
             event_type="member_kicked",
             conversation_id=conversation_id,
         )
-
-    # ── Send push to multiple users ──────────────────────────────────
 
     async def _send_push_to_users(
         self,
@@ -360,8 +337,6 @@ class EventConsumer:
                 token_id,
                 max_failures=settings.MAX_TOKEN_CONSECUTIVE_FAILURES,
             )
-
-    # ── Caching helpers ──────────────────────────────────────────────
 
     async def _filter_blocked_recipients(
         self, recipient_ids: list[str], sender_user_id: str,

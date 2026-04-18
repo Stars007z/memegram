@@ -10,6 +10,11 @@ kind: Kustomization
 
 resources:
   - ../../base
+  # HTTPS + Cloud Armor stack (Ingress, ManagedCertificate, FrontendConfig, BackendConfig)
+  - ingress/managed-certificate.yaml
+  - ingress/frontend-config.yaml
+  - ingress/backend-config.yaml
+  - ingress/ingress.yaml
 
 # Override namespace for prod if needed
 namespace: memegram
@@ -24,14 +29,13 @@ patches:
         path: /spec/replicas
         value: 2
 
-  # Change orchestrator service to LoadBalancer for GKE
-  - target:
+  # Override orchestrator Service: NodePort + BackendConfig + NEG annotations.
+  # External traffic now flows:
+  #   Internet -> Cloud Armor -> Google HTTPS LB (Ingress) -> NEG -> pods
+  - path: ingress/orchestrator-service-patch.yaml
+    target:
       kind: Service
       name: orchestrator
-    patch: |-
-      - op: replace
-        path: /spec/type
-        value: LoadBalancer
 
   # Increase Postgres storage to 2Gi for prod (cost-efficient for course project)
   - target:

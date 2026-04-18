@@ -2,20 +2,15 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, AsyncIterator
 
-
-# ── Shared types ──────────────────────────────────────────────────────
-
 @dataclass
 class DeviceWelcome:
     device_id: str
     welcome_data: bytes
 
-
 @dataclass
 class MemberWithWelcomes:
     user_id: str
     welcomes: list[DeviceWelcome] = field(default_factory=list)
-
 
 @dataclass
 class ConversationMemberResult:
@@ -23,12 +18,10 @@ class ConversationMemberResult:
     role: str
     joined_at: int
 
-
 @dataclass
 class MlsGroupInfoResult:
     current_epoch: int
     cipher_suite: int
-
 
 @dataclass
 class ConversationResult:
@@ -40,7 +33,6 @@ class ConversationResult:
     created_at: int = 0
     avatar_media_id: str = ""
 
-
 @dataclass
 class ConversationSummaryResult:
     id: str
@@ -51,14 +43,10 @@ class ConversationSummaryResult:
     last_activity_at: int
     avatar_media_id: str = ""
 
-
 @dataclass
 class GetConversationsResult:
     items: list[ConversationSummaryResult] = field(default_factory=list)
     next_cursor: str = ""
-
-
-# ── Messages ──────────────────────────────────────────────────────────
 
 @dataclass
 class MessageEntryResult:
@@ -74,26 +62,20 @@ class MessageEntryResult:
     edited_at: int = 0
     deleted_at: int = 0
 
-
 @dataclass
 class SendMessageResult:
     message_id: str
     created_at: int
-
 
 @dataclass
 class GetMessagesResult:
     messages: list[MessageEntryResult] = field(default_factory=list)
     has_more: bool = False
 
-
-# ── Key packages ──────────────────────────────────────────────────────
-
 @dataclass
 class KeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
-
 
 @dataclass
 class UserDeviceKeyPackageResult:
@@ -101,14 +83,10 @@ class UserDeviceKeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
 
-
-# ── MLS Group Management ─────────────────────────────────────────────
-
 @dataclass
 class CommitGroupChangeResult:
     new_epoch: int
     committed_at: int
-
 
 @dataclass
 class WelcomeEntryResult:
@@ -117,15 +95,11 @@ class WelcomeEntryResult:
     welcome_data: bytes
     created_at: int
 
-
 @dataclass
 class CommitEntryResult:
     epoch: int
     commit_data: bytes
     created_at: int
-
-
-# ── Media ─────────────────────────────────────────────────────────────
 
 @dataclass
 class InitiateMediaUploadResult:
@@ -133,15 +107,11 @@ class InitiateMediaUploadResult:
     upload_url: str
     expires_in: int
 
-
 @dataclass
 class GetMediaDownloadUrlResult:
     download_url: str
     expires_in: int
     encryption_metadata: bytes
-
-
-# ── Health ────────────────────────────────────────────────────────────
 
 @dataclass
 class MessagingHealthResult:
@@ -151,12 +121,8 @@ class MessagingHealthResult:
     media_service_status: str
     version: str
 
-
-# ── Interface ─────────────────────────────────────────────────────────
-
 class IMessagingGateway(ABC):
 
-    # Key Material
     @abstractmethod
     async def upload_key_packages(
         self, user_id: str, device_id: str, key_packages: list[bytes],
@@ -182,7 +148,6 @@ class IMessagingGateway(ABC):
         self, user_id: str, device_id: str,
     ) -> int: ...
 
-    # Conversations
     @abstractmethod
     async def create_direct_conversation(
         self,
@@ -241,7 +206,6 @@ class IMessagingGateway(ABC):
         self, user_id: str, conversation_id: str,
     ) -> bool: ...
 
-    # Messages
     @abstractmethod
     async def send_message(
         self,
@@ -275,7 +239,6 @@ class IMessagingGateway(ABC):
         self, user_id: str, device_id: str, conversation_id: str, last_read_message_id: str,
     ) -> int: ...
 
-    # MLS Group Management
     @abstractmethod
     async def commit_group_change(
         self,
@@ -300,7 +263,6 @@ class IMessagingGateway(ABC):
         self, device_id: str, conversation_id: str, since_epoch: int,
     ) -> list[CommitEntryResult]: ...
 
-    # Media (through messaging service)
     @abstractmethod
     async def initiate_media_upload(
         self,
@@ -319,7 +281,6 @@ class IMessagingGateway(ABC):
         self, user_id: str, media_id: str,
     ) -> GetMediaDownloadUrlResult: ...
 
-    # Presence
     @abstractmethod
     async def set_typing(
         self, user_id: str, device_id: str, conversation_id: str, is_typing: bool,
@@ -328,16 +289,13 @@ class IMessagingGateway(ABC):
     @abstractmethod
     async def set_online(self, user_id: str, device_id: str) -> bool: ...
 
-    # Streaming
     @abstractmethod
     def subscribe_to_conversations(
         self, user_id: str, device_id: str, conversation_ids: list[str],
     ) -> AsyncIterator[dict]: ...
 
-    # Device revocation notification
     @abstractmethod
     async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int: ...
 
-    # Health
     @abstractmethod
     async def health_check(self) -> MessagingHealthResult: ...

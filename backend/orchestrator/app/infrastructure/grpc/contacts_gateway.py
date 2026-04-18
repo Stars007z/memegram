@@ -23,7 +23,6 @@ from app.infrastructure.grpc.generated import contacts_pb2, contacts_pb2_grpc
 
 _SERVICE = "Contacts service"
 
-
 def _brief_proto_to_dc(p) -> Optional[UserBriefProfile]:
     if not p:
         return None
@@ -35,7 +34,6 @@ def _brief_proto_to_dc(p) -> Optional[UserBriefProfile]:
         avatar_media_id=p.avatar_media_id,
     )
 
-
 def _contact_proto_to_dc(c) -> ContactEntry:
     return ContactEntry(
         contact_user_id=c.contact_user_id,
@@ -44,14 +42,12 @@ def _contact_proto_to_dc(c) -> ContactEntry:
         profile=_brief_proto_to_dc(c.profile) if c.HasField("profile") else None,
     )
 
-
 def _blocked_proto_to_dc(b) -> BlockedEntry:
     return BlockedEntry(
         blocked_user_id=b.blocked_user_id,
         blocked_at=b.blocked_at,
         profile=_brief_proto_to_dc(b.profile) if b.HasField("profile") else None,
     )
-
 
 class GrpcContactsGateway(IContactsGateway):
 

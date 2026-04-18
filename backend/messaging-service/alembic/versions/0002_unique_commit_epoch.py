@@ -14,7 +14,6 @@ down_revision = "0001_initial"
 branch_labels = None
 depends_on = None
 
-
 def upgrade() -> None:
     op.drop_index("ix_commits_conv_epoch", table_name="mls_commit_messages")
     op.create_unique_constraint(
@@ -22,7 +21,6 @@ def upgrade() -> None:
         "mls_commit_messages",
         ["conversation_id", "epoch"],
     )
-
 
 def downgrade() -> None:
     op.drop_constraint("uq_commits_conv_epoch", "mls_commit_messages", type_="unique")

@@ -16,7 +16,6 @@ from app.services.interfaces.media_service import (
 
 logger = get_logger(__name__)
 
-
 class MediaServiceImpl(IMediaService):
 
     def __init__(

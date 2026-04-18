@@ -16,10 +16,8 @@ from app.services.user_client import UserServiceClient, UserBriefProfile
 
 logger = get_logger(__name__)
 
-
 def _now() -> datetime:
     return datetime.utcnow()
-
 
 class ContactsService:
     def __init__(self, session: AsyncSession, user_client: UserServiceClient):
@@ -28,14 +26,9 @@ class ContactsService:
         self.contact_repo = ContactRepository(session)
         self.blocked_repo = BlockedUserRepository(session)
 
-    # ────────────────────────────────────────────
-    # CONTACTS
-    # ────────────────────────────────────────────
-
     async def add_contact(self, user_id: str, user_public_key: str) -> dict:
         uid = uuid.UUID(user_id)
 
-        # 1. Получить contact_user_id по публичному ключу
         contact_user_id_str = await self.user_client.get_user_by_public_key(
             user_public_key, requester_user_id=user_id
         )
@@ -44,28 +37,22 @@ class ContactsService:
 
         cuid = uuid.UUID(contact_user_id_str)
 
-        # 2. Нельзя добавить себя
         if uid == cuid:
             raise ValueError("INVALID_ARGUMENT:Cannot add yourself as contact")
 
-        # 3. Проверить существование
         exists, is_deleted = await self.user_client.user_exists(contact_user_id_str)
         if not exists or is_deleted:
             raise ValueError("NOT_FOUND:User not found")
 
-        # 4. Мы сами заблокировали этого пользователя
         if await self.blocked_repo.exists(uid, cuid):
             raise ValueError("NOT_FOUND:User not found")
 
-        # 5. Нас заблокировали
         if await self.blocked_repo.exists(cuid, uid):
             raise ValueError("NOT_FOUND:User not found")
 
-        # 6. Уже в контактах
         if await self.contact_repo.exists(uid, cuid):
             raise ValueError("ALREADY_EXISTS:Contact already exists")
 
-        # 7. Создать запись
         now = _now()
         contact = await self.contact_repo.create({
             "id": uuid.uuid4(),
@@ -75,7 +62,6 @@ class ContactsService:
             "is_favorite": False,
         })
 
-        # 8. Обогатить профилем
         profiles = await self.user_client.get_users_batch([contact_user_id_str])
         profile = profiles.get(contact_user_id_str)
 
@@ -142,26 +128,19 @@ class ContactsService:
         profile = profiles.get(contact_user_id)
         return _contact_to_dict(contact, profile)
 
-    # ────────────────────────────────────────────
-    # BLOCKED USERS
-    # ────────────────────────────────────────────
-
     async def block_user(self, user_id: str, blocked_user_id: str) -> dict:
         uid = uuid.UUID(user_id)
         buid = uuid.UUID(blocked_user_id)
 
-        # 1. Нельзя заблокировать себя
         if uid == buid:
             raise ValueError("INVALID_ARGUMENT:Cannot block yourself")
 
-        # 2. Идемпотентная проверка
         existing = await self.blocked_repo.get_by_pair(uid, buid)
         if existing:
             raise ValueError("ALREADY_EXISTS:User already blocked")
 
         now = _now()
 
-        # 3. INSERT + удаление контактов — всё в одной транзакции (сессия уже открыта)
         blocked = await self.blocked_repo.create({
             "id": uuid.uuid4(),
             "user_id": uid,
@@ -169,7 +148,6 @@ class ContactsService:
             "created_at": now,
         })
 
-        # 4 & 5. Удалить взаимные контакты
         await self.contact_repo.delete_mutual(uid, buid)
 
         logger.info(
@@ -217,10 +195,6 @@ class ContactsService:
             "total_count": total,
         }
 
-    # ────────────────────────────────────────────
-    # INTERNAL
-    # ────────────────────────────────────────────
-
     async def is_contact(self, user_id: str, contact_user_id: str) -> bool:
         return await self.contact_repo.exists(
             uuid.UUID(user_id), uuid.UUID(contact_user_id)
@@ -231,11 +205,6 @@ class ContactsService:
             uuid.UUID(user_id), uuid.UUID(blocked_user_id)
         )
 
-
-# ────────────────────────────────────────────
-# Helpers
-# ────────────────────────────────────────────
-
 def _contact_to_dict(contact: Contact, profile: Optional[UserBriefProfile]) -> dict:
     return {
         "contact_user_id": str(contact.contact_user_id),
@@ -243,7 +212,6 @@ def _contact_to_dict(contact: Contact, profile: Optional[UserBriefProfile]) -> d
         "created_at": int(contact.created_at.timestamp()),
         "profile": profile,
     }
-
 
 def _blocked_to_dict(blocked: BlockedUser, profile: Optional[UserBriefProfile]) -> dict:
     return {

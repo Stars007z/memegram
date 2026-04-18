@@ -5,7 +5,7 @@ from app.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,  # SQL logging is controlled by logging_config (sqlalchemy.engine level)
+    echo=False,
     pool_pre_ping=True
 )
 

@@ -17,7 +17,6 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
-
 async def serve() -> None:
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
 
@@ -38,7 +37,6 @@ async def serve() -> None:
         await server.stop(0)
         await close_db()
         logger.info("service.stopped")
-
 
 if __name__ == "__main__":
     asyncio.run(serve())

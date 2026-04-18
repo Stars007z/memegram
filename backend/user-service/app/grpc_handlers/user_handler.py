@@ -3,14 +3,12 @@ from app.generated import user_pb2, user_pb2_grpc
 from app.services.user_service import UserService
 from app.database.redis import check_redis_health
 
-
 def _build_minimal_profile(user) -> user_pb2.UserProfile:
     return user_pb2.UserProfile(
         id=str(user.id),
         username=user.username,
         is_deleted=user.is_deleted,
     )
-
 
 def _build_full_profile(user, settings, is_owner: bool) -> user_pb2.UserProfile:
     proto = user_pb2.UserProfile(
@@ -34,7 +32,6 @@ def _build_full_profile(user, settings, is_owner: bool) -> user_pb2.UserProfile:
                 proto.last_active = int(user.last_active.timestamp())
     return proto
 
-
 def _settings_to_proto(s) -> user_pb2.UserSettings:
     return user_pb2.UserSettings(
         id=str(s.id),
@@ -56,7 +53,6 @@ def _settings_to_proto(s) -> user_pb2.UserSettings:
         my_bubble_media_id=str(s.my_bubble_media_id) if s.my_bubble_media_id else "",
         their_bubble_media_id=str(s.their_bubble_media_id) if s.their_bubble_media_id else "",
     )
-
 
 class UserHandler(user_pb2_grpc.UserServiceServicer):
     def __init__(self, get_session):
@@ -99,7 +95,6 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
 
         proto = _build_full_profile(user, settings, is_owner=False)
 
-        # Override last_active based on privacy
         lv = settings.last_active_visible_to
         if user.last_active:
             if lv == "everybody":
@@ -263,9 +258,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
         async with self.get_session() as session:
             service = UserService(session)
             try:
-                # All settings fields are marked `optional` in proto3, so HasField works
-                # for ALL of them — including numeric (int32). This avoids the "!= 0" bug
-                # that would prevent setting a field to zero explicitly.
+
                 optional_fields = [
                     "theme", "language", "is_translator_active", "animations_enabled",
                     "account_auto_delete_after_days", "profile_visible_to",
@@ -296,8 +289,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
             service = UserService(session)
             try:
                 users = await service.get_users_batch(list(request.user_ids))
-                # Architecture: { id, username, avatar_media_id, is_deleted }
-                # contacts-service user_client also reads user_public_key + bio
+
                 brieflist = [user_pb2.UserBriefProfile(
                     id=str(u.id),
                     username=u.username,

@@ -1,13 +1,11 @@
-# app/config.py
+
 import os
 from functools import lru_cache
 from typing import Optional
 
 from dotenv import load_dotenv
 
-# Загружаем .env файл (если запускаем локально)
 load_dotenv()
-
 
 class Settings:
     """
@@ -27,7 +25,7 @@ class Settings:
 
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    CHALLENGE_TTL_SECONDS: int = int(os.getenv("CHALLENGE_TTL_SECONDS", 300))  # 5 минут
+    CHALLENGE_TTL_SECONDS: int = int(os.getenv("CHALLENGE_TTL_SECONDS", 300))
 
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
@@ -43,7 +41,6 @@ class Settings:
     def is_development(self) -> bool:
         return self.ENVIRONMENT.lower() == "development"
 
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """
@@ -51,6 +48,5 @@ def get_settings() -> Settings:
     Используется lru_cache для создания синглтона.
     """
     return Settings()
-
 
 settings = get_settings()

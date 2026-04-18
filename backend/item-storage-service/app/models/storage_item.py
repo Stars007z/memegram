@@ -5,7 +5,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.base import Base
 
-
 class StorageItem(Base):
     __tablename__ = "storage_items"
 

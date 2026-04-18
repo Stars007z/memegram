@@ -10,7 +10,6 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
 ITEM_TYPE_CONFIG: dict[str, dict] = {
     "avatar": {
         "allowed_mimes": {"image/jpeg", "image/png", "image/webp"},
@@ -59,16 +58,12 @@ ITEM_TYPE_CONFIG: dict[str, dict] = {
     },
 }
 
-
 def _now() -> datetime:
     return datetime.utcnow()
-
 
 class ItemStorageService:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    # ── InitiateUpload ──────────────────────────────────────────────
 
     async def initiate_upload(
         self, owner_user_id: str, item_type: str, mime_type: str, size_bytes: int,
@@ -119,8 +114,6 @@ class ItemStorageService:
         )
         return str(item_id), upload_url, expires_at
 
-    # ── ConfirmUpload ───────────────────────────────────────────────
-
     async def confirm_upload(self, owner_user_id: str, item_id: str) -> bool:
         result = await self.session.execute(
             select(StorageItem).where(
@@ -154,8 +147,6 @@ class ItemStorageService:
         )
         return True
 
-    # ── GetDownloadUrl ──────────────────────────────────────────────
-
     async def get_download_url(
         self, item_id: str, requester_user_id: str,
     ) -> tuple[str, int, str]:
@@ -179,8 +170,6 @@ class ItemStorageService:
         )
         expires_at = int((_now() + timedelta(seconds=settings.PRESIGNED_DOWNLOAD_TTL)).timestamp())
         return download_url, expires_at, item.mime_type
-
-    # ── DeleteItem ──────────────────────────────────────────────────
 
     async def delete_item(self, owner_user_id: str, item_id: str) -> bool:
         result = await self.session.execute(
@@ -208,8 +197,6 @@ class ItemStorageService:
             item_type=item.item_type,
         )
         return True
-
-    # ── DeleteUserItems ─────────────────────────────────────────────
 
     async def delete_user_items(
         self, owner_user_id: str, item_types: list[str] | None = None,
@@ -245,8 +232,6 @@ class ItemStorageService:
             item_types=item_types,
         )
         return len(ids)
-
-    # ── CleanupPendingUploads ───────────────────────────────────────
 
     async def cleanup_pending_uploads(
         self, older_than_seconds: int = 7200, batch_size: int = 100,
@@ -284,8 +269,6 @@ class ItemStorageService:
             older_than_seconds=older_than_seconds,
         )
         return len(ids)
-
-    # ── GetItemMetadata ─────────────────────────────────────────────
 
     async def get_item_metadata(
         self, item_id: str, requester_user_id: str,

@@ -6,7 +6,6 @@ from app.container import Container
 from app.generated import media_pb2, media_pb2_grpc
 from app.config import settings
 
-
 class MediaServiceHandler(media_pb2_grpc.MediaServiceServicer):
 
     def __init__(self, container: Container) -> None:

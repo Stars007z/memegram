@@ -1,0 +1,32 @@
+# GKE Ingress (External Application Load Balancer)
+# - Uses the static global IP "memegram-ip" (created out-of-band by gcloud)
+# - Attaches the ManagedCertificate for HTTPS
+# - Attaches the FrontendConfig for HTTP->HTTPS redirect
+# - Routes all traffic to the orchestrator service on port 8000
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: memegram-ingress
+  namespace: memegram
+  annotations:
+    # Use external GCE LB (default class)
+    kubernetes.io/ingress.class: "gce"
+
+    # Reserve a static external IP via:
+    #   gcloud compute addresses create memegram-ip --global
+    kubernetes.io/ingress.global-static-ip-name: "memegram-ip"
+
+    # Attach Google-managed SSL certificate
+    networking.gke.io/managed-certificates: "memegram-cert"
+
+    # Attach FrontendConfig (HTTP -> HTTPS redirect)
+    networking.gke.io/v1beta1.FrontendConfig: "memegram-frontend-config"
+
+    # Disable HTTP backend creation? No — we WANT HTTP listener so it can redirect to HTTPS
+    # kubernetes.io/ingress.allow-http: "false"
+spec:
+  defaultBackend:
+    service:
+      name: orchestrator
+      port:
+        number: 8000

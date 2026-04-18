@@ -16,7 +16,6 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
 class ContactsGateway:
 
     def __init__(self):
@@ -26,7 +25,7 @@ class ContactsGateway:
         self._channel: Optional[grpc.aio.Channel] = None
 
     def _get_channel(self) -> grpc.aio.Channel:
-        # Lazily create a single channel for the gateway lifetime.
+
         if self._channel is None:
             self._channel = grpc.aio.insecure_channel(self._address)
         return self._channel

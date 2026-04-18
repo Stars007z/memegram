@@ -7,7 +7,6 @@ import redis.asyncio as aioredis
 
 from app.services.interfaces.stream_service import IStreamService
 
-
 class StreamServiceImpl(IStreamService):
     """Redis Pub/Sub based event streaming."""
 

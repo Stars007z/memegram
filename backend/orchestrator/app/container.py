@@ -15,7 +15,6 @@ from app.infrastructure.grpc.media_gateway import GrpcMediaGateway
 from app.infrastructure.grpc.item_storage_gateway import GrpcItemStorageGateway
 from app.infrastructure.grpc.notifications_gateway import GrpcNotificationsGateway
 
-
 class Container:
     """IoC container — single source of truth for all gateway instances."""
 

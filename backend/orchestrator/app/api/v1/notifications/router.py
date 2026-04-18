@@ -12,14 +12,12 @@ from app.core.session_context import SessionContext
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-
 @router.get("/health", response_model=NotificationsHealthResponseSchema)
 async def notifications_health(
     gw: INotificationsGateway = Depends(get_notifications_gateway),
 ):
     result = await gw.health_check()
     return NotificationsHealthResponseSchema(**result.__dict__)
-
 
 @router.post("/push-token", response_model=RegisterPushTokenResponseSchema)
 async def register_push_token(
@@ -34,7 +32,6 @@ async def register_push_token(
         push_token=body.push_token,
     )
     return RegisterPushTokenResponseSchema(success=result.success)
-
 
 @router.delete("/push-token", response_model=UnregisterPushTokenResponseSchema)
 async def unregister_push_token(

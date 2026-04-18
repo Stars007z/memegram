@@ -30,7 +30,6 @@ from app.infrastructure.grpc.generated import messaging_pb2, messaging_pb2_grpc
 
 _SERVICE = "Messaging service"
 
-
 def _conversation_from_proto(r) -> ConversationResult:
     members = [
         ConversationMemberResult(
@@ -50,7 +49,6 @@ def _conversation_from_proto(r) -> ConversationResult:
         avatar_media_id=r.avatar_media_id,
     )
 
-
 def _message_from_proto(m) -> MessageEntryResult:
     return MessageEntryResult(
         id=m.id,
@@ -66,7 +64,6 @@ def _message_from_proto(m) -> MessageEntryResult:
         deleted_at=m.deleted_at,
     )
 
-
 def _device_welcomes_to_proto(welcomes: list[DeviceWelcome]):
     return [
         messaging_pb2.DeviceWelcome(
@@ -74,7 +71,6 @@ def _device_welcomes_to_proto(welcomes: list[DeviceWelcome]):
         )
         for w in welcomes
     ]
-
 
 class GrpcMessagingGateway(IMessagingGateway):
 
@@ -88,8 +84,6 @@ class GrpcMessagingGateway(IMessagingGateway):
     @property
     def _timeout(self) -> float:
         return self._settings.MESSAGING_GRPC_TIMEOUT
-
-    # ── Key Material ──────────────────────────────────────────────────
 
     async def upload_key_packages(
         self, user_id: str, device_id: str, key_packages: list[bytes],
@@ -169,8 +163,6 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.deleted_count
-
-    # ── Conversations ─────────────────────────────────────────────────
 
     async def create_direct_conversation(
         self,
@@ -356,8 +348,6 @@ class GrpcMessagingGateway(IMessagingGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.success
 
-    # ── Messages ──────────────────────────────────────────────────────
-
     async def send_message(
         self,
         sender_user_id: str,
@@ -451,8 +441,6 @@ class GrpcMessagingGateway(IMessagingGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.unread_count
 
-    # ── MLS Group Management ──────────────────────────────────────────
-
     async def commit_group_change(
         self,
         user_id: str,
@@ -534,8 +522,6 @@ class GrpcMessagingGateway(IMessagingGateway):
             for c in resp.commits
         ]
 
-    # ── Media (through messaging service) ─────────────────────────────
-
     async def initiate_media_upload(
         self,
         user_id: str,
@@ -589,8 +575,6 @@ class GrpcMessagingGateway(IMessagingGateway):
             encryption_metadata=bytes(resp.encryption_metadata),
         )
 
-    # ── Presence ──────────────────────────────────────────────────────
-
     async def set_typing(
         self, user_id: str, device_id: str, conversation_id: str, is_typing: bool,
     ) -> bool:
@@ -617,8 +601,6 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.success
-
-    # ── Streaming ─────────────────────────────────────────────────────
 
     async def subscribe_to_conversations(
         self, user_id: str, device_id: str, conversation_ids: list[str],
@@ -699,8 +681,6 @@ class GrpcMessagingGateway(IMessagingGateway):
             result["data"] = {"deleted_by": cd.deleted_by}
         return result
 
-    # ── Device revocation notification ────────────────────────────────
-
     async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int:
         try:
             resp = await self._stub().NotifyDeviceRevoked(
@@ -713,8 +693,6 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.notified_conversations_count
-
-    # ── Health ────────────────────────────────────────────────────────
 
     async def health_check(self) -> MessagingHealthResult:
         try:

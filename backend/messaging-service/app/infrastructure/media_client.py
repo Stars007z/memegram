@@ -6,31 +6,26 @@ import grpc
 
 from app.generated import media_pb2, media_pb2_grpc
 
-
 @dataclass
 class PresignedUploadResult:
     upload_url: str
     s3_key: str
     expires_at: int
 
-
 @dataclass
 class PresignedDownloadResult:
     download_url: str
     expires_at: int
-
 
 @dataclass
 class BatchDeleteFailure:
     media_id: str
     error: str
 
-
 @dataclass
 class BatchDeleteResult:
     deleted_count: int
     failed: list[BatchDeleteFailure] = field(default_factory=list)
-
 
 class IMediaClient(ABC):
 
@@ -74,7 +69,6 @@ class IMediaClient(ABC):
     @abstractmethod
     async def health_check(self) -> bool:
         ...
-
 
 class GrpcMediaClient(IMediaClient):
     """Real gRPC client — used when media-service is deployed."""

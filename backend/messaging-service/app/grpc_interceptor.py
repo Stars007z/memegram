@@ -19,12 +19,8 @@ from google.protobuf.json_format import MessageToDict
 
 from app.logging_config import get_logger
 
-
 logger = get_logger("grpc.access")
 
-# ── Field classification ──────────────────────────────────────────────
-
-# Fields that identify the caller — extracted into top-level log keys
 _CALLER_FIELDS = frozenset({
     "user_id",
     "device_id",
@@ -37,7 +33,6 @@ _CALLER_FIELDS = frozenset({
     "recipient_user_id",
 })
 
-# Fields whose values must be redacted in logs
 _SENSITIVE_FIELDS = frozenset({
     "access_token",
     "refresh_token",
@@ -56,9 +51,6 @@ _SENSITIVE_FIELDS = frozenset({
     "encryption_metadata",
 })
 
-
-# ── Helpers ───────────────────────────────────────────────────────────
-
 def _extract_caller_info(request) -> dict[str, str]:
     """Pull known ID fields from the protobuf message into a flat dict."""
     info: dict[str, str] = {}
@@ -71,7 +63,6 @@ def _extract_caller_info(request) -> dict[str, str]:
     except Exception:
         pass
     return info
-
 
 def _sanitize_request(request) -> dict:
     """Convert protobuf message to dict, replacing sensitive values with '***'."""
@@ -88,9 +79,6 @@ def _sanitize_request(request) -> dict:
             sanitized[key] = value
     return sanitized
 
-
-# ── Interceptor ───────────────────────────────────────────────────────
-
 class LoggingInterceptor(grpc.aio.ServerInterceptor):
     """Intercepts every unary-unary RPC and emits one structured log entry per request.
 
@@ -105,19 +93,18 @@ class LoggingInterceptor(grpc.aio.ServerInterceptor):
         if handler is None:
             return handler
 
-        # Only wrap unary-unary handlers
         if not handler.unary_unary:
             return handler
 
         original = handler.unary_unary
-        method = handler_call_details.method  # e.g. "/messaging.MessagingService/SendMessage"
+        method = handler_call_details.method
 
         async def _logged_handler(request, context):
             trace_id = str(uuid.uuid4())
             start = time.monotonic()
 
             caller = _extract_caller_info(request)
-            peer = context.peer()  # e.g. "ipv4:172.18.0.1:54321"
+            peer = context.peer()
 
             log = logger.bind(
                 trace_id=trace_id,
@@ -129,7 +116,7 @@ class LoggingInterceptor(grpc.aio.ServerInterceptor):
             try:
                 response = await original(request, context)
             except Exception as exc:
-                # Unhandled exception — include request_data for debugging
+
                 duration_ms = round((time.monotonic() - start) * 1000, 2)
                 request_data = _sanitize_request(request)
                 log.error(
@@ -147,7 +134,7 @@ class LoggingInterceptor(grpc.aio.ServerInterceptor):
             status = grpc_code.name if grpc_code else "OK"
 
             if grpc_code and grpc_code != grpc.StatusCode.OK:
-                # Client/business error — include request_data and details for debugging
+
                 request_data = _sanitize_request(request)
                 log.warning(
                     "grpc.request",
@@ -157,7 +144,7 @@ class LoggingInterceptor(grpc.aio.ServerInterceptor):
                     duration_ms=duration_ms,
                 )
             else:
-                # Success — only caller IDs, method, and duration
+
                 log.info(
                     "grpc.request",
                     grpc_status=status,

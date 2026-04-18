@@ -8,20 +8,18 @@ from app.container import Container
 from app.generated import notifications_pb2
 from app.repositories.device_push_token_repo import DevicePushTokenRepository
 
-
 class TokenHandler:
 
     def __init__(self, container: Container) -> None:
         self._container = container
 
     async def register_push_token(self, request, context):
-        # Validate platform
+
         if request.platform not in ("ios", "android"):
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("platform must be 'ios' or 'android'")
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
-        # Validate push_token
         if not request.push_token or not request.push_token.strip():
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("push_token is required")

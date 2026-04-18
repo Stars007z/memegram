@@ -6,7 +6,6 @@ from app.container import Container
 from app.database.redis import check_redis_health
 from app.generated import messaging_pb2
 
-
 class HealthHandler:
 
     def __init__(self, container: Container) -> None:

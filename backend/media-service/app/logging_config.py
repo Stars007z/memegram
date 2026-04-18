@@ -19,7 +19,6 @@ import structlog
 
 from app.config import settings
 
-
 def setup_logging() -> None:
     """Configure structlog + stdlib logging for the service.
 
@@ -27,7 +26,6 @@ def setup_logging() -> None:
     """
     log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 
-    # Shared processors applied to every log entry
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
@@ -38,7 +36,6 @@ def setup_logging() -> None:
         structlog.processors.UnicodeDecoder(),
     ]
 
-    # JSON in production, colored console in development
     if settings.is_production:
         renderer: structlog.types.Processor = structlog.processors.JSONRenderer()
     else:
@@ -61,7 +58,6 @@ def setup_logging() -> None:
         ],
     )
 
-    # Single stdout handler — no file writes from the application
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
@@ -70,7 +66,6 @@ def setup_logging() -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(log_level)
 
-    # Quiet noisy third-party loggers
     logging.getLogger("asyncpg").setLevel(logging.WARNING)
     logging.getLogger("grpc").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
@@ -78,7 +73,6 @@ def setup_logging() -> None:
     logging.getLogger("aioboto3").setLevel(logging.WARNING)
     logging.getLogger("botocore").setLevel(logging.WARNING)
     logging.getLogger("s3transfer").setLevel(logging.WARNING)
-
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a structlog logger pre-bound with service-level context.
