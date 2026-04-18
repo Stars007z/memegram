@@ -52,6 +52,10 @@ kotlin {
             implementation(libs.androidx.security.crypto.ktx)
             implementation(libs.mlkit.language.id)
             implementation(libs.onnxruntime.android)
+            implementation(libs.androidx.camera.camera2)
+            implementation(libs.androidx.camera.lifecycle)
+            implementation(libs.androidx.camera.view)
+            implementation(libs.barcode.scanning)
         }
 
         commonMain.dependencies {
@@ -79,10 +83,6 @@ kotlin {
             implementation(libs.multiplatform.crypto.libsodium)
             implementation(libs.coroutines.extensions1)
             implementation(libs.qrose)
-            implementation(libs.androidx.camera.camera2)
-            implementation(libs.androidx.camera.lifecycle)
-            implementation(libs.androidx.camera.view)
-            implementation(libs.barcode.scanning)
         }
 
         iosMain.dependencies {

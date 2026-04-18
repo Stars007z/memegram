@@ -1,0 +1,13 @@
+# FrontendConfig: configures the HTTPS Load Balancer frontend
+# - Forces HTTP -> HTTPS redirect (301)
+# - Enables modern TLS (TLS 1.2+)
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: memegram-frontend-config
+  namespace: memegram
+spec:
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT  # 301
+  sslPolicy: memegram-ssl-policy

@@ -1,18 +1,20 @@
 #!/bin/bash
 # Memegram GKE Deployment Script
-# Usage: ./deploy-gke.sh [setup|build|push|deploy|status|stop|start|destroy|cost|ip]
+# Usage: ./deploy-gke.sh [setup|build|push|deploy|status|stop|start|destroy|cost|ip|security|dns]
 #
 # Workflow:
-#   1. setup   - One-time: create GKE cluster + Artifact Registry
-#   2. build   - Build all Docker images
-#   3. push    - Push images to Artifact Registry
-#   4. deploy  - Apply k8s manifests to GKE
-#   5. status  - Show pods, services, external IP
-#   6. stop    - Scale node pool to 0 (saves money, keeps cluster)
-#   7. start   - Scale node pool back up
-#   8. destroy - Delete EVERYTHING (cluster + registry) to save all money
-#   9. cost    - Show estimated daily cost
-#  10. ip      - Show external IP of orchestrator
+#   1. setup    - One-time: create GKE cluster + Artifact Registry
+#   2. security - One-time: create static IP + Cloud Armor + SSL policy (after setup)
+#   3. dns      - Show DNS record you need to create at your registrar
+#   4. build    - Build all Docker images
+#   5. push     - Push images to Artifact Registry
+#   6. deploy   - Apply k8s manifests to GKE
+#   7. status   - Show pods, services, external IP
+#   8. stop     - Scale node pool to 0 (saves money, keeps cluster)
+#   9. start    - Scale node pool back up
+#  10. destroy  - Delete EVERYTHING (cluster + registry) to save all money
+#  11. cost     - Show estimated daily cost
+#  12. ip       - Show external IP of orchestrator
 
 set -e
 
@@ -28,6 +30,21 @@ OVERLAY="k8s/overlays/prod"
 MACHINE_TYPE="e2-standard-2"               # 2 vCPU, 8 GB RAM — $0.067/hr
 NUM_NODES=3                                # 3 nodes = 6 vCPU, 24 GB total
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# ==================== HTTPS / SECURITY CONFIGURATION ====================
+# Domain pointing to the static IP (set this after you buy a domain)
+# Example: export DOMAIN_NAME=api.memegram.com
+DOMAIN_NAME="${DOMAIN_NAME:-}"
+
+# Names of out-of-band GCP resources (created by 'security' command).
+# These names are referenced from k8s manifests in k8s/overlays/prod/ingress/.
+STATIC_IP_NAME="memegram-ip"
+ARMOR_POLICY="memegram-armor-policy"
+SSL_POLICY="memegram-ssl-policy"
+
+# Cloud Armor rate limit: max requests per IP per minute before throttling.
+# 600 req/min ≈ 10 req/sec — safe baseline for an API used by mobile clients.
+ARMOR_RATE_LIMIT_RPM=600
 
 SERVICES=(
     auth-service
@@ -72,7 +89,141 @@ check_gcloud() {
     fi
 }
 
-# ==================== SETUP ====================
+# ==================== SECURITY (HTTPS + Cloud Armor) ====================
+check_domain() {
+    if [ -z "$DOMAIN_NAME" ]; then
+        err "DOMAIN_NAME is not set. Run: export DOMAIN_NAME=api.yourdomain.com"
+    fi
+}
+
+setup_security() {
+    check_gcloud
+    check_project
+
+    log "=== Setting up HTTPS + Cloud Armor stack ==="
+
+    # 1. Reserve a global static external IP for the Ingress Load Balancer
+    log "Reserving global static IP '$STATIC_IP_NAME'..."
+    gcloud compute addresses create "$STATIC_IP_NAME" \
+        --global \
+        --ip-version=IPV4 \
+        2>/dev/null || warn "Static IP already exists"
+
+    STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" --global --format='value(address)')
+    log "Static IP reserved: $STATIC_IP"
+
+    # 2. Create Cloud Armor security policy
+    log "Creating Cloud Armor policy '$ARMOR_POLICY'..."
+    gcloud compute security-policies create "$ARMOR_POLICY" \
+        --description="Memegram WAF + rate limiting + DDoS protection" \
+        2>/dev/null || warn "Armor policy already exists"
+
+    # 2a. Enable adaptive protection (free, ML-based DDoS detection)
+    log "Enabling Adaptive Protection (free L7 DDoS ML)..."
+    gcloud compute security-policies update "$ARMOR_POLICY" \
+        --enable-layer7-ddos-defense \
+        --quiet 2>/dev/null || warn "Adaptive Protection may already be enabled"
+
+    # 2b. Add OWASP-ish preconfigured WAF rules (SQLi, XSS, LFI, RCE)
+    # Sensitivity level 1 = only highest-confidence signatures (least false positives).
+    # Use evaluatePreconfiguredWaf(...) with {'sensitivity': 1} so JSON bodies on
+    # auth/login endpoints don't get falsely blocked (e.g. nicknames, invite codes).
+    log "Adding WAF rule: SQL injection (sqli-v33-stable, sensitivity=1)..."
+    gcloud compute security-policies rules create 1000 \
+        --security-policy="$ARMOR_POLICY" \
+        --expression="evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})" \
+        --action=deny-403 \
+        --description="Block SQL injection attempts (high-confidence only)" \
+        2>/dev/null || warn "Rule 1000 already exists"
+
+    log "Adding WAF rule: Cross-site scripting (xss-v33-stable, sensitivity=1)..."
+    gcloud compute security-policies rules create 1001 \
+        --security-policy="$ARMOR_POLICY" \
+        --expression="evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})" \
+        --action=deny-403 \
+        --description="Block XSS attempts (high-confidence only)" \
+        2>/dev/null || warn "Rule 1001 already exists"
+
+    log "Adding WAF rule: Local file inclusion (lfi-v33-stable, sensitivity=1)..."
+    gcloud compute security-policies rules create 1002 \
+        --security-policy="$ARMOR_POLICY" \
+        --expression="evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1})" \
+        --action=deny-403 \
+        --description="Block LFI attempts (high-confidence only)" \
+        2>/dev/null || warn "Rule 1002 already exists"
+
+    log "Adding WAF rule: Remote code execution (rce-v33-stable, sensitivity=1)..."
+    gcloud compute security-policies rules create 1003 \
+        --security-policy="$ARMOR_POLICY" \
+        --expression="evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1})" \
+        --action=deny-403 \
+        --description="Block RCE attempts (high-confidence only)" \
+        2>/dev/null || warn "Rule 1003 already exists"
+
+    # 2c. Per-IP rate limit (throttle action — return 429)
+    log "Adding rate limit rule: $ARMOR_RATE_LIMIT_RPM req/min per IP..."
+    gcloud compute security-policies rules create 2000 \
+        --security-policy="$ARMOR_POLICY" \
+        --expression="true" \
+        --action=throttle \
+        --rate-limit-threshold-count="$ARMOR_RATE_LIMIT_RPM" \
+        --rate-limit-threshold-interval-sec=60 \
+        --conform-action=allow \
+        --exceed-action=deny-429 \
+        --enforce-on-key=IP \
+        --description="Rate limit: $ARMOR_RATE_LIMIT_RPM req/min per IP" \
+        2>/dev/null || warn "Rule 2000 already exists"
+
+    # 3. SSL policy: enforce TLS 1.2+ and modern ciphers
+    log "Creating SSL policy '$SSL_POLICY' (TLS 1.2+, MODERN profile)..."
+    gcloud compute ssl-policies create "$SSL_POLICY" \
+        --profile=MODERN \
+        --min-tls-version=1.2 \
+        2>/dev/null || warn "SSL policy already exists"
+
+    log "=== Security stack ready ==="
+    info "Static IP:         $STATIC_IP"
+    info "Cloud Armor:       $ARMOR_POLICY"
+    info "SSL policy:        $SSL_POLICY (TLS 1.2+)"
+    echo ""
+    info "Next steps:"
+    info "  1. Buy a domain (e.g. on Cloudflare Registrar — ~\$10/year for .com)"
+    info "  2. Create an A record:  yourdomain.com  ->  $STATIC_IP"
+    info "  3. export DOMAIN_NAME=yourdomain.com"
+    info "  4. ./deploy-gke.sh deploy"
+}
+
+show_dns() {
+    check_gcloud
+    STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" --global --format='value(address)' 2>/dev/null || echo "")
+    if [ -z "$STATIC_IP" ]; then
+        err "Static IP '$STATIC_IP_NAME' not found. Run: ./deploy-gke.sh security"
+    fi
+    echo ""
+    log "=== DNS Configuration ==="
+    echo ""
+    info "At your domain registrar (e.g. Cloudflare DNS), create:"
+    echo ""
+    echo "  Type:  A"
+    echo "  Name:  @  (or 'api', or whatever subdomain you want)"
+    echo "  Value: $STATIC_IP"
+    echo "  TTL:   Auto / 300"
+    echo "  Proxy: DNS only (for Google Managed Cert provisioning; can enable Cloudflare proxy AFTER cert is ACTIVE)"
+    echo ""
+    info "Then:  export DOMAIN_NAME=yourdomain.com  &&  ./deploy-gke.sh deploy"
+    echo ""
+}
+
+# Render ManagedCertificate with the actual domain before apply
+render_managed_cert() {
+    check_domain
+    local src="$SCRIPT_DIR/k8s/overlays/prod/ingress/managed-certificate.yaml"
+    local dst="$SCRIPT_DIR/k8s/overlays/prod/ingress/.managed-certificate.rendered.yaml"
+    sed "s|DOMAIN_NAME|$DOMAIN_NAME|g" "$src" > "$dst"
+    # Apply directly (kustomize will still apply the placeholder version, so we override after)
+    kubectl apply -f "$dst"
+    rm -f "$dst"
+}
 setup() {
     check_gcloud
     check_project
@@ -158,31 +309,37 @@ push_images() {
 deploy() {
     check_project
     check_gcloud
+    check_domain
 
     log "Ensuring kubectl context points to GKE cluster..."
     gcloud container clusters get-credentials "$CLUSTER_NAME" --zone="$ZONE"
 
-    log "Deploying to GKE with prod overlay..."
-    kubectl apply -k "$SCRIPT_DIR/$OVERLAY"
+    log "Verifying security stack exists..."
+    gcloud compute addresses describe "$STATIC_IP_NAME" --global &>/dev/null \
+        || err "Static IP '$STATIC_IP_NAME' not found. Run: ./deploy-gke.sh security"
+    gcloud compute security-policies describe "$ARMOR_POLICY" &>/dev/null \
+        || err "Cloud Armor policy '$ARMOR_POLICY' not found. Run: ./deploy-gke.sh security"
+
+    log "Deploying to GKE with prod overlay (domain: $DOMAIN_NAME)..."
+    # Render kustomize and substitute DOMAIN_NAME placeholder before apply
+    kubectl kustomize "$SCRIPT_DIR/$OVERLAY" \
+        | sed "s|DOMAIN_NAME|$DOMAIN_NAME|g" \
+        | kubectl apply -f -
 
     log "Waiting for pods to be ready (timeout: 5 min)..."
     kubectl wait --for=condition=ready pod --all -n "$NAMESPACE" --timeout=300s 2>/dev/null || true
 
     status
     echo ""
-    info "Waiting for external IP assignment (can take 1-2 min)..."
-    for i in $(seq 1 24); do
-        EXTERNAL_IP=$(kubectl get svc orchestrator -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        if [ -n "$EXTERNAL_IP" ]; then
-            echo ""
-            log "Application is available at: http://${EXTERNAL_IP}:8000"
-            log "Health check: http://${EXTERNAL_IP}:8000/health"
-            return
-        fi
-        printf "."
-        sleep 5
-    done
-    warn "External IP not yet assigned. Run './deploy-gke.sh ip' to check later."
+    STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" --global --format='value(address)')
+    info "Ingress static IP: $STATIC_IP"
+    info "Domain:            $DOMAIN_NAME"
+    echo ""
+    info "Next:"
+    info "  - Make sure DNS A record points $DOMAIN_NAME -> $STATIC_IP"
+    info "  - Wait 15-60 min for the Google-managed SSL certificate to become ACTIVE"
+    info "  - Check cert status: kubectl describe managedcertificate memegram-cert -n $NAMESPACE"
+    info "  - Then your API is live at: https://$DOMAIN_NAME"
 }
 
 # ==================== STATUS ====================
@@ -194,18 +351,30 @@ status() {
     log "=== Services ==="
     kubectl get svc -n "$NAMESPACE" 2>/dev/null || warn "No services found"
     echo ""
+    log "=== Ingress ==="
+    kubectl get ingress -n "$NAMESPACE" 2>/dev/null || warn "No ingress found"
+    echo ""
+    log "=== Managed Certificate ==="
+    kubectl get managedcertificate -n "$NAMESPACE" 2>/dev/null \
+        || warn "No managed certificate found"
+    echo ""
     log "=== PVCs ==="
     kubectl get pvc -n "$NAMESPACE" 2>/dev/null || warn "No PVCs found"
 }
 
 # ==================== GET EXTERNAL IP ====================
 get_ip() {
-    EXTERNAL_IP=$(kubectl get svc orchestrator -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    if [ -n "$EXTERNAL_IP" ]; then
-        log "External IP: http://${EXTERNAL_IP}:8000"
-        log "Health: http://${EXTERNAL_IP}:8000/health"
+    STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" --global --format='value(address)' 2>/dev/null || echo "")
+    if [ -n "$STATIC_IP" ]; then
+        log "Ingress static IP: $STATIC_IP"
+        if [ -n "$DOMAIN_NAME" ]; then
+            log "Public URL:        https://$DOMAIN_NAME"
+            log "Health check:      https://$DOMAIN_NAME/health"
+        else
+            warn "DOMAIN_NAME not set. The Load Balancer requires HTTPS via your domain."
+        fi
     else
-        warn "No external IP assigned yet. Wait a minute and try again."
+        warn "Static IP '$STATIC_IP_NAME' not yet created. Run: ./deploy-gke.sh security"
     fi
 }
 
@@ -270,6 +439,15 @@ destroy() {
         --zone="$ZONE" \
         --quiet
 
+    log "Deleting Cloud Armor policy..."
+    gcloud compute security-policies delete "$ARMOR_POLICY" --quiet 2>/dev/null || true
+
+    log "Deleting SSL policy..."
+    gcloud compute ssl-policies delete "$SSL_POLICY" --quiet 2>/dev/null || true
+
+    log "Releasing static IP..."
+    gcloud compute addresses delete "$STATIC_IP_NAME" --global --quiet 2>/dev/null || true
+
     log "Cluster deleted. No more compute charges."
     info "Images in Artifact Registry are preserved (cheap storage)."
     info "To fully clean up images too: gcloud artifacts repositories delete $REGISTRY_NAME --location=$REGION"
@@ -310,8 +488,11 @@ full_deploy() {
 redeploy() {
     check_project
     check_gcloud
+    check_domain
     gcloud container clusters get-credentials "$CLUSTER_NAME" --zone="$ZONE"
-    kubectl apply -k "$SCRIPT_DIR/$OVERLAY"
+    kubectl kustomize "$SCRIPT_DIR/$OVERLAY" \
+        | sed "s|DOMAIN_NAME|$DOMAIN_NAME|g" \
+        | kubectl apply -f -
     kubectl rollout restart deployment -n "$NAMESPACE"
     log "Redeploying... Run './deploy-gke.sh status' in a minute."
 }
@@ -326,6 +507,12 @@ show_logs() {
 case "${1}" in
     setup)
         setup
+        ;;
+    security)
+        setup_security
+        ;;
+    dns)
+        show_dns
         ;;
     build)
         build_images
@@ -370,25 +557,29 @@ case "${1}" in
         echo ""
         echo "  Initial Setup:"
         echo "    setup     Create GKE cluster + Artifact Registry (one-time)"
+        echo "    security  Create static IP + Cloud Armor + SSL policy (one-time, after setup)"
+        echo "    dns       Show DNS A record to configure at your registrar"
         echo ""
         echo "  Deployment:"
         echo "    build     Build all Docker images locally"
         echo "    push      Push images to Artifact Registry"
-        echo "    deploy    Apply k8s manifests to GKE"
+        echo "    deploy    Apply k8s manifests to GKE (requires DOMAIN_NAME)"
         echo "    full      Build + Push + Deploy (all-in-one)"
         echo "    redeploy  Re-apply manifests and restart pods"
         echo ""
         echo "  Monitoring:"
-        echo "    status    Show pods, services, PVCs"
-        echo "    ip        Show external IP of orchestrator"
+        echo "    status    Show pods, services, ingress, certificate status"
+        echo "    ip        Show static IP + public HTTPS URL"
         echo "    logs [svc] Follow logs (default: orchestrator)"
         echo ""
         echo "  Cost Management:"
         echo "    stop      Scale nodes to 0 (pause, save money)"
         echo "    start     Scale nodes back up (resume)"
-        echo "    destroy   Delete cluster entirely"
+        echo "    destroy   Delete cluster + Cloud Armor + static IP"
         echo "    cost      Show cost estimates"
         echo ""
-        echo "  Required env: export GCP_PROJECT_ID=your-project-id"
+        echo "  Required env:"
+        echo "    export GCP_PROJECT_ID=your-project-id"
+        echo "    export DOMAIN_NAME=api.yourdomain.com   (for 'deploy')"
         ;;
 esac

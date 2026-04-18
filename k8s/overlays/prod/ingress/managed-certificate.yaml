@@ -1,0 +1,18 @@
+# Google-managed SSL certificate (free, auto-renewed)
+# Requires:
+#   1. A registered domain pointing to the Ingress static IP
+#   2. The Ingress to be created BEFORE the certificate becomes ACTIVE
+# Provisioning takes 15-60 minutes after DNS A record propagates.
+#
+# To check status:
+#   kubectl describe managedcertificate memegram-cert -n memegram
+#
+# Domains: replace DOMAIN_NAME with your actual domain (e.g. api.memegram.com)
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: memegram-cert
+  namespace: memegram
+spec:
+  domains:
+    - DOMAIN_NAME

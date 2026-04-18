@@ -1,0 +1,40 @@
+# BackendConfig: configures the HTTPS Load Balancer backend for the orchestrator
+# - Attaches the Cloud Armor security policy (rate limit + WAF)
+# - Configures health check to use /health
+# - Enables Cloud CDN is OFF (API responses shouldn't be cached)
+# - Connection draining for graceful shutdown
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: memegram-backend-config
+  namespace: memegram
+spec:
+  # Attach Cloud Armor security policy (created out-of-band by gcloud)
+  securityPolicy:
+    name: memegram-armor-policy
+
+  # Health check: matches the /health endpoint exposed by orchestrator
+  healthCheck:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 8000
+
+  # Graceful shutdown
+  connectionDraining:
+    drainingTimeoutSec: 60
+
+  # Session affinity off (stateless API)
+  sessionAffinity:
+    affinityType: NONE
+
+  # Timeouts (in seconds)
+  timeoutSec: 60
+
+  # Logging of LB requests
+  logging:
+    enable: true
+    sampleRate: 1.0
