@@ -1,19 +1,20 @@
 from app.config import Settings
 from app.core.interfaces.auth_gateway import IAuthGateway
-from app.core.interfaces.user_gateway import IUserGateway
 from app.core.interfaces.contacts_gateway import IContactsGateway
-from app.core.interfaces.messaging_gateway import IMessagingGateway
-from app.core.interfaces.media_gateway import IMediaGateway
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
+from app.core.interfaces.media_gateway import IMediaGateway
+from app.core.interfaces.messaging_gateway import IMessagingGateway
 from app.core.interfaces.notifications_gateway import INotificationsGateway
-from app.infrastructure.grpc.client import GrpcChannelManager
+from app.core.interfaces.user_gateway import IUserGateway
 from app.infrastructure.grpc.auth_gateway import GrpcAuthGateway
-from app.infrastructure.grpc.user_gateway import GrpcUserGateway
+from app.infrastructure.grpc.client import GrpcChannelManager
 from app.infrastructure.grpc.contacts_gateway import GrpcContactsGateway
-from app.infrastructure.grpc.messaging_gateway import GrpcMessagingGateway
-from app.infrastructure.grpc.media_gateway import GrpcMediaGateway
 from app.infrastructure.grpc.item_storage_gateway import GrpcItemStorageGateway
+from app.infrastructure.grpc.media_gateway import GrpcMediaGateway
+from app.infrastructure.grpc.messaging_gateway import GrpcMessagingGateway
 from app.infrastructure.grpc.notifications_gateway import GrpcNotificationsGateway
+from app.infrastructure.grpc.user_gateway import GrpcUserGateway
+
 
 class Container:
     """IoC container — single source of truth for all gateway instances."""

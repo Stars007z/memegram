@@ -15,10 +15,11 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 class IContactsClient(ABC):
     @abstractmethod
-    async def is_blocked(self, user_id: str, blocked_user_id: str) -> bool:
-        ...
+    async def is_blocked(self, user_id: str, blocked_user_id: str) -> bool: ...
+
 
 class GrpcContactsClient(IContactsClient):
 

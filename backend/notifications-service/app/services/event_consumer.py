@@ -14,12 +14,12 @@ from typing import Any
 import redis.asyncio as aioredis
 
 from app.config import settings
-from app.logging_config import get_logger
 from app.database.session import get_session
 from app.infrastructure.contacts_client import IContactsClient
 from app.infrastructure.item_storage_client import IItemStorageClient
 from app.infrastructure.messaging_client import IMessagingClient
 from app.infrastructure.user_client import IUserClient
+from app.logging_config import get_logger
 from app.repositories.device_push_token_repo import DevicePushTokenRepository
 from app.services.push_sender import (
     ApnsSender,
@@ -40,6 +40,7 @@ MESSAGE_TYPE_LABELS: dict[str, str] = {
     "audio": "Голосовое сообщение",
     "file": "Файл",
 }
+
 
 class EventConsumer:
     """Consumes ``notifications:events`` Redis Stream and dispatches push."""
@@ -72,7 +73,10 @@ class EventConsumer:
         """Create consumer group (if needed) and start consuming."""
         try:
             await self._messaging_redis.xgroup_create(
-                self._stream, self._group, id="0", mkstream=True,
+                self._stream,
+                self._group,
+                id="0",
+                mkstream=True,
             )
             logger.info("consumer_group.created", group=self._group, stream=self._stream)
         except Exception:
@@ -182,7 +186,8 @@ class EventConsumer:
 
         if sender_user_id:
             recipient_ids = await self._filter_blocked_recipients(
-                recipient_ids, sender_user_id,
+                recipient_ids,
+                sender_user_id,
             )
             if not recipient_ids:
                 logger.debug(
@@ -339,13 +344,16 @@ class EventConsumer:
             )
 
     async def _filter_blocked_recipients(
-        self, recipient_ids: list[str], sender_user_id: str,
+        self,
+        recipient_ids: list[str],
+        sender_user_id: str,
     ) -> list[str]:
         """Return subset of recipient_ids that did NOT block the sender.
 
         Result is cached per (recipient, sender) pair for 60s to avoid bursts of
         gRPC calls during chat storms. Fail-open via GrpcContactsClient.
         """
+
         async def _check(recipient_id: str) -> tuple[str, bool]:
             cache_key = f"notif:blocked:{recipient_id}:{sender_user_id}"
             cached = await self._own_redis.get(cache_key)
@@ -368,13 +376,16 @@ class EventConsumer:
         cached = await self._own_redis.get(cache_key)
         if cached:
             import json as _json
+
             data = _json.loads(cached)
             from app.infrastructure.messaging_client import MemberInfo
+
             return [MemberInfo(user_id=m["user_id"], role=m["role"]) for m in data]
 
         members = await self._messaging_client.get_conversation_members(conversation_id)
         if members:
             import json as _json
+
             await self._own_redis.set(
                 cache_key,
                 _json.dumps([{"user_id": m.user_id, "role": m.role} for m in members]),
@@ -387,22 +398,27 @@ class EventConsumer:
         cached = await self._own_redis.get(cache_key)
         if cached:
             import json as _json
+
             data = _json.loads(cached)
             from app.infrastructure.user_client import UserInfo
+
             return UserInfo(**data)
 
         users = await self._user_client.get_users_batch([user_id])
         if users:
             import json as _json
+
             user = users[0]
             await self._own_redis.set(
                 cache_key,
-                _json.dumps({
-                    "user_id": user.user_id,
-                    "display_name": user.display_name,
-                    "username": user.username,
-                    "avatar_media_id": user.avatar_media_id,
-                }),
+                _json.dumps(
+                    {
+                        "user_id": user.user_id,
+                        "display_name": user.display_name,
+                        "username": user.username,
+                        "avatar_media_id": user.avatar_media_id,
+                    }
+                ),
                 ex=300,
             )
             return user

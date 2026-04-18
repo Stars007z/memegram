@@ -2,11 +2,12 @@ import grpc
 
 from app.config import Settings
 from app.core.interfaces.media_gateway import IMediaGateway, MediaHealthResult
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import media_pb2, media_pb2_grpc
 
 _SERVICE = "Media service"
+
 
 class GrpcMediaGateway(IMediaGateway):
 

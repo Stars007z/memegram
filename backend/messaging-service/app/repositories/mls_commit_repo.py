@@ -6,12 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mls_commit_message import MlsCommitMessage
 from app.repositories.base import BaseRepository
 
+
 class MlsCommitRepository(BaseRepository[MlsCommitMessage]):
     def __init__(self, session: AsyncSession):
         super().__init__(MlsCommitMessage, session)
 
     async def get_since_epoch(
-        self, conversation_id: uuid.UUID, since_epoch: int,
+        self,
+        conversation_id: uuid.UUID,
+        since_epoch: int,
     ) -> list[MlsCommitMessage]:
         query = (
             select(MlsCommitMessage)

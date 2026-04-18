@@ -7,11 +7,12 @@ import redis.asyncio as aioredis
 from sqlalchemy import text
 
 from app.infrastructure.contacts_client import IContactsClient
+from app.logging_config import get_logger
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
 from app.repositories.message_repo import MessageRepository
-from app.repositories.mls_group_repo import MlsGroupRepository
 from app.repositories.mls_commit_repo import MlsCommitRepository
+from app.repositories.mls_group_repo import MlsGroupRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
 from app.services.interfaces.conversation_service import (
     ConversationListResult,
@@ -21,10 +22,10 @@ from app.services.interfaces.conversation_service import (
     MemberResult,
     MlsGroupResult,
 )
-from app.logging_config import get_logger
 from app.services.interfaces.stream_service import IStreamService
 
 logger = get_logger(__name__)
+
 
 class ConversationServiceImpl(IConversationService):
 
@@ -60,7 +61,8 @@ class ConversationServiceImpl(IConversationService):
         await self._check_blocks_both_ways(initiator_user_id, recipient_user_id)
 
         existing = await self._conversations.find_direct_between(
-            initiator_user_id, recipient_user_id,
+            initiator_user_id,
+            recipient_user_id,
         )
         if existing:
 
@@ -79,36 +81,46 @@ class ConversationServiceImpl(IConversationService):
                 cipher_suite=existing_mls.cipher_suite if existing_mls else 1,
             )
 
-        conv = await self._conversations.create({
-            "type": "direct",
-            "created_by_user_id": initiator_user_id,
-        })
+        conv = await self._conversations.create(
+            {
+                "type": "direct",
+                "created_by_user_id": initiator_user_id,
+            }
+        )
 
-        initiator_member = await self._members.create({
-            "conversation_id": conv.id,
-            "user_id": initiator_user_id,
-            "role": "owner",
-        })
-        recipient_member = await self._members.create({
-            "conversation_id": conv.id,
-            "user_id": recipient_user_id,
-            "role": "member",
-        })
+        initiator_member = await self._members.create(
+            {
+                "conversation_id": conv.id,
+                "user_id": initiator_user_id,
+                "role": "owner",
+            }
+        )
+        recipient_member = await self._members.create(
+            {
+                "conversation_id": conv.id,
+                "user_id": recipient_user_id,
+                "role": "member",
+            }
+        )
 
         mls_group_id = uuid.uuid4().bytes
-        await self._mls_groups.create({
-            "id": conv.id,
-            "mls_group_id": mls_group_id,
-            "current_epoch": 1,
-            "cipher_suite": 1,
-        })
+        await self._mls_groups.create(
+            {
+                "id": conv.id,
+                "mls_group_id": mls_group_id,
+                "current_epoch": 1,
+                "cipher_suite": 1,
+            }
+        )
 
         for device_id, welcome_data in welcome_messages:
-            await self._welcomes.create({
-                "recipient_device_id": device_id,
-                "conversation_id": conv.id,
-                "welcome_data": welcome_data,
-            })
+            await self._welcomes.create(
+                {
+                    "recipient_device_id": device_id,
+                    "conversation_id": conv.id,
+                    "welcome_data": welcome_data,
+                }
+            )
 
         logger.info(
             "conversation.direct.created",
@@ -118,7 +130,10 @@ class ConversationServiceImpl(IConversationService):
         )
 
         return self._build_conversation_result(
-            conv, [initiator_member, recipient_member], epoch=1, cipher_suite=1,
+            conv,
+            [initiator_member, recipient_member],
+            epoch=1,
+            cipher_suite=1,
         )
 
     async def create_group(
@@ -131,43 +146,53 @@ class ConversationServiceImpl(IConversationService):
         for member_user_id, _ in members:
             await self._check_blocks_both_ways(creator_user_id, member_user_id)
 
-        conv = await self._conversations.create({
-            "type": "group",
-            "name": name,
-            "created_by_user_id": creator_user_id,
-        })
+        conv = await self._conversations.create(
+            {
+                "type": "group",
+                "name": name,
+                "created_by_user_id": creator_user_id,
+            }
+        )
 
         all_members = []
 
-        creator_member = await self._members.create({
-            "conversation_id": conv.id,
-            "user_id": creator_user_id,
-            "role": "owner",
-        })
+        creator_member = await self._members.create(
+            {
+                "conversation_id": conv.id,
+                "user_id": creator_user_id,
+                "role": "owner",
+            }
+        )
         all_members.append(creator_member)
 
         for member_user_id, welcomes in members:
-            member = await self._members.create({
-                "conversation_id": conv.id,
-                "user_id": member_user_id,
-                "role": "member",
-            })
+            member = await self._members.create(
+                {
+                    "conversation_id": conv.id,
+                    "user_id": member_user_id,
+                    "role": "member",
+                }
+            )
             all_members.append(member)
 
             for device_id, welcome_data in welcomes:
-                await self._welcomes.create({
-                    "recipient_device_id": device_id,
-                    "conversation_id": conv.id,
-                    "welcome_data": welcome_data,
-                })
+                await self._welcomes.create(
+                    {
+                        "recipient_device_id": device_id,
+                        "conversation_id": conv.id,
+                        "welcome_data": welcome_data,
+                    }
+                )
 
         mls_group_id = uuid.uuid4().bytes
-        await self._mls_groups.create({
-            "id": conv.id,
-            "mls_group_id": mls_group_id,
-            "current_epoch": 0,
-            "cipher_suite": 1,
-        })
+        await self._mls_groups.create(
+            {
+                "id": conv.id,
+                "mls_group_id": mls_group_id,
+                "current_epoch": 0,
+                "cipher_suite": 1,
+            }
+        )
 
         logger.info(
             "conversation.group.created",
@@ -177,7 +202,10 @@ class ConversationServiceImpl(IConversationService):
         )
 
         return self._build_conversation_result(
-            conv, all_members, epoch=0, cipher_suite=1,
+            conv,
+            all_members,
+            epoch=0,
+            cipher_suite=1,
         )
 
     async def get_conversations(
@@ -189,7 +217,10 @@ class ConversationServiceImpl(IConversationService):
         cursor_time, cursor_id = self._decode_cursor(cursor)
 
         conversations = await self._conversations.get_user_conversations(
-            user_id, limit + 1, cursor_time, cursor_id,
+            user_id,
+            limit + 1,
+            cursor_time,
+            cursor_id,
         )
 
         has_next = len(conversations) > limit
@@ -200,15 +231,17 @@ class ConversationServiceImpl(IConversationService):
         for conv in conversations:
             last_msg = await self._messages.get_last_message(conv.id)
             unread = await self._get_unread_count(user_id, conv.id)
-            items.append(ConversationSummaryResult(
-                id=conv.id,
-                type=conv.type,
-                name=conv.name,
-                last_message_type=last_msg.type if last_msg else None,
-                unread_count=unread,
-                last_activity_at=conv.last_activity_at.timestamp(),
-                avatar_media_id=conv.avatar_media_id,
-            ))
+            items.append(
+                ConversationSummaryResult(
+                    id=conv.id,
+                    type=conv.type,
+                    name=conv.name,
+                    last_message_type=last_msg.type if last_msg else None,
+                    unread_count=unread,
+                    last_activity_at=conv.last_activity_at.timestamp(),
+                    avatar_media_id=conv.avatar_media_id,
+                )
+            )
 
         next_cursor = None
         if has_next and conversations:
@@ -258,10 +291,13 @@ class ConversationServiceImpl(IConversationService):
             user_id=str(user_id),
         )
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "member_left",
-            "user_id": str(user_id),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "member_left",
+                "user_id": str(user_id),
+            },
+        )
 
         return True
 
@@ -300,11 +336,14 @@ class ConversationServiceImpl(IConversationService):
             kicked_by=str(caller_user_id),
         )
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "member_kicked",
-            "user_id": str(target_user_id),
-            "kicked_by": str(caller_user_id),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "member_kicked",
+                "user_id": str(target_user_id),
+                "kicked_by": str(caller_user_id),
+            },
+        )
 
         return True
 
@@ -350,11 +389,14 @@ class ConversationServiceImpl(IConversationService):
             changed_by=str(caller_user_id),
         )
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "role_changed",
-            "user_id": str(target_user_id),
-            "new_role": new_role,
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "role_changed",
+                "user_id": str(target_user_id),
+                "new_role": new_role,
+            },
+        )
 
         return True
 
@@ -379,11 +421,14 @@ class ConversationServiceImpl(IConversationService):
 
         await self._conversations.update_avatar(conversation_id, avatar_media_id)
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "group_avatar_changed",
-            "avatar_media_id": str(avatar_media_id) if avatar_media_id else "",
-            "changed_by": str(caller_user_id),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "group_avatar_changed",
+                "avatar_media_id": str(avatar_media_id) if avatar_media_id else "",
+                "changed_by": str(caller_user_id),
+            },
+        )
 
         return True
 
@@ -411,11 +456,14 @@ class ConversationServiceImpl(IConversationService):
 
         await self._conversations.update_name(conversation_id, name.strip())
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "group_name_changed",
-            "name": name.strip(),
-            "changed_by": str(caller_user_id),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "group_name_changed",
+                "name": name.strip(),
+                "changed_by": str(caller_user_id),
+            },
+        )
 
         return True
 
@@ -434,14 +482,16 @@ class ConversationServiceImpl(IConversationService):
 
         if conv.type == "group" and caller.role != "owner":
             raise ValueError(
-                "PERMISSION_DENIED: Only the group owner can delete the group; "
-                "use leave instead",
+                "PERMISSION_DENIED: Only the group owner can delete the group; " "use leave instead",
             )
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "conversation_deleted",
-            "deleted_by": str(caller_user_id),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "conversation_deleted",
+                "deleted_by": str(caller_user_id),
+            },
+        )
 
         session = self._conversations.session
         cid = conversation_id
@@ -482,7 +532,9 @@ class ConversationServiceImpl(IConversationService):
         return True
 
     async def _check_blocks_both_ways(
-        self, user_a: uuid.UUID, user_b: uuid.UUID,
+        self,
+        user_a: uuid.UUID,
+        user_b: uuid.UUID,
     ) -> None:
         if await self._contacts.is_blocked(user_a, user_b):
             raise ValueError("NOT_FOUND: User not found")
@@ -490,7 +542,9 @@ class ConversationServiceImpl(IConversationService):
             raise ValueError("NOT_FOUND: User not found")
 
     async def _get_unread_count(
-        self, user_id: uuid.UUID, conversation_id: uuid.UUID,
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
     ) -> int:
         key = f"unread:{user_id}:{conversation_id}"
         cached = await self._redis.get(key)

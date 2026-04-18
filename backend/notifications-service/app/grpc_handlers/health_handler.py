@@ -5,6 +5,7 @@ from app.container import Container
 from app.database.redis import check_redis_health
 from app.generated import notifications_pb2
 
+
 class HealthHandler:
 
     def __init__(self, container: Container) -> None:
@@ -19,6 +20,7 @@ class HealthHandler:
         try:
             async with self._container.request_scope() as scope:
                 from sqlalchemy import text
+
                 await scope._session.execute(text("SELECT 1"))
                 db_status = "connected"
         except Exception as e:

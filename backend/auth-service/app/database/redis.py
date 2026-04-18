@@ -1,6 +1,9 @@
-import redis.asyncio as redis
-from app.config import settings
 from typing import Optional
+
+import redis.asyncio as redis
+
+from app.config import settings
+
 
 class RedisClient:
     _instance: Optional[redis.Redis] = None
@@ -8,11 +11,7 @@ class RedisClient:
     @classmethod
     async def get_instance(cls) -> redis.Redis:
         if cls._instance is None:
-            cls._instance = redis.from_url(
-                settings.REDIS_URL,
-                encoding="utf-8",
-                decode_responses=False
-            )
+            cls._instance = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=False)
         return cls._instance
 
     @classmethod
@@ -20,6 +19,7 @@ class RedisClient:
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
+
 
 async def store_challenge(device_id: str, challenge: bytes, ttl: int = None) -> bool:
     """Сохранить challenge в Redis с TTL"""
@@ -29,11 +29,13 @@ async def store_challenge(device_id: str, challenge: bytes, ttl: int = None) -> 
     await redis_client.setex(key, ttl, challenge)
     return True
 
+
 async def get_challenge(device_id: str) -> Optional[bytes]:
     """Получить challenge из Redis"""
     redis_client = await RedisClient.get_instance()
     key = f"auth:challenge:{device_id}"
     return await redis_client.get(key)
+
 
 async def delete_challenge(device_id: str) -> bool:
     """Удалить challenge после использования"""
@@ -41,6 +43,7 @@ async def delete_challenge(device_id: str) -> bool:
     key = f"auth:challenge:{device_id}"
     result = await redis_client.delete(key)
     return result > 0
+
 
 async def check_redis_health() -> bool:
     """Проверка подключения к Redis"""

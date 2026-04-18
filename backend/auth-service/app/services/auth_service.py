@@ -1,22 +1,24 @@
-import uuid
-import jwt
 import os
+import uuid
 from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
-from cryptography.hazmat.primitives.asymmetric import ed25519
-from cryptography.exceptions import InvalidSignature
 
-from app.repositories.device_repo import DeviceRepository
-from app.repositories.session_repo import SessionRepository
-from app.repositories.invite_repo import InviteRepository
+import jwt
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
-from app.database.redis import store_challenge, get_challenge, delete_challenge, RedisClient
+from app.database.redis import RedisClient, delete_challenge, get_challenge, store_challenge
 from app.logging_config import get_logger
+from app.repositories.device_repo import DeviceRepository
+from app.repositories.invite_repo import InviteRepository
+from app.repositories.session_repo import SessionRepository
 
 logger = get_logger(__name__)
 
 ACCESS_TOKEN_MINUTES = 60
 REFRESH_TOKEN_DAYS = 7
+
 
 class AuthService:
     def __init__(self, session: AsyncSession):
@@ -44,17 +46,19 @@ class AuthService:
 
         device_type = "admin" if invite.is_admin else "primary"
 
-        await self.device_repo.create({
-            "id": device_uuid,
-            "user_id": user_id,
-            "client_device_id": device_id,
-            "device_name": device_name,
-            "device_type": device_type,
-            "is_active": True,
-            "identity_key_pub": identity_key_pub,
-            "init_key_pub": init_key_pub,
-            "credential_data": credential_data,
-        })
+        await self.device_repo.create(
+            {
+                "id": device_uuid,
+                "user_id": user_id,
+                "client_device_id": device_id,
+                "device_name": device_name,
+                "device_type": device_type,
+                "is_active": True,
+                "identity_key_pub": identity_key_pub,
+                "init_key_pub": init_key_pub,
+                "credential_data": credential_data,
+            }
+        )
 
         access_token, refresh_token, expires_at, refresh_expires_at = self._generate_tokens(
             user_id=str(user_id),
@@ -62,13 +66,15 @@ class AuthService:
             device_type=device_type,
         )
 
-        await self.session_repo.create({
-            "device_id": device_uuid,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "refresh_expires_at": refresh_expires_at,
-        })
+        await self.session_repo.create(
+            {
+                "device_id": device_uuid,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "refresh_expires_at": refresh_expires_at,
+            }
+        )
 
         await self.invite_repo.mark_as_used(invite, used_by_user_id=user_id)
 
@@ -101,10 +107,9 @@ class AuthService:
         await store_challenge(device_id, challenge, settings.CHALLENGE_TTL_SECONDS)
 
         import base64
+
         challenge_b64 = base64.b64encode(challenge).decode("utf-8")
-        expires_at = int(
-            (datetime.utcnow() + timedelta(seconds=settings.CHALLENGE_TTL_SECONDS)).timestamp()
-        )
+        expires_at = int((datetime.utcnow() + timedelta(seconds=settings.CHALLENGE_TTL_SECONDS)).timestamp())
         return {"challenge": challenge_b64, "expires_at": expires_at, "device_id": device_id}
 
     async def login_complete(
@@ -154,13 +159,15 @@ class AuthService:
             device_type=device.device_type,
         )
 
-        await self.session_repo.create({
-            "device_id": device.id,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "refresh_expires_at": refresh_expires_at,
-        })
+        await self.session_repo.create(
+            {
+                "device_id": device.id,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "refresh_expires_at": refresh_expires_at,
+            }
+        )
 
         logger.info(
             "auth.login.success",
@@ -187,10 +194,13 @@ class AuthService:
         if session.refresh_expires_at < datetime.utcnow():
             raise ValueError("Refresh token expired")
 
-        await self.session_repo.update(session, {
-            "is_revoked": True,
-            "last_used": datetime.utcnow(),
-        })
+        await self.session_repo.update(
+            session,
+            {
+                "is_revoked": True,
+                "last_used": datetime.utcnow(),
+            },
+        )
 
         device = await self.device_repo.get_by_id(session.device_id)
         if not device or not device.is_active:
@@ -202,13 +212,15 @@ class AuthService:
             device_type=device.device_type,
         )
 
-        await self.session_repo.create({
-            "device_id": device.id,
-            "access_token": access_token,
-            "refresh_token": new_refresh_token,
-            "expires_at": expires_at,
-            "refresh_expires_at": refresh_expires_at,
-        })
+        await self.session_repo.create(
+            {
+                "device_id": device.id,
+                "access_token": access_token,
+                "refresh_token": new_refresh_token,
+                "expires_at": expires_at,
+                "refresh_expires_at": refresh_expires_at,
+            }
+        )
 
         return {
             "user_id": str(device.user_id),
@@ -276,9 +288,7 @@ class AuthService:
             "message": f"Invite code created successfully. Valid for {expires_in_days} days.",
         }
 
-    def _generate_tokens(
-        self, user_id: str, device_id: str, device_type: str
-    ) -> tuple[str, str, datetime, datetime]:
+    def _generate_tokens(self, user_id: str, device_id: str, device_type: str) -> tuple[str, str, datetime, datetime]:
         expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
         refresh_expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
 
@@ -305,6 +315,7 @@ class AuthService:
         cached = await redis.get(cache_key)
         if cached:
             import json
+
             return json.loads(cached)
 
         try:
@@ -337,6 +348,7 @@ class AuthService:
         }
 
         import json
+
         ttl = max(0, expires_at - int(datetime.utcnow().timestamp()))
         if ttl > 0:
             await redis.setex(cache_key, ttl, json.dumps(result))

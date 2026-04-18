@@ -6,6 +6,7 @@ from app.container import Container
 from app.generated import messaging_pb2
 from app.grpc_handlers.conversation_handler import _set_error_from_value_error
 
+
 class MlsHandler:
 
     def __init__(self, container: Container) -> None:
@@ -120,10 +121,7 @@ class MlsHandler:
             try:
                 welcomes = None
                 if request.welcome_messages:
-                    welcomes = [
-                        (uuid.UUID(w.device_id), w.welcome_data)
-                        for w in request.welcome_messages
-                    ]
+                    welcomes = [(uuid.UUID(w.device_id), w.welcome_data) for w in request.welcome_messages]
                 removed = None
                 if request.removed_device_ids:
                     removed = [uuid.UUID(d) for d in request.removed_device_ids]

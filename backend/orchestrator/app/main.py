@@ -4,26 +4,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.logging_config import setup_logging, get_logger
+from app.api.v1.router import v1_router
 from app.config import settings
 from app.container import Container
-from app.api.v1.router import v1_router
-from app.exceptions import GatewayError, NotFoundError, ValidationError, PermissionDeniedError
+from app.exceptions import GatewayError, NotFoundError, PermissionDeniedError, ValidationError
 from app.exceptions.handlers import (
     gateway_error_handler,
     not_found_handler,
-    validation_error_handler,
     permission_denied_handler,
+    validation_error_handler,
 )
+from app.logging_config import get_logger, setup_logging
 from app.middleware.logging_middleware import LoggingMiddleware
 
 setup_logging()
 logger = get_logger(__name__)
 
+
 async def _auto_delete_task(container: Container) -> None:
     """Daily cron: call user-service.CheckAndProcessAutoDelete at configured UTC time."""
     while True:
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
 
         now = datetime.now(timezone.utc)
         target = now.replace(
@@ -54,6 +55,7 @@ async def _auto_delete_task(container: Container) -> None:
                 error_type=type(exc).__name__,
             )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     container = Container(settings)
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
         await container.close()
         logger.info("service.stopped")
+
 
 app = FastAPI(
     title=settings.APP_TITLE,
@@ -84,10 +87,12 @@ app.add_exception_handler(NotFoundError, not_found_handler)
 app.add_exception_handler(ValidationError, validation_error_handler)
 app.add_exception_handler(PermissionDeniedError, permission_denied_handler)
 
+
 @app.get("/health", include_in_schema=False)
 async def root_health():
     """Root health endpoint — used by Docker HEALTHCHECK and load balancers."""
     return JSONResponse({"status": "ok", "version": settings.APP_VERSION})
+
 
 @app.middleware("http")
 async def update_last_active_middleware(request: Request, call_next):
@@ -101,11 +106,13 @@ async def update_last_active_middleware(request: Request, call_next):
         )
     return response
 
+
 async def _fire_update_last_active(container: Container, user_id: str) -> None:
     try:
         await container.user_gateway.update_last_active(user_id)
     except Exception:
         pass
+
 
 async def _fire_set_online(container: Container, user_id: str, device_id: str) -> None:
     try:

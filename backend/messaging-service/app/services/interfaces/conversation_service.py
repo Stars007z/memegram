@@ -1,7 +1,8 @@
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
-import uuid
+
 
 @dataclass
 class MemberResult:
@@ -9,10 +10,12 @@ class MemberResult:
     role: str
     joined_at: float
 
+
 @dataclass
 class MlsGroupResult:
     current_epoch: int
     cipher_suite: int
+
 
 @dataclass
 class ConversationResult:
@@ -24,6 +27,7 @@ class ConversationResult:
     created_at: float
     avatar_media_id: Optional[uuid.UUID] = None
 
+
 @dataclass
 class ConversationSummaryResult:
     id: uuid.UUID
@@ -34,10 +38,12 @@ class ConversationSummaryResult:
     last_activity_at: float
     avatar_media_id: Optional[uuid.UUID] = None
 
+
 @dataclass
 class ConversationListResult:
     items: list[ConversationSummaryResult]
     next_cursor: Optional[str]
+
 
 class IConversationService(ABC):
 
@@ -48,8 +54,7 @@ class IConversationService(ABC):
         initiator_device_id: uuid.UUID,
         recipient_user_id: uuid.UUID,
         welcome_messages: list[tuple[uuid.UUID, bytes]],
-    ) -> ConversationResult:
-        ...
+    ) -> ConversationResult: ...
 
     @abstractmethod
     async def create_group(
@@ -58,8 +63,7 @@ class IConversationService(ABC):
         creator_device_id: uuid.UUID,
         name: str,
         members: list[tuple[uuid.UUID, list[tuple[uuid.UUID, bytes]]]],
-    ) -> ConversationResult:
-        ...
+    ) -> ConversationResult: ...
 
     @abstractmethod
     async def get_conversations(
@@ -67,16 +71,14 @@ class IConversationService(ABC):
         user_id: uuid.UUID,
         limit: int,
         cursor: Optional[str],
-    ) -> ConversationListResult:
-        ...
+    ) -> ConversationListResult: ...
 
     @abstractmethod
     async def get_conversation(
         self,
         user_id: uuid.UUID,
         conversation_id: uuid.UUID,
-    ) -> ConversationResult:
-        ...
+    ) -> ConversationResult: ...
 
     @abstractmethod
     async def leave_conversation(
@@ -85,8 +87,7 @@ class IConversationService(ABC):
         device_id: uuid.UUID,
         conversation_id: uuid.UUID,
         commit_data: bytes,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def kick_member(
@@ -94,8 +95,7 @@ class IConversationService(ABC):
         caller_user_id: uuid.UUID,
         conversation_id: uuid.UUID,
         target_user_id: uuid.UUID,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def update_member_role(
@@ -104,8 +104,7 @@ class IConversationService(ABC):
         conversation_id: uuid.UUID,
         target_user_id: uuid.UUID,
         new_role: str,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def update_group_avatar(
@@ -113,8 +112,7 @@ class IConversationService(ABC):
         caller_user_id: uuid.UUID,
         conversation_id: uuid.UUID,
         avatar_media_id: Optional[uuid.UUID],
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def update_group_name(
@@ -122,8 +120,7 @@ class IConversationService(ABC):
         caller_user_id: uuid.UUID,
         conversation_id: uuid.UUID,
         name: str,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def delete_conversation(

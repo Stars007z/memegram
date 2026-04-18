@@ -1,8 +1,10 @@
 import grpc
-from app.generated import item_storage_pb2, item_storage_pb2_grpc
-from app.services.item_storage_service import ItemStorageService
-from app.infrastructure import s3_client
+
 from app.config import settings
+from app.generated import item_storage_pb2, item_storage_pb2_grpc
+from app.infrastructure import s3_client
+from app.services.item_storage_service import ItemStorageService
+
 
 class ItemStorageHandler(item_storage_pb2_grpc.ItemStorageServiceServicer):
     def __init__(self, get_session):
@@ -204,6 +206,7 @@ class ItemStorageHandler(item_storage_pb2_grpc.ItemStorageServiceServicer):
         try:
             async with self.get_session() as session:
                 from sqlalchemy import text
+
                 await session.execute(text("SELECT 1"))
                 db_status = "connected"
         except Exception as e:

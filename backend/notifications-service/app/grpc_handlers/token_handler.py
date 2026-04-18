@@ -8,6 +8,7 @@ from app.container import Container
 from app.generated import notifications_pb2
 from app.repositories.device_push_token_repo import DevicePushTokenRepository
 
+
 class TokenHandler:
 
     def __init__(self, container: Container) -> None:

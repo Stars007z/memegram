@@ -15,8 +15,10 @@ from app.services.interfaces.media_object_service import (
     VerifyResult,
 )
 
+
 def _mime_prefix(mime_type: str) -> str:
     return mime_type.split("/")[0] if "/" in mime_type else "unknown"
+
 
 class MediaObjectServiceImpl(IMediaObjectService):
     def __init__(
@@ -38,14 +40,16 @@ class MediaObjectServiceImpl(IMediaObjectService):
         s3_key = f"media/{conversation_id}/{media_id}/{_mime_prefix(mime_type)}"
         bucket = settings.S3_BUCKET_NAME
 
-        await self._repo.create({
-            "id": media_id,
-            "s3_bucket": bucket,
-            "s3_key": s3_key,
-            "mime_type": mime_type,
-            "encrypted_size": encrypted_size,
-            "status": "pending",
-        })
+        await self._repo.create(
+            {
+                "id": media_id,
+                "s3_bucket": bucket,
+                "s3_key": s3_key,
+                "mime_type": mime_type,
+                "encrypted_size": encrypted_size,
+                "status": "pending",
+            }
+        )
 
         upload_url = await self._s3.generate_presigned_upload_url(
             bucket=bucket,
@@ -138,16 +142,15 @@ class MediaObjectServiceImpl(IMediaObjectService):
         deleted_count, errors = await self._s3.delete_objects(bucket, keys)
 
         error_keys = {e["key"] for e in errors}
-        success_ids = [
-            mid for mid, s3_key in objects if s3_key not in error_keys
-        ]
+        success_ids = [mid for mid, s3_key in objects if s3_key not in error_keys]
         await self._repo.mark_deleted_batch(success_ids)
 
         failed = [
             BatchDeleteFailure(
                 media_id=str(mid),
                 error=next(
-                    (e["message"] for e in errors if e["key"] == s3_key), "unknown",
+                    (e["message"] for e in errors if e["key"] == s3_key),
+                    "unknown",
                 ),
             )
             for mid, s3_key in objects

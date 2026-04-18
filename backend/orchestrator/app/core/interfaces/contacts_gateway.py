@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import List, Optional
+
 
 @dataclass
 class UserBriefProfile:
@@ -10,6 +11,7 @@ class UserBriefProfile:
     bio: str = ""
     avatar_media_id: str = ""
 
+
 @dataclass
 class ContactEntry:
     contact_user_id: str = ""
@@ -17,51 +19,62 @@ class ContactEntry:
     created_at: int = 0
     profile: Optional[UserBriefProfile] = None
 
+
 @dataclass
 class BlockedEntry:
     blocked_user_id: str = ""
     blocked_at: int = 0
     profile: Optional[UserBriefProfile] = None
 
+
 @dataclass
 class AddContactResult:
     contact: ContactEntry = field(default_factory=ContactEntry)
 
+
 @dataclass
 class RemoveContactResult:
     success: bool = False
+
 
 @dataclass
 class GetContactsResult:
     contacts: List[ContactEntry] = field(default_factory=list)
     total_count: int = 0
 
+
 @dataclass
 class UpdateContactResult:
     contact: ContactEntry = field(default_factory=ContactEntry)
+
 
 @dataclass
 class BlockUserResult:
     success: bool = False
     created_at: int = 0
 
+
 @dataclass
 class UnblockUserResult:
     success: bool = False
+
 
 @dataclass
 class GetBlockedUsersResult:
     blocked_users: List[BlockedEntry] = field(default_factory=list)
     total_count: int = 0
 
+
 @dataclass
 class IsBlockedResult:
     is_blocked: bool = False
+
 
 @dataclass
 class ContactsHealthResult:
     status: str = "degraded"
     version: str = "1.0.0"
+
 
 class IContactsGateway(ABC):
     @abstractmethod
@@ -85,9 +98,7 @@ class IContactsGateway(ABC):
     async def unblock_user(self, user_id: str, blocked_user_id: str) -> UnblockUserResult: ...
 
     @abstractmethod
-    async def get_blocked_users(
-        self, user_id: str, limit: int, offset: int
-    ) -> GetBlockedUsersResult: ...
+    async def get_blocked_users(self, user_id: str, limit: int, offset: int) -> GetBlockedUsersResult: ...
 
     @abstractmethod
     async def is_blocked(self, user_id: str, blocked_user_id: str) -> IsBlockedResult: ...

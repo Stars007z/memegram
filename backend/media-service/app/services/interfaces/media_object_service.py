@@ -1,6 +1,7 @@
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import uuid
+
 
 @dataclass
 class UploadPresignedResult:
@@ -8,25 +9,30 @@ class UploadPresignedResult:
     s3_key: str
     expires_at: int
 
+
 @dataclass
 class DownloadPresignedResult:
     download_url: str
     expires_at: int
+
 
 @dataclass
 class VerifyResult:
     exists: bool
     actual_size: int
 
+
 @dataclass
 class BatchDeleteFailure:
     media_id: str
     error: str
 
+
 @dataclass
 class BatchDeleteResult:
     deleted_count: int
     failed: list[BatchDeleteFailure]
+
 
 class IMediaObjectService(ABC):
 

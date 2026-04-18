@@ -7,13 +7,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
+
 class NotificationLog(Base):
     """Optional table for analytics and debugging push delivery."""
 
     __tablename__ = "notification_log"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

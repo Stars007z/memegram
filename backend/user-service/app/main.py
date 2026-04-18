@@ -1,14 +1,15 @@
 import asyncio
+
 import grpc.aio
 from grpc_reflection.v1alpha import reflection
 
-from app.logging_config import setup_logging, get_logger
+from app.config import settings
+from app.database.redis import RedisClient
+from app.database.session import close_db, get_session
 from app.generated import user_pb2, user_pb2_grpc
 from app.grpc_handlers.user_handler import UserHandler
 from app.grpc_interceptor import LoggingInterceptor
-from app.database.session import get_session, close_db
-from app.database.redis import RedisClient
-from app.config import settings
+from app.logging_config import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger(__name__)
@@ -18,11 +19,10 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
+
 async def serve():
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
-    user_pb2_grpc.add_UserServiceServicer_to_server(
-        UserHandler(get_session), server
-    )
+    user_pb2_grpc.add_UserServiceServicer_to_server(UserHandler(get_session), server)
     reflection.enable_server_reflection(SERVICE_NAMES, server)
     server.add_insecure_port(f"[::]:{settings.GRPC_PORT}")
 
@@ -38,6 +38,7 @@ async def serve():
         await close_db()
         await RedisClient.close()
         logger.info("service.stopped", message="All connections closed")
+
 
 if __name__ == "__main__":
     asyncio.run(serve())

@@ -6,13 +6,13 @@ from typing import Optional
 import redis.asyncio as aioredis
 from sqlalchemy.exc import IntegrityError
 
+from app.infrastructure.auth_client import IAuthClient
+from app.logging_config import get_logger
 from app.repositories.member_repo import MemberRepository
 from app.repositories.mls_commit_repo import MlsCommitRepository
 from app.repositories.mls_group_repo import MlsGroupRepository
 from app.repositories.mls_key_package_repo import MlsKeyPackageRepository
 from app.repositories.mls_welcome_repo import MlsWelcomeRepository
-from app.infrastructure.auth_client import IAuthClient
-from app.logging_config import get_logger
 from app.services.interfaces.mls_service import (
     CommitEntryResult,
     CommitResult,
@@ -26,6 +26,7 @@ from app.services.interfaces.stream_service import IStreamService
 DEFAULT_CIPHER_SUITE = 1
 
 logger = get_logger(__name__)
+
 
 class MlsServiceImpl(IMlsService):
 
@@ -57,24 +58,30 @@ class MlsServiceImpl(IMlsService):
     ) -> int:
 
         purged = await self._key_packages.delete_by_device(
-            user_id=user_id, device_id=device_id, only_unconsumed=True,
+            user_id=user_id,
+            device_id=device_id,
+            only_unconsumed=True,
         )
         if purged:
             logger.info(
                 "mls.key_packages.purged_on_upload",
-                user_id=str(user_id), device_id=str(device_id), purged=purged,
+                user_id=str(user_id),
+                device_id=str(device_id),
+                purged=purged,
             )
 
         items = []
         for kp_data in key_packages:
             kp_ref = hashlib.sha256(kp_data).digest()
-            items.append({
-                "user_id": user_id,
-                "device_id": device_id,
-                "key_package_data": kp_data,
-                "key_package_ref": kp_ref,
-                "cipher_suite": DEFAULT_CIPHER_SUITE,
-            })
+            items.append(
+                {
+                    "user_id": user_id,
+                    "device_id": device_id,
+                    "key_package_data": kp_data,
+                    "key_package_ref": kp_ref,
+                    "cipher_suite": DEFAULT_CIPHER_SUITE,
+                }
+            )
 
         created = await self._key_packages.create_many(items)
         logger.info(
@@ -91,11 +98,15 @@ class MlsServiceImpl(IMlsService):
         device_id: uuid.UUID,
     ) -> int:
         deleted = await self._key_packages.delete_by_device(
-            user_id=user_id, device_id=device_id, only_unconsumed=True,
+            user_id=user_id,
+            device_id=device_id,
+            only_unconsumed=True,
         )
         logger.info(
             "mls.key_packages.deleted_for_device",
-            user_id=str(user_id), device_id=str(device_id), deleted=deleted,
+            user_id=str(user_id),
+            device_id=str(device_id),
+            deleted=deleted,
         )
         return deleted
 
@@ -131,16 +142,16 @@ class MlsServiceImpl(IMlsService):
         for device_id in device_ids:
             package = await self._key_packages.consume_one(target_user_id, device_id)
             if package:
-                results.append(UserDeviceKeyPackageResult(
-                    device_id=device_id,
-                    key_package_data=package.key_package_data,
-                    key_package_ref=package.key_package_ref,
-                ))
+                results.append(
+                    UserDeviceKeyPackageResult(
+                        device_id=device_id,
+                        key_package_data=package.key_package_data,
+                        key_package_ref=package.key_package_ref,
+                    )
+                )
 
         if not results:
-            raise ValueError(
-                "NOT_FOUND: No available key packages for any device of this user"
-            )
+            raise ValueError("NOT_FOUND: No available key packages for any device of this user")
         return results
 
     async def commit_group_change(
@@ -161,37 +172,39 @@ class MlsServiceImpl(IMlsService):
 
         if added_user_ids or removed_device_ids:
             has_admin = await self._members.has_role(
-                conversation_id, user_id, ["owner", "admin"],
+                conversation_id,
+                user_id,
+                ["owner", "admin"],
             )
             if not has_admin:
-                raise ValueError(
-                    "PERMISSION_DENIED: Only admins can add or remove members"
-                )
+                raise ValueError("PERMISSION_DENIED: Only admins can add or remove members")
 
         if mls_group.current_epoch + 1 != new_epoch:
-            raise ValueError("ABORTED: Epoch conflict — expected "
-                             f"{mls_group.current_epoch + 1}, got {new_epoch}")
+            raise ValueError("ABORTED: Epoch conflict — expected " f"{mls_group.current_epoch + 1}, got {new_epoch}")
 
         try:
             async with self._commits.session.begin_nested():
-                await self._commits.create({
-                    "conversation_id": conversation_id,
-                    "sender_device_id": device_id,
-                    "epoch": new_epoch,
-                    "commit_data": commit_data,
-                })
+                await self._commits.create(
+                    {
+                        "conversation_id": conversation_id,
+                        "sender_device_id": device_id,
+                        "epoch": new_epoch,
+                        "commit_data": commit_data,
+                    }
+                )
         except IntegrityError:
 
-            raise ValueError("ABORTED: Epoch conflict — another commit already "
-                             f"exists at epoch {new_epoch}")
+            raise ValueError("ABORTED: Epoch conflict — another commit already " f"exists at epoch {new_epoch}")
 
         if welcome_messages:
             for wm_device_id, welcome_data in welcome_messages:
-                await self._welcomes.create({
-                    "recipient_device_id": wm_device_id,
-                    "conversation_id": conversation_id,
-                    "welcome_data": welcome_data,
-                })
+                await self._welcomes.create(
+                    {
+                        "recipient_device_id": wm_device_id,
+                        "conversation_id": conversation_id,
+                        "welcome_data": welcome_data,
+                    }
+                )
 
         update_data: dict = {"current_epoch": new_epoch}
         if ratchet_tree is not None:
@@ -201,38 +214,53 @@ class MlsServiceImpl(IMlsService):
         if added_user_ids:
             for new_uid in added_user_ids:
                 existing_member = await self._members.get_member(
-                    conversation_id, new_uid,
+                    conversation_id,
+                    new_uid,
                 )
                 if existing_member:
                     if existing_member.left_at is not None:
 
-                        await self._members.update(existing_member, {
-                            "left_at": None,
-                            "joined_at": datetime.utcnow(),
-                            "role": "member",
-                        })
-                        await self._stream.publish_event(conversation_id, {
-                            "event_type": "member_joined",
-                            "user_id": str(new_uid),
-                        })
+                        await self._members.update(
+                            existing_member,
+                            {
+                                "left_at": None,
+                                "joined_at": datetime.utcnow(),
+                                "role": "member",
+                            },
+                        )
+                        await self._stream.publish_event(
+                            conversation_id,
+                            {
+                                "event_type": "member_joined",
+                                "user_id": str(new_uid),
+                            },
+                        )
 
                 else:
-                    await self._members.create({
-                        "conversation_id": conversation_id,
-                        "user_id": new_uid,
-                        "role": "member",
-                    })
-                    await self._stream.publish_event(conversation_id, {
-                        "event_type": "member_joined",
-                        "user_id": str(new_uid),
-                    })
+                    await self._members.create(
+                        {
+                            "conversation_id": conversation_id,
+                            "user_id": new_uid,
+                            "role": "member",
+                        }
+                    )
+                    await self._stream.publish_event(
+                        conversation_id,
+                        {
+                            "event_type": "member_joined",
+                            "user_id": str(new_uid),
+                        },
+                    )
 
         now = datetime.utcnow()
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "epoch_changed",
-            "new_epoch": new_epoch,
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "epoch_changed",
+                "new_epoch": new_epoch,
+            },
+        )
 
         logger.info(
             "mls.group.commit",
@@ -246,7 +274,8 @@ class MlsServiceImpl(IMlsService):
         return CommitResult(new_epoch=new_epoch, committed_at=now.timestamp())
 
     async def get_pending_welcomes(
-        self, device_id: uuid.UUID,
+        self,
+        device_id: uuid.UUID,
     ) -> list[WelcomeEntryResult]:
         rows = await self._welcomes.get_pending_for_device(device_id)
         return [
@@ -260,7 +289,9 @@ class MlsServiceImpl(IMlsService):
         ]
 
     async def ack_welcome(
-        self, device_id: uuid.UUID, welcome_id: uuid.UUID,
+        self,
+        device_id: uuid.UUID,
+        welcome_id: uuid.UUID,
     ) -> bool:
         welcome = await self._welcomes.get_by_id(welcome_id)
         if not welcome or welcome.recipient_device_id != device_id:
@@ -269,7 +300,9 @@ class MlsServiceImpl(IMlsService):
         return True
 
     async def get_pending_commits(
-        self, conversation_id: uuid.UUID, since_epoch: int,
+        self,
+        conversation_id: uuid.UUID,
+        since_epoch: int,
     ) -> list[CommitEntryResult]:
         rows = await self._commits.get_since_epoch(conversation_id, since_epoch)
         return [
@@ -282,19 +315,24 @@ class MlsServiceImpl(IMlsService):
         ]
 
     async def notify_device_revoked(
-        self, user_id: uuid.UUID, revoked_device_id: uuid.UUID,
+        self,
+        user_id: uuid.UUID,
+        revoked_device_id: uuid.UUID,
     ) -> int:
         conv_ids = await self._members.get_user_conversation_ids(user_id)
         if not conv_ids:
             return 0
 
         for cid in conv_ids:
-            await self._stream.publish_event(cid, {
-                "event_type": "device_revoked",
-                "user_id": str(user_id),
-                "revoked_device_id": str(revoked_device_id),
-                "conversation_ids": [str(c) for c in conv_ids],
-            })
+            await self._stream.publish_event(
+                cid,
+                {
+                    "event_type": "device_revoked",
+                    "user_id": str(user_id),
+                    "revoked_device_id": str(revoked_device_id),
+                    "conversation_ids": [str(c) for c in conv_ids],
+                },
+            )
 
         logger.info(
             "mls.device_revoked.notified",

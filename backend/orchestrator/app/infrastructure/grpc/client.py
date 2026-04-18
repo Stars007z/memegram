@@ -11,6 +11,7 @@ _CHANNEL_OPTIONS = [
     ("grpc.keepalive_permit_without_calls", True),
 ]
 
+
 class GrpcChannelManager:
     """Manages lazy-created gRPC channels keyed by service name."""
 
@@ -28,14 +29,8 @@ class GrpcChannelManager:
 
     def get(self, service: str) -> grpc.aio.Channel:
         channel = self._channels.get(service)
-        if (
-            channel is None
-            or channel.get_state(try_to_connect=False)
-            == grpc.ChannelConnectivity.SHUTDOWN
-        ):
-            channel = grpc.aio.insecure_channel(
-                self._addresses[service], options=_CHANNEL_OPTIONS
-            )
+        if channel is None or channel.get_state(try_to_connect=False) == grpc.ChannelConnectivity.SHUTDOWN:
+            channel = grpc.aio.insecure_channel(self._addresses[service], options=_CHANNEL_OPTIONS)
             self._channels[service] = channel
         return channel
 

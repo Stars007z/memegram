@@ -2,17 +2,18 @@ import grpc
 
 from app.config import Settings
 from app.core.interfaces.item_storage_gateway import (
-    IItemStorageGateway,
-    ItemStorageHealthResult,
-    DownloadUrlResult,
-    InitiateUploadResult,
     ConfirmUploadResult,
+    DownloadUrlResult,
+    IItemStorageGateway,
+    InitiateUploadResult,
+    ItemStorageHealthResult,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import item_storage_pb2, item_storage_pb2_grpc
 
 _SERVICE = "Item-storage service"
+
 
 class GrpcItemStorageGateway(IItemStorageGateway):
 
@@ -41,7 +42,9 @@ class GrpcItemStorageGateway(IItemStorageGateway):
         )
 
     async def get_download_url(
-        self, item_id: str, requester_user_id: str,
+        self,
+        item_id: str,
+        requester_user_id: str,
     ) -> DownloadUrlResult:
         try:
             resp = await self._stub().GetDownloadUrl(
@@ -85,7 +88,9 @@ class GrpcItemStorageGateway(IItemStorageGateway):
         )
 
     async def confirm_upload(
-        self, owner_user_id: str, item_id: str,
+        self,
+        owner_user_id: str,
+        item_id: str,
     ) -> ConfirmUploadResult:
         try:
             resp = await self._stub().ConfirmUpload(

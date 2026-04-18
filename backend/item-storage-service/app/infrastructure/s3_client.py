@@ -1,7 +1,9 @@
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator
+
 import aioboto3
 from botocore.config import Config as BotoConfig
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Any
+
 from app.config import settings
 
 _session = aioboto3.Session(
@@ -12,6 +14,7 @@ _session = aioboto3.Session(
 
 _boto_config = BotoConfig(signature_version="s3v4")
 
+
 @asynccontextmanager
 async def get_s3_client() -> AsyncGenerator[Any, None]:
     async with _session.client(
@@ -21,8 +24,12 @@ async def get_s3_client() -> AsyncGenerator[Any, None]:
     ) as client:
         yield client
 
+
 async def generate_presigned_upload_url(
-    bucket: str, key: str, mime_type: str, ttl: int,
+    bucket: str,
+    key: str,
+    mime_type: str,
+    ttl: int,
 ) -> str:
     params: dict[str, Any] = {
         "Bucket": bucket,
@@ -38,8 +45,11 @@ async def generate_presigned_upload_url(
         )
     return url
 
+
 async def generate_presigned_download_url(
-    bucket: str, key: str, ttl: int,
+    bucket: str,
+    key: str,
+    ttl: int,
 ) -> str:
     async with get_s3_client() as client:
         url: str = await client.generate_presigned_url(
@@ -49,13 +59,16 @@ async def generate_presigned_download_url(
         )
     return url
 
+
 async def head_object(bucket: str, key: str) -> dict:
     async with get_s3_client() as client:
         return await client.head_object(Bucket=bucket, Key=key)
 
+
 async def delete_object(bucket: str, key: str) -> None:
     async with get_s3_client() as client:
         await client.delete_object(Bucket=bucket, Key=key)
+
 
 async def delete_objects(bucket: str, keys: list[str]) -> None:
     async with get_s3_client() as client:
@@ -65,6 +78,7 @@ async def delete_objects(bucket: str, keys: list[str]) -> None:
                 Bucket=bucket,
                 Delete={"Objects": [{"Key": k} for k in batch]},
             )
+
 
 async def head_bucket(bucket: str) -> bool:
     try:

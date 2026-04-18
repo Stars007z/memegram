@@ -1,5 +1,4 @@
 import uuid
-
 from datetime import datetime
 from typing import Optional
 
@@ -11,15 +10,11 @@ from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.member_repo import MemberRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.interfaces.media_service import IMediaService
-from app.services.interfaces.message_service import (
-    IMessageService,
-    MessageListResult,
-    MessageResult,
-    SendResult,
-)
+from app.services.interfaces.message_service import IMessageService, MessageListResult, MessageResult, SendResult
 from app.services.interfaces.stream_service import IStreamService
 
 logger = get_logger(__name__)
+
 
 class MessageServiceImpl(IMessageService):
 
@@ -72,25 +67,30 @@ class MessageServiceImpl(IMessageService):
                 created_at=existing.created_at.timestamp(),
             )
 
-        msg = await self._messages.create({
-            "conversation_id": conversation_id,
-            "sender_user_id": sender_user_id,
-            "sender_device_id": sender_device_id,
-            "type": type,
-            "mls_ciphertext": mls_ciphertext,
-            "media_id": media_id,
-            "reply_to_message_id": reply_to_message_id,
-            "client_message_id": client_message_id,
-        })
+        msg = await self._messages.create(
+            {
+                "conversation_id": conversation_id,
+                "sender_user_id": sender_user_id,
+                "sender_device_id": sender_device_id,
+                "type": type,
+                "mls_ciphertext": mls_ciphertext,
+                "media_id": media_id,
+                "reply_to_message_id": reply_to_message_id,
+                "client_message_id": client_message_id,
+            }
+        )
 
         await self._conversations.update_last_message(conversation_id, msg.id)
 
         await self._increment_unread_for_others(conversation_id, sender_user_id)
 
-        await self._stream.publish_event(conversation_id, {
-            "event_type": "new_message",
-            "message": self._msg_to_dict(msg),
-        })
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "new_message",
+                "message": self._msg_to_dict(msg),
+            },
+        )
 
         logger.info(
             "message.sent",
@@ -114,7 +114,9 @@ class MessageServiceImpl(IMessageService):
 
         limit = min(limit, 100)
         rows = await self._messages.get_messages_before(
-            conversation_id, before_message_id, limit,
+            conversation_id,
+            before_message_id,
+            limit,
         )
 
         has_more = len(rows) > limit
@@ -140,17 +142,23 @@ class MessageServiceImpl(IMessageService):
             raise ValueError("NOT_FOUND: Message has been deleted")
 
         now = datetime.utcnow()
-        await self._messages.update(msg, {
-            "mls_ciphertext": new_mls_ciphertext,
-            "edited_at": now,
-        })
+        await self._messages.update(
+            msg,
+            {
+                "mls_ciphertext": new_mls_ciphertext,
+                "edited_at": now,
+            },
+        )
 
-        await self._stream.publish_event(msg.conversation_id, {
-            "event_type": "message_edited",
-            "message_id": str(msg.id),
-            "new_mls_ciphertext": new_mls_ciphertext.hex(),
-            "edited_at": now.timestamp(),
-        })
+        await self._stream.publish_event(
+            msg.conversation_id,
+            {
+                "event_type": "message_edited",
+                "message_id": str(msg.id),
+                "new_mls_ciphertext": new_mls_ciphertext.hex(),
+                "edited_at": now.timestamp(),
+            },
+        )
 
         return self._to_result(msg)
 
@@ -167,15 +175,20 @@ class MessageServiceImpl(IMessageService):
         if delete_for_everyone:
             is_sender = msg.sender_user_id == user_id
             is_admin = await self._members.has_role(
-                msg.conversation_id, user_id, ["owner", "admin"],
+                msg.conversation_id,
+                user_id,
+                ["owner", "admin"],
             )
             if not is_sender and not is_admin:
                 raise ValueError("PERMISSION_DENIED: Cannot delete this message")
 
-        await self._messages.update(msg, {
-            "deleted_at": datetime.utcnow(),
-            "mls_ciphertext": b"",
-        })
+        await self._messages.update(
+            msg,
+            {
+                "deleted_at": datetime.utcnow(),
+                "mls_ciphertext": b"",
+            },
+        )
 
         if msg.media_id:
             try:
@@ -195,10 +208,13 @@ class MessageServiceImpl(IMessageService):
             delete_for_everyone=delete_for_everyone,
         )
 
-        await self._stream.publish_event(msg.conversation_id, {
-            "event_type": "message_deleted",
-            "message_id": str(msg.id),
-        })
+        await self._stream.publish_event(
+            msg.conversation_id,
+            {
+                "event_type": "message_deleted",
+                "message_id": str(msg.id),
+            },
+        )
 
         return True
 
@@ -212,16 +228,21 @@ class MessageServiceImpl(IMessageService):
         if not member:
             raise ValueError("NOT_FOUND: Not a member of this conversation")
 
-        await self._members.update(member, {
-            "last_read_message_id": last_read_message_id,
-        })
+        await self._members.update(
+            member,
+            {
+                "last_read_message_id": last_read_message_id,
+            },
+        )
 
         key = f"unread:{user_id}:{conversation_id}"
         await self._redis.delete(key)
         return 0
 
     async def _increment_unread_for_others(
-        self, conversation_id: uuid.UUID, sender_user_id: uuid.UUID,
+        self,
+        conversation_id: uuid.UUID,
+        sender_user_id: uuid.UUID,
     ) -> None:
         members = await self._members.get_active_members(conversation_id)
         for m in members:

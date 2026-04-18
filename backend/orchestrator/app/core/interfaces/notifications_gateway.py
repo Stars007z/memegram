@@ -1,13 +1,16 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+
 @dataclass
 class RegisterPushTokenResult:
     success: bool
 
+
 @dataclass
 class UnregisterPushTokenResult:
     success: bool
+
 
 @dataclass
 class NotificationsHealthResult:
@@ -17,6 +20,7 @@ class NotificationsHealthResult:
     fcm_status: str
     apns_status: str
     version: str
+
 
 class INotificationsGateway(ABC):
     @abstractmethod
@@ -30,7 +34,9 @@ class INotificationsGateway(ABC):
 
     @abstractmethod
     async def unregister_push_token(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> UnregisterPushTokenResult: ...
 
     @abstractmethod

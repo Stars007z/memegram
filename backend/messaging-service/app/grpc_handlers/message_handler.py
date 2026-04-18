@@ -6,6 +6,7 @@ from app.container import Container
 from app.generated import messaging_pb2
 from app.grpc_handlers.conversation_handler import _set_error_from_value_error
 
+
 class MessageHandler:
 
     def __init__(self, container: Container) -> None:
@@ -112,6 +113,7 @@ class MessageHandler:
             except ValueError as e:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.MarkAsReadResponse()
+
 
 def _msg_to_proto(m) -> messaging_pb2.MessageEntry:
     return messaging_pb2.MessageEntry(

@@ -1,8 +1,11 @@
-import redis.asyncio as redis
 from typing import Optional
+
+import redis.asyncio as redis
+
 from app.config import settings
 
 LAST_ACTIVE_DEBOUNCE_TTL = 60
+
 
 class RedisClient:
     instance: Optional[redis.Redis] = None
@@ -23,6 +26,7 @@ class RedisClient:
             await cls.instance.close()
             cls.instance = None
 
+
 async def check_redis_health() -> bool:
     try:
         client = await RedisClient.get_instance()
@@ -31,8 +35,10 @@ async def check_redis_health() -> bool:
     except Exception:
         return False
 
+
 async def get_last_active_debounce_key(user_id: str) -> str:
     return f"last_active_debounce:{user_id}"
+
 
 async def check_and_set_last_active_debounce(user_id: str) -> bool:
     """

@@ -1,14 +1,16 @@
 """gRPC-клиент для user-service."""
+
 from __future__ import annotations
 
-import grpc
-import grpc.aio
 from functools import lru_cache
 from typing import Optional
 
-from app.config import settings
+import grpc
+import grpc.aio
 
+from app.config import settings
 from app.generated import user_pb2, user_pb2_grpc
+
 
 class UserBriefProfile:
     __slots__ = ("user_id", "username", "user_public_key", "bio", "avatar_media_id")
@@ -27,7 +29,9 @@ class UserBriefProfile:
         self.bio = bio
         self.avatar_media_id = avatar_media_id
 
+
 _channel: Optional[grpc.aio.Channel] = None
+
 
 def _get_channel() -> grpc.aio.Channel:
     global _channel
@@ -35,11 +39,13 @@ def _get_channel() -> grpc.aio.Channel:
         _channel = grpc.aio.insecure_channel(settings.USER_GRPC_ADDRESS)
     return _channel
 
+
 async def close_user_channel() -> None:
     global _channel
     if _channel is not None:
         await _channel.close()
         _channel = None
+
 
 class UserServiceClient:
     """Тонкая обёртка над gRPC-стабом user-service."""
@@ -99,6 +105,7 @@ class UserServiceClient:
                 avatar_media_id=p.avatar_media_id or "",
             )
         return result
+
 
 @lru_cache(maxsize=1)
 def get_user_client() -> UserServiceClient:
