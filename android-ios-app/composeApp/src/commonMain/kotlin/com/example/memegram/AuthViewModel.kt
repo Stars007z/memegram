@@ -2,16 +2,21 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.auth.SessionRefresher
+import com.example.memegram.auth.SessionState
 import com.example.memegram.data.local.KeyManager
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.models.*
+import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.mls.MlsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
-import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 sealed class AuthState {
@@ -25,64 +30,35 @@ class AuthViewModel(
     private val api: ApiService,
     private val sessionManager: SessionManager,
     private val keyManager: KeyManager,
-    private val mlsManager: MlsManager
+    private val mlsManager: MlsManager,
+    private val notificationsRepository: NotificationsRepository,
+    private val sessionRefresher: SessionRefresher,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<AuthState>(AuthState.Idle)
-    val uiState: StateFlow<AuthState> = _uiState.asStateFlow()
+    private val _localOverride = MutableStateFlow<AuthState?>(null)
 
-    init {
-        checkAutoLogin()
-    }
+    val uiState: StateFlow<AuthState> = combine(
+        sessionRefresher.state,
+        _localOverride,
+    ) { session, override ->
+        override ?: session.toAuthState()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = _localOverride.value ?: sessionRefresher.state.value.toAuthState()
+    )
 
-    private fun checkAutoLogin() {
-        if (!keyManager.hasKeyPair() || !sessionManager.isLoggedIn) return
-        if (!sessionManager.isTokenExpired) {
-            _uiState.value = AuthState.Success
-            return
-        }
-        login()
-    }
-
-    @OptIn(ExperimentalEncodingApi::class)
-    fun login() {
-        viewModelScope.launch {
-            _uiState.value = AuthState.Loading
-            try {
-                val deviceId = sessionManager.getDeviceId() ?: getHardwareDeviceId()
-                val initResp = api.loginInit(LoginInitRequest(deviceId = deviceId))
-                val signatureBytes = keyManager.signChallenge(initResp.challenge)
-                val signatureBase64 = Base64.encode(signatureBytes)
-                val result = api.loginComplete(
-                    LoginCompleteRequest(
-                        deviceId = deviceId,
-                        challenge = initResp.challenge,
-                        signature = signatureBase64,
-                        deviceName = "KMP Device"
-                    )
-                )
-                sessionManager.save(result)
-                initMlsAndUploadKeys()
-                _uiState.value = AuthState.Success
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: "Ошибка входа"
-
-                if (errorMsg.contains("422") || errorMsg.contains("Device not found") || errorMsg.contains("401")) {
-                    sessionManager.clear()
-                    sessionManager.clearDeviceId()
-                    mlsManager.clearAll()
-                    _uiState.value = AuthState.Error("Аккаунт не найден на сервере. Зарегистрируйтесь заново.")
-                } else {
-                    _uiState.value = AuthState.Error(errorMsg)
-                }
-            }
-        }
+    private fun SessionState.toAuthState(): AuthState = when (this) {
+        is SessionState.Authenticated -> AuthState.Success
+        is SessionState.Refreshing -> AuthState.Loading
+        is SessionState.Failed -> AuthState.Error(message)
+        is SessionState.NoCredentials, is SessionState.Unknown -> AuthState.Idle
     }
 
     @OptIn(ExperimentalEncodingApi::class)
     fun register(username: String, inviteCode: String) {
         viewModelScope.launch {
-            _uiState.value = AuthState.Loading
+            _localOverride.value = AuthState.Loading
             try {
                 mlsManager.clearAll()
                 keyManager.getOrCreateKeyPair()
@@ -100,11 +76,16 @@ class AuthViewModel(
                 val result = api.register(req)
                 sessionManager.save(result)
                 initMlsAndUploadKeys()
-                _uiState.value = AuthState.Success
+                notificationsRepository.registerCurrentDeviceToken()
+                sessionRefresher.markAuthenticated()
+                _localOverride.value = null
             } catch (e: Exception) {
-                _uiState.value = AuthState.Error(e.message ?: "Ошибка регистрации")
+                _localOverride.value = AuthState.Error(e.message ?: "Ошибка регистрации")
             }
         }
+    }
+    fun clearError() {
+        if (_localOverride.value is AuthState.Error) _localOverride.value = null
     }
 
     private suspend fun initMlsAndUploadKeys() {
