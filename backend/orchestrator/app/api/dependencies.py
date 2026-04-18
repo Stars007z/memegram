@@ -13,7 +13,6 @@ from app.core.session_context import SessionContext
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.login_init import LoginInitUseCase
-from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.register import RegisterUseCase
 
 bearer = HTTPBearer()
@@ -94,10 +93,6 @@ def get_login_init_use_case(request: Request) -> LoginInitUseCase:
 
 def get_login_complete_use_case(request: Request) -> LoginCompleteUseCase:
     return LoginCompleteUseCase(_container(request).auth_gateway)
-
-
-def get_logout_use_case(request: Request) -> LogoutUseCase:
-    return LogoutUseCase(_container(request).auth_gateway)
 
 
 def get_create_invite_use_case(request: Request) -> CreateInviteUseCase:

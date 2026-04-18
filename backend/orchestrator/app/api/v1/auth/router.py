@@ -8,7 +8,6 @@ from app.api.dependencies import (
     get_current_session,
     get_login_complete_use_case,
     get_login_init_use_case,
-    get_logout_use_case,
     get_register_use_case,
     get_user_gateway,
     require_device_type,
@@ -21,8 +20,6 @@ from app.api.v1.auth.schemas import (
     LoginCompleteRequestSchema,
     LoginInitRequestSchema,
     LoginInitResponseSchema,
-    LogoutRequestSchema,
-    LogoutResponseSchema,
     RegisterRequestSchema,
 )
 from app.core.interfaces.auth_gateway import IAuthGateway, RegisterRequest
@@ -31,7 +28,6 @@ from app.core.session_context import SessionContext
 from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
 from app.core.use_cases.auth.login_init import LoginInitUseCase
-from app.core.use_cases.auth.logout import LogoutUseCase
 from app.core.use_cases.auth.register import RegisterUseCase
 from app.exceptions import NotFoundError
 
@@ -85,15 +81,6 @@ async def login_complete(
     except NotFoundError:
         raise HTTPException(status_code=401, detail="Account has been deleted")
     return AuthResponseSchema(**result.__dict__)
-
-
-@router.post("/logout", response_model=LogoutResponseSchema)
-async def logout(
-    body: LogoutRequestSchema,
-    use_case: LogoutUseCase = Depends(get_logout_use_case),
-) -> LogoutResponseSchema:
-    result = await use_case.execute(access_token=body.access_token)
-    return LogoutResponseSchema(**result.__dict__)
 
 
 @router.get("/health", response_model=HealthResponseSchema)
