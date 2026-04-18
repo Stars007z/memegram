@@ -23,11 +23,9 @@ from app.services.interfaces.mls_service import (
 )
 from app.services.interfaces.stream_service import IStreamService
 
-
-DEFAULT_CIPHER_SUITE = 1  # MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+DEFAULT_CIPHER_SUITE = 1
 
 logger = get_logger(__name__)
-
 
 class MlsServiceImpl(IMlsService):
 
@@ -51,21 +49,13 @@ class MlsServiceImpl(IMlsService):
         self._redis = redis
         self._stream = stream_service
 
-    # ── Key Packages ────────────────────────────────
-
     async def upload_key_packages(
         self,
         user_id: uuid.UUID,
         device_id: uuid.UUID,
         key_packages: list[bytes],
     ) -> int:
-        # Self-healing: when the client re-uploads a batch, its local MLS
-        # key-store has been regenerated (e.g. logout→login, fresh install,
-        # add-device). Any previously uploaded, still-unconsumed KPs belong
-        # to private keys that no longer exist on the client — serving them
-        # to peers would cause "No matching key package" on processWelcome.
-        # We wipe them before inserting the new batch so only fresh KPs
-        # backed by live private material remain.
+
         purged = await self._key_packages.delete_by_device(
             user_id=user_id, device_id=device_id, only_unconsumed=True,
         )
@@ -153,8 +143,6 @@ class MlsServiceImpl(IMlsService):
             )
         return results
 
-    # ── Group Management ────────────────────────────
-
     async def commit_group_change(
         self,
         user_id: uuid.UUID,
@@ -171,7 +159,6 @@ class MlsServiceImpl(IMlsService):
         if not mls_group:
             raise ValueError("NOT_FOUND: MLS group not found")
 
-        # Role check: only admins/owners may add or remove members
         if added_user_ids or removed_device_ids:
             has_admin = await self._members.has_role(
                 conversation_id, user_id, ["owner", "admin"],
@@ -194,9 +181,7 @@ class MlsServiceImpl(IMlsService):
                     "commit_data": commit_data,
                 })
         except IntegrityError:
-            # Another client already committed at this epoch (race condition).
-            # The unique constraint on (conversation_id, epoch) prevents duplicates.
-            # The savepoint (begin_nested) ensures the session stays clean.
+
             raise ValueError("ABORTED: Epoch conflict — another commit already "
                              f"exists at epoch {new_epoch}")
 
@@ -220,7 +205,7 @@ class MlsServiceImpl(IMlsService):
                 )
                 if existing_member:
                     if existing_member.left_at is not None:
-                        # Re-add: member previously left — reset instead of INSERT
+
                         await self._members.update(existing_member, {
                             "left_at": None,
                             "joined_at": datetime.utcnow(),
@@ -230,7 +215,7 @@ class MlsServiceImpl(IMlsService):
                             "event_type": "member_joined",
                             "user_id": str(new_uid),
                         })
-                    # else: already active member — skip
+
                 else:
                     await self._members.create({
                         "conversation_id": conversation_id,
@@ -259,8 +244,6 @@ class MlsServiceImpl(IMlsService):
         )
 
         return CommitResult(new_epoch=new_epoch, committed_at=now.timestamp())
-
-    # ── Welcomes & Commits ──────────────────────────
 
     async def get_pending_welcomes(
         self, device_id: uuid.UUID,
@@ -297,8 +280,6 @@ class MlsServiceImpl(IMlsService):
             )
             for c in rows
         ]
-
-    # ── Device Revoked ──────────────────────────────
 
     async def notify_device_revoked(
         self, user_id: uuid.UUID, revoked_device_id: uuid.UUID,

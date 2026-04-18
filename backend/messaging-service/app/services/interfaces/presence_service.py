@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import uuid
 
-
 class IPresenceService(ABC):
 
     @abstractmethod

@@ -14,10 +14,8 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
 def _now() -> datetime:
     return datetime.utcnow()
-
 
 class UserService:
     def __init__(self, session: AsyncSession, contacts_gateway: Optional[ContactsGateway] = None):
@@ -25,7 +23,7 @@ class UserService:
         self._contacts = contacts_gateway or ContactsGateway()
 
     async def create_user(self, user_id: str, username: str) -> User:
-        # username is intentionally NOT unique per architecture — search is by user_public_key
+
         raw_key = secrets.token_bytes(32)
         user_public_key = base64.b64encode(raw_key).decode()
         user = User(
@@ -55,8 +53,6 @@ class UserService:
         if not user or user.is_deleted:
             raise ValueError("User not found")
 
-        # Privacy: if either side blocked the other, hide the profile entirely
-        # (mirror "User not found" to avoid leaking existence).
         if user_id != requester_user_id:
             if await self._contacts.is_blocked_either_way(user_id, requester_user_id):
                 raise ValueError("User not found")
@@ -86,7 +82,6 @@ class UserService:
         if not user:
             raise ValueError("User not found")
 
-        # Privacy: blocked → "User not found".
         if str(user.id) != requester_user_id:
             if await self._contacts.is_blocked_either_way(str(user.id), requester_user_id):
                 raise ValueError("User not found")

@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator
 import uuid
 
-
 class IStreamService(ABC):
 
     @abstractmethod

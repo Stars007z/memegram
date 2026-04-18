@@ -7,7 +7,6 @@ from app.exceptions import (
     PermissionDeniedError,
 )
 
-
 def grpc_error_to_exception(e: grpc.RpcError, service_name: str = "Service") -> Exception:
     code = e.code()
     details = e.details() or "Unknown gRPC error"

@@ -16,7 +16,6 @@ from app.infrastructure.grpc.generated import user_pb2, user_pb2_grpc
 
 _SERVICE = "User service"
 
-
 def _profile_from_response(profile) -> UserProfileResult:
     last_active = 0
     try:
@@ -34,7 +33,6 @@ def _profile_from_response(profile) -> UserProfileResult:
         avatar_media_id=profile.avatar_media_id or None,
         profile_background_media_id=profile.profile_background_media_id or None,
     )
-
 
 def _settings_from_response(s) -> UserSettingsResult:
     def _opt_int(field: str) -> int:
@@ -73,7 +71,6 @@ def _settings_from_response(s) -> UserSettingsResult:
         my_bubble_media_id=_opt_media_id("my_bubble_media_id"),
         their_bubble_media_id=_opt_media_id("their_bubble_media_id"),
     )
-
 
 class GrpcUserGateway(IUserGateway):
 

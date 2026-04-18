@@ -12,18 +12,15 @@ from app.generated import messaging_pb2, messaging_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class MemberInfo:
     user_id: str
     role: str
 
-
 class IMessagingClient(ABC):
     @abstractmethod
     async def get_conversation_members(self, conversation_id: str) -> list[MemberInfo]:
         ...
-
 
 class GrpcMessagingClient(IMessagingClient):
 

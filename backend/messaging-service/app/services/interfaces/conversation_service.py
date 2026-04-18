@@ -3,19 +3,16 @@ from dataclasses import dataclass, field
 from typing import Optional
 import uuid
 
-
 @dataclass
 class MemberResult:
     user_id: uuid.UUID
     role: str
     joined_at: float
 
-
 @dataclass
 class MlsGroupResult:
     current_epoch: int
     cipher_suite: int
-
 
 @dataclass
 class ConversationResult:
@@ -27,7 +24,6 @@ class ConversationResult:
     created_at: float
     avatar_media_id: Optional[uuid.UUID] = None
 
-
 @dataclass
 class ConversationSummaryResult:
     id: uuid.UUID
@@ -38,12 +34,10 @@ class ConversationSummaryResult:
     last_activity_at: float
     avatar_media_id: Optional[uuid.UUID] = None
 
-
 @dataclass
 class ConversationListResult:
     items: list[ConversationSummaryResult]
     next_cursor: Optional[str]
-
 
 class IConversationService(ABC):
 

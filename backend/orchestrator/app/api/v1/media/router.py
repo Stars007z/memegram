@@ -6,7 +6,6 @@ from app.core.interfaces.media_gateway import IMediaGateway
 
 router = APIRouter(prefix="/media", tags=["media"])
 
-
 @router.get("/health", response_model=MediaHealthResponseSchema)
 async def media_health(
     gw: IMediaGateway = Depends(get_media_gateway),

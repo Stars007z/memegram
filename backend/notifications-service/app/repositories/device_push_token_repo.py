@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device_push_token import DevicePushToken
 
-
 class DevicePushTokenRepository:
 
     def __init__(self, session: AsyncSession) -> None:
@@ -73,7 +72,7 @@ class DevicePushTokenRepository:
             select(DevicePushToken)
             .where(
                 DevicePushToken.user_id.in_(user_ids),
-                DevicePushToken.is_active == True,  # noqa: E712
+                DevicePushToken.is_active == True,
             )
         )
         result = await self._session.execute(stmt)
@@ -104,7 +103,6 @@ class DevicePushTokenRepository:
         )
         await self._session.execute(stmt)
 
-        # Deactivate if over threshold
         deactivate_stmt = (
             update(DevicePushToken)
             .where(

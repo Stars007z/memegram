@@ -1,11 +1,10 @@
-# app/repositories/invite_repo.py
+
 import uuid
 import secrets
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.invite import Invite
 from app.repositories.base import BaseRepository
-
 
 class InviteRepository(BaseRepository[Invite]):
     def __init__(self, session: AsyncSession):
@@ -29,7 +28,6 @@ class InviteRepository(BaseRepository[Invite]):
     ) -> Invite:
         """Создать новый инвайт-код."""
 
-        # Валидация срока действия
         if not 1 <= expires_in_days <= 365:
             raise ValueError("expires_in_days must be between 1 and 365")
 

@@ -5,13 +5,11 @@ import grpc
 
 from app.generated import contacts_pb2, contacts_pb2_grpc
 
-
 class IContactsClient(ABC):
 
     @abstractmethod
     async def is_blocked(self, user_id: uuid.UUID, blocked_user_id: uuid.UUID) -> bool:
         ...
-
 
 class GrpcContactsClient(IContactsClient):
 

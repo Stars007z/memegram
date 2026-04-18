@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -79,6 +78,5 @@ class Settings(BaseSettings):
     @property
     def NOTIFICATIONS_GRPC_ADDRESS(self) -> str:
         return f"{self.NOTIFICATIONS_GRPC_HOST}:{self.NOTIFICATIONS_GRPC_PORT}"
-
 
 settings = Settings()

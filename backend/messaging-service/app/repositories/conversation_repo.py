@@ -10,7 +10,6 @@ from app.models.conversation import Conversation
 from app.models.conversation_member import ConversationMember
 from app.repositories.base import BaseRepository
 
-
 class ConversationRepository(BaseRepository[Conversation]):
     def __init__(self, session: AsyncSession):
         super().__init__(Conversation, session)

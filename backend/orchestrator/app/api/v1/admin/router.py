@@ -4,7 +4,6 @@ from app.core.interfaces.user_gateway import IUserGateway, AutoDeleteResult
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-
 @router.post(
     "/users/auto-delete",
     response_model=AutoDeleteResult,

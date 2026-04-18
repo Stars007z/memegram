@@ -20,7 +20,6 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user", tags=["user"])
 
-
 async def _build_profile_with_blocks(
     profile_dc,
     requester_user_id: str,
@@ -53,19 +52,17 @@ async def _build_profile_with_blocks(
             else:
                 logger.warning("user.profile.is_blocked_lookup_failed", side="by_peer", error=str(b))
         except Exception as e:
-            # Never fail profile fetch because of contacts service issues.
+
             logger.warning("user.profile.block_flags_failed", error=str(e))
     data = profile_dc.__dict__.copy()
     data["is_peer_blocked"] = is_peer_blocked
     data["is_blocked_by_peer"] = is_blocked_by_peer
     return UserProfileResponseSchema(**data)
 
-
 @router.get("/health", response_model=UserHealthResponseSchema)
 async def user_health(gateway: IUserGateway = Depends(get_user_gateway)):
     result = await gateway.health_check()
     return UserHealthResponseSchema(**result)
-
 
 @router.get("/me", response_model=UserProfileResponseSchema)
 async def get_me(
@@ -78,7 +75,6 @@ async def get_me(
     data["is_blocked_by_peer"] = False
     return UserProfileResponseSchema(**data)
 
-
 @router.get("/{user_id}", response_model=UserProfileResponseSchema)
 async def get_user(
     user_id: str,
@@ -88,7 +84,6 @@ async def get_user(
 ):
     result = await gateway.get_user(user_id=user_id, requester_user_id=session.user_id)
     return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
-
 
 @router.get("/by-key/{user_public_key}", response_model=UserProfileResponseSchema)
 async def get_user_by_public_key(
@@ -102,7 +97,6 @@ async def get_user_by_public_key(
         requester_user_id=session.user_id,
     )
     return await _build_profile_with_blocks(result, session.user_id, contacts_gw)
-
 
 @router.patch("/me", response_model=UserProfileResponseSchema)
 async def update_me(
@@ -123,7 +117,6 @@ async def update_me(
     data["is_blocked_by_peer"] = False
     return UserProfileResponseSchema(**data)
 
-
 @router.delete("/me", response_model=DeleteUserResponseSchema)
 async def delete_me(
     session: SessionContext = Depends(get_current_session),
@@ -132,7 +125,6 @@ async def delete_me(
     success = await gateway.delete_user(user_id=session.user_id)
     return DeleteUserResponseSchema(success=success)
 
-
 @router.get("/me/settings", response_model=UserSettingsResponseSchema)
 async def get_my_settings(
     session: SessionContext = Depends(get_current_session),
@@ -140,7 +132,6 @@ async def get_my_settings(
 ):
     result = await gateway.get_user_settings(user_id=session.user_id)
     return UserSettingsResponseSchema(**result.__dict__)
-
 
 @router.patch("/me/settings", response_model=UserSettingsResponseSchema)
 async def update_my_settings(
@@ -155,7 +146,6 @@ async def update_my_settings(
     result = await gateway.update_user_settings(request)
     return UserSettingsResponseSchema(**result.__dict__)
 
-
 _MEDIA_FIELDS = [
     ("chat_background_media_id", "chat_background"),
     ("ringtone_media_id", "ringtone"),
@@ -164,7 +154,6 @@ _MEDIA_FIELDS = [
     ("my_bubble_media_id", "my_bubble"),
     ("their_bubble_media_id", "their_bubble"),
 ]
-
 
 @router.post("/me/settings/sync", response_model=SyncSettingsResponseSchema)
 async def sync_my_settings(

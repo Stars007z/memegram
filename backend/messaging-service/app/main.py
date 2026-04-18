@@ -22,7 +22,6 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
-
 async def _build_container() -> Container:
     redis = await RedisClient.get_instance()
 
@@ -41,7 +40,6 @@ async def _build_container() -> Container:
         contacts_client=contacts_client,
         media_client=media_client,
     )
-
 
 async def serve() -> None:
     container = await _build_container()
@@ -67,7 +65,6 @@ async def serve() -> None:
         await close_db()
         await RedisClient.close()
         logger.info("service.stopped", message="All connections closed")
-
 
 if __name__ == "__main__":
     asyncio.run(serve())

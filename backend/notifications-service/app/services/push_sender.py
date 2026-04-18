@@ -15,25 +15,21 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
 class PushPlatform(str, Enum):
     IOS = "ios"
     ANDROID = "android"
-
 
 class PushErrorType(str, Enum):
     TRANSIENT = "transient"
     PERMANENT_TOKEN = "permanent_token"
     RATE_LIMIT = "rate_limit"
 
-
 @dataclass
 class PushResult:
     success: bool
     error_type: PushErrorType | None = None
     error_code: str | None = None
-    retry_after: float | None = None  # seconds, for rate-limit
-
+    retry_after: float | None = None
 
 @dataclass
 class PushPayload:
@@ -44,21 +40,13 @@ class PushPayload:
     title: str
     body: str
     data: dict[str, str] = field(default_factory=dict)
-    thread_id: str | None = None  # iOS thread-id grouping
+    thread_id: str | None = None
     avatar_url: str | None = None
-
-
-# ── Abstract push sender ─────────────────────────────────────────────
-
 
 class IPushSender(ABC):
     @abstractmethod
     async def send(self, payload: PushPayload) -> PushResult:
         ...
-
-
-# ── FCM sender ───────────────────────────────────────────────────────
-
 
 class FcmSender(IPushSender):
     """Send push via Firebase Cloud Messaging v1 API using firebase-admin SDK."""
@@ -70,15 +58,15 @@ class FcmSender(IPushSender):
         if self._initialized:
             return
         try:
-            import firebase_admin  # type: ignore
-            from firebase_admin import credentials  # type: ignore
+            import firebase_admin
+            from firebase_admin import credentials
 
             cred_path = settings.GOOGLE_APPLICATION_CREDENTIALS
             if cred_path:
                 cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
             else:
-                # Use Application Default Credentials
+
                 firebase_admin.initialize_app()
             self._initialized = True
             logger.info("fcm.initialized", project=settings.FCM_PROJECT_ID)
@@ -91,7 +79,7 @@ class FcmSender(IPushSender):
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code="fcm_not_initialized")
 
         try:
-            from firebase_admin import messaging as fcm_messaging  # type: ignore
+            from firebase_admin import messaging as fcm_messaging
 
             message = fcm_messaging.Message(
                 token=payload.token,
@@ -114,7 +102,6 @@ class FcmSender(IPushSender):
                 ),
             )
 
-            # firebase-admin uses sync API — run in thread pool
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, fcm_messaging.send, message)
             return PushResult(success=True)
@@ -129,10 +116,6 @@ class FcmSender(IPushSender):
                 return PushResult(success=False, error_type=PushErrorType.RATE_LIMIT, error_code="RATE_LIMITED", retry_after=60)
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code=str(e)[:100])
 
-
-# ── APNs sender ──────────────────────────────────────────────────────
-
-
 class ApnsSender(IPushSender):
     """Send push via APNs HTTP/2 using aioapns."""
 
@@ -143,7 +126,7 @@ class ApnsSender(IPushSender):
         if self._client is not None:
             return self._client
         try:
-            from aioapns import APNs, NotificationRequest  # type: ignore
+            from aioapns import APNs, NotificationRequest
 
             self._client = APNs(
                 key=settings.APNS_KEY_PATH,
@@ -163,7 +146,7 @@ class ApnsSender(IPushSender):
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code="apns_not_initialized")
 
         try:
-            from aioapns import NotificationRequest  # type: ignore
+            from aioapns import NotificationRequest
 
             apns_payload: dict[str, Any] = {
                 "aps": {
@@ -178,7 +161,6 @@ class ApnsSender(IPushSender):
             if payload.thread_id:
                 apns_payload["aps"]["thread-id"] = payload.thread_id
 
-            # Custom data keys
             for k, v in payload.data.items():
                 apns_payload[k] = v
             if payload.avatar_url:
@@ -206,10 +188,6 @@ class ApnsSender(IPushSender):
         except Exception as e:
             return PushResult(success=False, error_type=PushErrorType.TRANSIENT, error_code=str(e)[:100])
 
-
-# ── Retry wrapper ────────────────────────────────────────────────────
-
-
 async def send_with_retry(
     sender: IPushSender,
     payload: PushPayload,
@@ -224,19 +202,16 @@ async def send_with_retry(
         if result.success:
             return result
 
-        # Permanent token error — no retry
         if result.error_type == PushErrorType.PERMANENT_TOKEN:
             return result
 
-        # Rate limit — wait and retry
         if result.error_type == PushErrorType.RATE_LIMIT and result.retry_after:
             await asyncio.sleep(result.retry_after)
             continue
 
-        # Transient — exponential backoff
         if attempt < max_attempts:
             delay = base_delay * (2 ** (attempt - 1))
-            delay_max = min(delay, 16)  # cap at 16s
+            delay_max = min(delay, 16)
             jitter = delay_max * (jitter_pct / 100) * (2 * random.random() - 1)
             await asyncio.sleep(max(0, delay_max + jitter))
 

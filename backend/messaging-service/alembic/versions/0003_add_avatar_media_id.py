@@ -15,13 +15,11 @@ down_revision = "0002"
 branch_labels = None
 depends_on = None
 
-
 def upgrade() -> None:
     op.add_column(
         "conversations",
         sa.Column("avatar_media_id", UUID(as_uuid=True), nullable=True),
     )
-
 
 def downgrade() -> None:
     op.drop_column("conversations", "avatar_media_id")

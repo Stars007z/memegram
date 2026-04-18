@@ -4,7 +4,6 @@ from app.services.item_storage_service import ItemStorageService
 from app.infrastructure import s3_client
 from app.config import settings
 
-
 class ItemStorageHandler(item_storage_pb2_grpc.ItemStorageServiceServicer):
     def __init__(self, get_session):
         self.get_session = get_session

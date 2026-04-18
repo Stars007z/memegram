@@ -15,7 +15,6 @@ async_session_factory = async_sessionmaker(
     expire_on_commit=False,
 )
 
-
 @asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     session = async_session_factory()
@@ -27,7 +26,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         raise
     finally:
         await session.close()
-
 
 async def close_db():
     await engine.dispose()

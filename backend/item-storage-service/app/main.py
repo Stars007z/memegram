@@ -16,7 +16,6 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
-
 async def serve():
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     item_storage_pb2_grpc.add_ItemStorageServiceServicer_to_server(
@@ -34,7 +33,6 @@ async def serve():
     finally:
         await close_db()
         logger.info("service.stopped")
-
 
 if __name__ == "__main__":
     asyncio.run(serve())

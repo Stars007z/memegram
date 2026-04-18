@@ -4,7 +4,6 @@ import redis.asyncio as aioredis
 
 from app.config import settings
 
-
 class RedisClient:
     """Own Redis instance (cache, deduplication) — port 6382."""
 
@@ -25,7 +24,6 @@ class RedisClient:
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
-
 
 class MessagingRedisClient:
     """Messaging-service Redis instance — port 6381.
@@ -50,7 +48,6 @@ class MessagingRedisClient:
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
-
 
 async def check_redis_health() -> bool:
     try:

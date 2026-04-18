@@ -8,7 +8,6 @@ from app.infrastructure.grpc.generated import media_pb2, media_pb2_grpc
 
 _SERVICE = "Media service"
 
-
 class GrpcMediaGateway(IMediaGateway):
 
     def __init__(self, channels: GrpcChannelManager, settings: Settings):

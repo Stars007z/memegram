@@ -14,7 +14,6 @@ from types import TracebackType
 
 from app.config import settings
 
-
 class S3Client:
     def __init__(self) -> None:
         self._session = aioboto3.Session(

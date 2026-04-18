@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 @dataclass
 class UserProfileResult:
     id: str
@@ -13,7 +12,6 @@ class UserProfileResult:
     bio: str = ""
     last_active: int = 0
     is_deleted: bool = False
-
 
 @dataclass
 class UserSettingsResult:
@@ -36,12 +34,10 @@ class UserSettingsResult:
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
-
 @dataclass
 class CreateUserResult:
     id: str
     username: str
-
 
 @dataclass
 class UpdateUserRequest:
@@ -50,7 +46,6 @@ class UpdateUserRequest:
     username: Optional[str] = None
     avatar_media_id: Optional[str] = None
     profile_background_media_id: Optional[str] = None
-
 
 @dataclass
 class UpdateUserSettingsRequest:
@@ -72,12 +67,10 @@ class UpdateUserSettingsRequest:
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
 
-
 @dataclass
 class AutoDeleteResult:
     deleted_count: int
     user_ids: list[str] = field(default_factory=list)
-
 
 class IUserGateway(ABC):
     @abstractmethod

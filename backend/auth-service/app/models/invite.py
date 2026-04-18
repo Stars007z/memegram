@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 from app.database.base import Base
 
-
 class Invite(Base):
     __tablename__ = "invites"
 

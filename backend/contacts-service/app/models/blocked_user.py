@@ -5,7 +5,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.base import Base
 
-
 class BlockedUser(Base):
     __tablename__ = "blocked_users"
     __table_args__ = (

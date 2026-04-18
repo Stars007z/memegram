@@ -13,7 +13,6 @@ from app.infrastructure.grpc.generated import notifications_pb2, notifications_p
 
 _SERVICE = "Notifications service"
 
-
 class GrpcNotificationsGateway(INotificationsGateway):
 
     def __init__(self, channels: GrpcChannelManager, settings: Settings):

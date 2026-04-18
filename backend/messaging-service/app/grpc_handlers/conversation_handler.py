@@ -5,7 +5,6 @@ import grpc
 from app.container import Container
 from app.generated import messaging_pb2
 
-
 class ConversationHandler:
 
     def __init__(self, container: Container) -> None:
@@ -240,7 +239,6 @@ class ConversationHandler:
             created_at=int(result.created_at),
             avatar_media_id=str(result.avatar_media_id) if result.avatar_media_id else "",
         )
-
 
 def _set_error_from_value_error(context, e: ValueError) -> None:
     msg = str(e)

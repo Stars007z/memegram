@@ -15,12 +15,10 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
 class IContactsClient(ABC):
     @abstractmethod
     async def is_blocked(self, user_id: str, blocked_user_id: str) -> bool:
         ...
-
 
 class GrpcContactsClient(IContactsClient):
 
@@ -41,6 +39,6 @@ class GrpcContactsClient(IContactsClient):
             )
             return bool(resp.is_blocked)
         except grpc.RpcError as e:
-            # Fail-open: if contacts-service is unreachable, do not silently drop pushes.
+
             logger.warning("contacts.IsBlocked failed: %s", e.details() if hasattr(e, "details") else str(e))
             return False

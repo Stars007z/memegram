@@ -5,14 +5,12 @@ import grpc
 
 from app.generated import auth_pb2, auth_pb2_grpc
 
-
 class IAuthClient(ABC):
 
     @abstractmethod
     async def get_active_device_ids(self, user_id: uuid.UUID) -> list[uuid.UUID]:
         """Return IDs of all active (non-revoked) devices for a user."""
         ...
-
 
 class GrpcAuthClient(IAuthClient):
 

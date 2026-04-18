@@ -33,7 +33,6 @@ from app.infrastructure.grpc.generated import auth_pb2, auth_pb2_grpc
 
 _SERVICE = "Auth service"
 
-
 class GrpcAuthGateway(IAuthGateway):
 
     def __init__(self, channels: GrpcChannelManager, settings: Settings):
@@ -42,8 +41,6 @@ class GrpcAuthGateway(IAuthGateway):
 
     def _stub(self) -> auth_pb2_grpc.AuthServiceStub:
         return auth_pb2_grpc.AuthServiceStub(self._channels.get("auth"))
-
-    # ── Auth methods ──────────────────────────────────────────────────
 
     async def register(self, request: RegisterRequest) -> AuthResult:
         try:
@@ -168,8 +165,6 @@ class GrpcAuthGateway(IAuthGateway):
             device_type=response.device_type,
             expires_at=response.expires_at,
         )
-
-    # ── Device management methods ─────────────────────────────────────
 
     async def init_device_addition(self, user_id: str, device_id: str) -> InitDeviceAdditionResult:
         try:
@@ -428,8 +423,6 @@ class GrpcAuthGateway(IAuthGateway):
             ],
             last_activity_at=r.last_activity_at,
         )
-
-    # ── Helpers ────────────────────────────────────────────────────────
 
     @staticmethod
     def _pb_to_device_info(pb) -> DeviceInfoResult:

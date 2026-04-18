@@ -44,7 +44,6 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
-
 def _device_result_to_response(d) -> DeviceInfoResponseSchema:
     return DeviceInfoResponseSchema(
         id=d.id,
@@ -60,9 +59,6 @@ def _device_result_to_response(d) -> DeviceInfoResponseSchema:
         revoked_at=d.revoked_at,
     )
 
-
-# ── POST /devices/init-addition ──────────────────────────────────────
-
 @router.post("/init-addition", response_model=InitDeviceAdditionResponseSchema, status_code=201)
 async def init_device_addition(
     session: SessionContext = Depends(require_device_type("primary")),
@@ -73,9 +69,6 @@ async def init_device_addition(
         device_id=session.device_id,
     )
     return InitDeviceAdditionResponseSchema(**dataclasses.asdict(result))
-
-
-# ── POST /devices/{registration_id}/submit ────────────────────────────
 
 @router.post("/{registration_id}/submit", response_model=SubmitDeviceDataResponseSchema)
 async def submit_device_data(
@@ -95,9 +88,6 @@ async def submit_device_data(
     )
     return SubmitDeviceDataResponseSchema(**dataclasses.asdict(result))
 
-
-# ── GET /devices/addition/{registration_id}/status ────────────────────
-
 @router.get("/addition/{registration_id}/status", response_model=DeviceAdditionStatusResponseSchema)
 async def get_device_addition_status(
     registration_id: str,
@@ -114,9 +104,6 @@ async def get_device_addition_status(
         token_expires_at=result.token_expires_at,
     )
 
-
-# ── GET /devices/addition/pending ─────────────────────────────────────
-
 @router.get("/addition/pending", response_model=list[PendingRegistrationResponseSchema])
 async def get_pending_device_additions(
     session: SessionContext = Depends(require_device_type("primary")),
@@ -127,9 +114,6 @@ async def get_pending_device_additions(
         device_id=session.device_id,
     )
     return [PendingRegistrationResponseSchema(**dataclasses.asdict(r)) for r in items]
-
-
-# ── POST /devices/addition/{registration_id}/confirm ──────────────────
 
 @router.post(
     "/addition/{registration_id}/confirm",
@@ -150,15 +134,7 @@ async def confirm_device_addition(
         new_device_name=body.new_device_name or "",
     )
 
-    # MLS: для подтверждённого устройства нужно создать welcome messages
-    # Это координируется через messaging service на стороне клиента,
-    # т.к. MLS welcome генерируется отправителем (primary device).
-    # Сервер лишь хранит и доставляет их.
-
     return ConfirmDeviceAdditionResponseSchema(**dataclasses.asdict(result))
-
-
-# ── GET /devices ──────────────────────────────────────────────────────
 
 @router.get("", response_model=list[DeviceInfoResponseSchema])
 async def get_devices(
@@ -167,9 +143,6 @@ async def get_devices(
 ) -> list[DeviceInfoResponseSchema]:
     devices = await auth_gw.get_devices(user_id=session.user_id)
     return [_device_result_to_response(d) for d in devices]
-
-
-# ── GET /devices/stats ────────────────────────────────────────────────
 
 @router.get("/stats", response_model=DeviceStatsResponseSchema)
 async def get_device_stats(
@@ -188,9 +161,6 @@ async def get_device_stats(
         last_activity_at=stats.last_activity_at,
     )
 
-
-# ── GET /devices/{device_id} ─────────────────────────────────────────
-
 @router.get("/{device_id}", response_model=DeviceInfoResponseSchema)
 async def get_device(
     device_id: str,
@@ -199,9 +169,6 @@ async def get_device(
 ) -> DeviceInfoResponseSchema:
     result = await auth_gw.get_device(user_id=session.user_id, device_id=device_id)
     return _device_result_to_response(result)
-
-
-# ── DELETE /devices/{device_id} ───────────────────────────────────────
 
 @router.delete("/{device_id}", response_model=RevokeDeviceResponseSchema)
 async def revoke_device(
@@ -233,9 +200,6 @@ async def revoke_device(
 
     return RevokeDeviceResponseSchema(**dataclasses.asdict(result))
 
-
-# ── PUT /devices/{device_id}/update-keys ──────────────────────────────
-
 @router.put("/{device_id}/update-keys", response_model=UpdateDeviceKeysResponseSchema)
 async def update_device_keys(
     device_id: str,
@@ -252,9 +216,6 @@ async def update_device_keys(
     )
     return UpdateDeviceKeysResponseSchema(**dataclasses.asdict(result))
 
-
-# ── PUT /devices/{device_id}/rename ───────────────────────────────────
-
 @router.put("/{device_id}/rename", response_model=RenameDeviceResponseSchema)
 async def rename_device(
     device_id: str,
@@ -270,9 +231,6 @@ async def rename_device(
     )
     return RenameDeviceResponseSchema(**dataclasses.asdict(result))
 
-
-# ── POST /devices/{device_id}/verify ─────────────────────────────────
-
 @router.post("/{device_id}/verify", response_model=VerifyDeviceResponseSchema)
 async def verify_device(
     device_id: str,
@@ -286,9 +244,6 @@ async def verify_device(
     )
     return VerifyDeviceResponseSchema(**dataclasses.asdict(result))
 
-
-# ── POST /devices/primary/transfer ────────────────────────────────────
-
 @router.post("/primary/transfer", response_model=TransferPrimaryResponseSchema)
 async def transfer_primary(
     body: TransferPrimaryRequestSchema,
@@ -301,9 +256,6 @@ async def transfer_primary(
         target_device_id=body.target_device_id,
     )
     return TransferPrimaryResponseSchema(**dataclasses.asdict(result))
-
-
-# ── POST /devices/bulk-revoke ─────────────────────────────────────────
 
 @router.post("/bulk-revoke", response_model=BulkRevokeDevicesResponseSchema)
 async def bulk_revoke_devices(

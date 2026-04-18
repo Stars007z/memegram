@@ -1,6 +1,5 @@
 from app.core.interfaces.auth_gateway import IAuthGateway, LoginInitResult
 
-
 class LoginInitUseCase:
     def __init__(self, auth_gateway: IAuthGateway):
         self._gateway = auth_gateway

@@ -1,18 +1,14 @@
 from pydantic import BaseModel
 
-
 class RegisterPushTokenRequestSchema(BaseModel):
-    platform: str       # ios / android
+    platform: str
     push_token: str
-
 
 class RegisterPushTokenResponseSchema(BaseModel):
     success: bool
 
-
 class UnregisterPushTokenResponseSchema(BaseModel):
     success: bool
-
 
 class NotificationsHealthResponseSchema(BaseModel):
     status: str
