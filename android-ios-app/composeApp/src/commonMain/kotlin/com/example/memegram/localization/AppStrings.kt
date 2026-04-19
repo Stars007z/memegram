@@ -88,6 +88,9 @@ interface AppStrings {
     val copyText: String
     val you: String
     val interlocutor: String
+    val showInChat: String
+    val savedToGallery: String
+    val saveFailed: String
 
     // ── ChatViewModel (non-composable) ───────────────────────────────
     val mlsNotReady: String
@@ -471,6 +474,9 @@ object RuStrings : AppStrings {
     override val copyText = "Копировать текст"
     override val you = "Вы"
     override val interlocutor = "Собеседник"
+    override val showInChat = "Показать в чате"
+    override val savedToGallery = "Сохранено в галерею"
+    override val saveFailed = "Не удалось сохранить"
 
     // ChatViewModel
     override val mlsNotReady = "MLS не готов для этого чата"
@@ -854,6 +860,9 @@ object EnStrings : AppStrings {
     override val copyText = "Copy text"
     override val you = "You"
     override val interlocutor = "Contact"
+    override val showInChat = "Show in chat"
+    override val savedToGallery = "Saved to gallery"
+    override val saveFailed = "Save failed"
 
     // ChatViewModel
     override val mlsNotReady = "MLS is not ready for this chat"

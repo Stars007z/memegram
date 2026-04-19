@@ -909,12 +909,10 @@ class ChatViewModel(
         val fileName = item.name
         val fileSize = rawBytes.size.toLong()
 
-        val inlineBlob = if (rawBytes.size <= INLINE_BLOB_LIMIT_BYTES) rawBytes else null
-
         val tempMsg = Message(
             id = now.hashCode(), text = caption, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING,
-            type = "file", localPreviewBytes = inlineBlob,
+            type = "file", localPreviewBytes = null,
             senderUserId = myUserId, groupId = groupId,
             fileName = fileName, fileSize = fileSize, fileMime = mime
         )
@@ -1133,7 +1131,13 @@ class ChatViewModel(
                 if (_recordState.value == RecordState.PAUSED) continue
 
                 val amp = audioRecorder.getMaxAmplitude()
-                val normalized = ((amp / 32767f) * 9).toInt().coerceIn(0, 9)
+                val normalized = if (amp <= 300) {
+                    0
+                } else {
+                    val ratio = (kotlin.math.log10(amp.toFloat()) - kotlin.math.log10(300f)) /
+                        (kotlin.math.log10(32767f) - kotlin.math.log10(300f))
+                    (ratio * 9f).toInt().coerceIn(0, 9)
+                }
                 rawAmplitudes.add(normalized)
 
                 _voiceAmplitudes.value = rawAmplitudes.toList()
