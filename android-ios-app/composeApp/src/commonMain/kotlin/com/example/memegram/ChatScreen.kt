@@ -38,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -86,6 +88,9 @@ import com.example.memegram.utils.LocalScreenWidthDp
 import com.example.memegram.utils.rememberAsyncImageBitmap
 import kotlin.math.roundToInt
 
+private const val CHAT_BUBBLE_MAX_IMAGE_DIM = 1280
+private const val ALBUM_CELL_MAX_IMAGE_DIM = 720
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -93,6 +98,11 @@ fun ChatScreen(
     chatName: String,
     onBack: () -> Unit,
     onProfileClick: () -> Unit,
+    onPhotoClick: (Int) -> Unit = {},
+    scrollToMessageId: Int? = null,
+    replyToMessageId: Int? = null,
+    onScrollToConsumed: () -> Unit = {},
+    onReplyToConsumed: () -> Unit = {},
     viewModel: ChatViewModel
 ) {
     val messages       by viewModel.messages.collectAsState()
@@ -256,6 +266,42 @@ fun ChatScreen(
     val clipboardManager = LocalClipboardManager.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    var highlightedMessageId by remember { mutableStateOf<Int?>(null) }
+    val inputFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(scrollToMessageId, chatItems) {
+        val target = scrollToMessageId ?: return@LaunchedEffect
+        if (chatItems.isEmpty()) return@LaunchedEffect
+        val idx = chatItems.indexOfFirst { item -> item.allMessages.any { it.id == target } }
+        if (idx >= 0) {
+            listState.animateScrollToItem(idx)
+            highlightedMessageId = target
+        }
+        onScrollToConsumed()
+    }
+
+    LaunchedEffect(highlightedMessageId) {
+        if (highlightedMessageId != null) {
+            delay(1500)
+            highlightedMessageId = null
+        }
+    }
+
+    LaunchedEffect(replyToMessageId, messages) {
+        val target = replyToMessageId ?: return@LaunchedEffect
+        val msg = messages.firstOrNull { it.id == target } ?: run {
+            onReplyToConsumed()
+            return@LaunchedEffect
+        }
+        viewModel.setReplyTo(msg)
+        onReplyToConsumed()
+        delay(50)
+        runCatching { inputFocusRequester.requestFocus() }
+        keyboardController?.show()
+    }
+
 
     val errorMessage by viewModel.error.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -821,7 +867,7 @@ fun ChatScreen(
                             IconButton(onClick = { }) { Icon(Icons.Default.SentimentSatisfied, null, tint = Color.Gray) }
                             OutlinedTextField(
                                 value = inputText, onValueChange = { viewModel.updateInput(it) },
-                                modifier = Modifier.weight(1f), placeholder = { Text(s.messagePlaceholder) },
+                                modifier = Modifier.weight(1f).focusRequester(inputFocusRequester), placeholder = { Text(s.messagePlaceholder) },
                                 shape = RoundedCornerShape(24.sdp), maxLines = 5
                             )
                             IconButton(onClick = { galleryLoader.requestPermission(); showAttachSheet = true }) {
@@ -1063,7 +1109,9 @@ fun ChatScreen(
                                                         }
                                                     },
                                                     downloadingFiles = downloadingFiles,
-                                                    onFileTap        = { viewModel.onFileBubbleTap(it) }
+                                                    onFileTap        = { viewModel.onFileBubbleTap(it) },
+                                                    onPhotoClick     = onPhotoClick,
+                                                    isHighlighted    = (message.id == highlightedMessageId)
                                                 )
                                             }
                                         }
@@ -1112,7 +1160,9 @@ fun ChatScreen(
                                                     }
                                                 },
                                                 downloadingFiles = downloadingFiles,
-                                                onFileTap        = { viewModel.onFileBubbleTap(it) }
+                                                onFileTap        = { viewModel.onFileBubbleTap(it) },
+                                                onPhotoClick     = onPhotoClick,
+                                                isHighlighted    = (message.id == highlightedMessageId)
                                             )
                                         }
                                     }
@@ -1123,7 +1173,7 @@ fun ChatScreen(
                                     onDismissRequest = { contextMenuMessage = null },
                                     offset = contextMenuOffset
                                 ) {
-                                    val isImageMsg = message.type == "image" || message.localPreviewBytes != null
+                                    val isImageMsg = message.type == "image"
                                     val hasText = message.text.isNotBlank() && message.type != "voice"
 
                                     if (isImageMsg) {
@@ -1274,7 +1324,9 @@ fun ChatScreen(
                                                     downloadingFiles = downloadingFiles,
                                                     onFileTap = { viewModel.onFileBubbleTap(it) },
                                                     searchQuery = searchQuery,
-                                                    isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                                    isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId },
+                                                    onPhotoClick = onPhotoClick,
+                                                    isHighlighted = albumMessages.any { it.id == highlightedMessageId }
                                                 )
                                             }
                                         }
@@ -1312,7 +1364,9 @@ fun ChatScreen(
                                                 downloadingFiles = downloadingFiles,
                                                 onFileTap = { viewModel.onFileBubbleTap(it) },
                                                 searchQuery = searchQuery,
-                                                isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId }
+                                                isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId },
+                                                onPhotoClick = onPhotoClick,
+                                                isHighlighted = albumMessages.any { it.id == highlightedMessageId }
                                             )
                                         }
                                     }
@@ -1530,7 +1584,9 @@ fun MessageBubble(
     replyToSenderName: String? = null,
     onReplyClick: (() -> Unit)? = null,
     downloadingFiles: Set<String> = emptySet(),
-    onFileTap: (Message) -> Unit = {}
+    onFileTap: (Message) -> Unit = {},
+    onPhotoClick: (Int) -> Unit = {},
+    isHighlighted: Boolean = false,
 ) {
     val isOut       = message.isOutgoing
     val s = LocalStrings.current
@@ -1548,10 +1604,11 @@ fun MessageBubble(
     val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
     val cachedBytes = message.mediaId?.let { mediaCache[it] }
-    val bytesForDecode = cachedBytes ?: message.localPreviewBytes
+    val bytesForDecode = if (message.type == "image") cachedBytes ?: message.localPreviewBytes else null
     val localBitmap = rememberAsyncImageBitmap(
         bytes = bytesForDecode,
-        cacheKey = message.mediaId?.let { "msg:$it" }
+        cacheKey = message.mediaId?.let { "msg:$it" },
+        maxDimension = CHAT_BUBBLE_MAX_IMAGE_DIM,
     )
     val mediaId = message.mediaId
     val encMeta = message.encryptionMetadata
@@ -1561,8 +1618,9 @@ fun MessageBubble(
         }
     }
     val isFileMsg  = message.type == "file"
-    val isImageMsg = !isFileMsg && (message.type == "image" || localBitmap != null)
-    val hasText    = message.text.isNotBlank() && message.type != "voice"
+    val isVoiceMsg = message.type == "voice"
+    val isImageMsg = !isFileMsg && !isVoiceMsg && (message.type == "image" || localBitmap != null)
+    val hasText    = message.text.isNotBlank() && !isVoiceMsg
     val isPhotoOnly = isImageMsg && !hasText
 
     Row(
@@ -1570,7 +1628,7 @@ fun MessageBubble(
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment     = Alignment.Bottom
     ) {
-        if (isOut && timeText.isNotEmpty() && !isPhotoOnly) {
+        if (isOut && timeText.isNotEmpty()) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
                 modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp))
         }
@@ -1812,6 +1870,7 @@ fun MessageBubble(
                                     bottomStart = if (!hasText && isOut) 16.sdp else if (!hasText) 4.sdp else 0.sdp,
                                     bottomEnd   = if (!hasText && isOut) 4.sdp else if (!hasText) 16.sdp else 0.sdp
                                 ))
+                                .clickable { onPhotoClick(message.id) }
                         )
                     } else {
                         Box(
@@ -1885,34 +1944,21 @@ fun MessageBubble(
                 }
             }
             }
-            if (isPhotoOnly && timeText.isNotEmpty()) {
-                Row(
+            val highlightAlpha by animateFloatAsState(
+                targetValue = if (isHighlighted) 0.35f else 0f,
+                animationSpec = tween(durationMillis = 600),
+                label = "bubbleHighlight",
+            )
+            if (highlightAlpha > 0f) {
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.sdp)
-                        .clip(RoundedCornerShape(10.sdp))
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .padding(horizontal = 8.sdp, vertical = 3.sdp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = timeText,
-                        color = Color.White,
-                        fontSize = 11.ssp
-                    )
-                if (isOut && message.status != MessageStatus.SENT && !isPhotoOnly) {
-                        Spacer(Modifier.width(4.sdp))
-                        Text(
-                            text = if (message.status == MessageStatus.SENDING) "⏳" else "❌",
-                            fontSize = 11.ssp,
-                            color = Color.White
-                        )
-                    }
-                }
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha))
+                )
             }
         }
 
-        if (!isOut && timeText.isNotEmpty() && !isPhotoOnly) {
+        if (!isOut && timeText.isNotEmpty()) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
                 modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp))
         }
@@ -2019,7 +2065,9 @@ fun AlbumBubble(
     downloadingFiles: Set<String> = emptySet(),
     onFileTap: (Message) -> Unit = {},
     searchQuery: String = "",
-    isCurrentMatch: Boolean = false
+    isCurrentMatch: Boolean = false,
+    onPhotoClick: (Int) -> Unit = {},
+    isHighlighted: Boolean = false,
 ) {
     val s = LocalStrings.current
     val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
@@ -2047,7 +2095,8 @@ fun AlbumBubble(
         val bytesForDecode = cachedBytes ?: msg.localPreviewBytes
         val bitmap = rememberAsyncImageBitmap(
             bytes = bytesForDecode,
-            cacheKey = msg.mediaId?.let { "msg:$it" }
+            cacheKey = msg.mediaId?.let { "msg:$it" },
+            maxDimension = ALBUM_CELL_MAX_IMAGE_DIM,
         )
         val mediaId = msg.mediaId
         val encMeta = msg.encryptionMetadata
@@ -2104,7 +2153,8 @@ fun AlbumBubble(
                         bubbleColor = bubbleColor,
                         textColor = textColor,
                         hasCaption = hasCaption || hasFiles,
-                        isOutgoing = isOutgoing
+                        isOutgoing = isOutgoing,
+                        onPhotoClick = onPhotoClick,
                     )
                 }
 
@@ -2168,6 +2218,19 @@ fun AlbumBubble(
                         )
                     }
                 }
+            }
+
+            val albumHighlightAlpha by animateFloatAsState(
+                targetValue = if (isHighlighted) 0.35f else 0f,
+                animationSpec = tween(durationMillis = 600),
+                label = "albumHighlight",
+            )
+            if (albumHighlightAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = albumHighlightAlpha))
+                )
             }
         }
 
@@ -2269,7 +2332,8 @@ private fun AlbumPhotoGrid(
     bubbleColor: Color,
     textColor: Color,
     hasCaption: Boolean,
-    isOutgoing: Boolean
+    isOutgoing: Boolean,
+    onPhotoClick: (Int) -> Unit = {},
 ) {
     val spacing = 2.sdp
     val count = bitmaps.size
@@ -2295,7 +2359,8 @@ private fun AlbumPhotoGrid(
                             topStart = topStart, topEnd = topEnd,
                             bottomStart = bottomStart, bottomEnd = bottomEnd
                         )
-                    )
+                    ),
+                onClick = { onPhotoClick(messages[0].id) },
             )
         }
         2 -> {
@@ -2306,7 +2371,8 @@ private fun AlbumPhotoGrid(
                     modifier = Modifier
                         .weight(1f)
                         .aspectRatio(0.8f)
-                        .clip(RoundedCornerShape(topStart = topStart, bottomStart = bottomStart))
+                        .clip(RoundedCornerShape(topStart = topStart, bottomStart = bottomStart)),
+                    onClick = { onPhotoClick(messages[0].id) },
                 )
                 AlbumPhotoCell(
                     bitmap = bitmaps[1], message = messages[1],
@@ -2314,7 +2380,8 @@ private fun AlbumPhotoGrid(
                     modifier = Modifier
                         .weight(1f)
                         .aspectRatio(0.8f)
-                        .clip(RoundedCornerShape(topEnd = topEnd, bottomEnd = bottomEnd))
+                        .clip(RoundedCornerShape(topEnd = topEnd, bottomEnd = bottomEnd)),
+                    onClick = { onPhotoClick(messages[1].id) },
                 )
             }
         }
@@ -2328,13 +2395,15 @@ private fun AlbumPhotoGrid(
                         bitmap = bitmaps[0], message = messages[0],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(topStart = topStart))
+                            .clip(RoundedCornerShape(topStart = topStart)),
+                        onClick = { onPhotoClick(messages[0].id) },
                     )
                     AlbumPhotoCell(
                         bitmap = bitmaps[1], message = messages[1],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(topEnd = topEnd))
+                            .clip(RoundedCornerShape(topEnd = topEnd)),
+                        onClick = { onPhotoClick(messages[1].id) },
                     )
                 }
                 AlbumPhotoCell(
@@ -2343,7 +2412,8 @@ private fun AlbumPhotoGrid(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(2f)
-                        .clip(RoundedCornerShape(bottomStart = bottomStart, bottomEnd = bottomEnd))
+                        .clip(RoundedCornerShape(bottomStart = bottomStart, bottomEnd = bottomEnd)),
+                    onClick = { onPhotoClick(messages[2].id) },
                 )
             }
         }
@@ -2357,13 +2427,15 @@ private fun AlbumPhotoGrid(
                         bitmap = bitmaps[0], message = messages[0],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(topStart = topStart))
+                            .clip(RoundedCornerShape(topStart = topStart)),
+                        onClick = { onPhotoClick(messages[0].id) },
                     )
                     AlbumPhotoCell(
                         bitmap = bitmaps[1], message = messages[1],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(topEnd = topEnd))
+                            .clip(RoundedCornerShape(topEnd = topEnd)),
+                        onClick = { onPhotoClick(messages[1].id) },
                     )
                 }
                 Row(
@@ -2374,13 +2446,15 @@ private fun AlbumPhotoGrid(
                         bitmap = bitmaps[2], message = messages[2],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(bottomStart = bottomStart))
+                            .clip(RoundedCornerShape(bottomStart = bottomStart)),
+                        onClick = { onPhotoClick(messages[2].id) },
                     )
                     AlbumPhotoCell(
                         bitmap = bitmaps[3], message = messages[3],
                         bubbleColor = bubbleColor, textColor = textColor,
                         modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(bottomEnd = bottomEnd))
+                            .clip(RoundedCornerShape(bottomEnd = bottomEnd)),
+                        onClick = { onPhotoClick(messages[3].id) },
                     )
                 }
             }
@@ -2405,7 +2479,8 @@ private fun AlbumPhotoGrid(
                                         topStart = if (isFirstRow) topStart else 0.sdp,
                                         bottomStart = if (isLastRow) bottomStart else 0.sdp
                                     )
-                                )
+                                ),
+                                onClick = { onPhotoClick(messages[msgIdx].id) },
                             )
                             AlbumPhotoCell(
                                 bitmap = rowBitmaps[1], message = messages[msgIdx + 1],
@@ -2415,7 +2490,8 @@ private fun AlbumPhotoGrid(
                                         topEnd = if (isFirstRow) topEnd else 0.sdp,
                                         bottomEnd = if (isLastRow) bottomEnd else 0.sdp
                                     )
-                                )
+                                ),
+                                onClick = { onPhotoClick(messages[msgIdx + 1].id) },
                             )
                         }
                     } else {
@@ -2428,7 +2504,8 @@ private fun AlbumPhotoGrid(
                                     bottomStart = bottomStart,
                                     bottomEnd = bottomEnd
                                 )
-                            )
+                            ),
+                            onClick = { onPhotoClick(messages[msgIdx].id) },
                         )
                     }
                 }
@@ -2443,9 +2520,13 @@ private fun AlbumPhotoCell(
     message: Message,
     bubbleColor: Color,
     textColor: Color,
-    modifier: Modifier
+    modifier: Modifier,
+    onClick: () -> Unit = {},
 ) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(
+        modifier = modifier.clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
@@ -2496,9 +2577,9 @@ private fun SwipeToReplyContainer(
         return
     }
     val density = LocalDensity.current
-    val maxDragPx  = with(density) { 80.sdp.toPx() }
-    val triggerPx  = with(density) { 56.sdp.toPx() }
-    val slopPx     = with(density) { 10.sdp.toPx() }
+    val maxDragPx  = with(density) { 96.sdp.toPx() }
+    val triggerPx  = with(density) { 80.sdp.toPx() }
+    val slopPx     = with(density) { 24.sdp.toPx() }
 
     var offsetX by remember { mutableStateOf(0f) }
     val animatedOffset by animateFloatAsState(
@@ -2541,7 +2622,9 @@ private fun SwipeToReplyContainer(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         var totalDx = 0f
+                        var totalDy = 0f
                         var horizontalLockEngaged = false
+                        var verticalLockEngaged = false
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Main)
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -2557,10 +2640,19 @@ private fun SwipeToReplyContainer(
                             val dx = change.position.x - change.previousPosition.x
                             val dy = change.position.y - change.previousPosition.y
                             totalDx += dx
-                            if (!horizontalLockEngaged) {
-                                if (kotlin.math.abs(totalDx) > slopPx &&
-                                    kotlin.math.abs(totalDx) > kotlin.math.abs(dy) * 1.5f &&
-                                    totalDx < 0f
+                            totalDy += dy
+
+                            if (!horizontalLockEngaged && !verticalLockEngaged) {
+                                if (kotlin.math.abs(totalDy) > slopPx &&
+                                    kotlin.math.abs(totalDy) > kotlin.math.abs(totalDx) * 1.2f
+                                ) {
+                                    verticalLockEngaged = true
+                                }
+                            }
+
+                            if (!horizontalLockEngaged && !verticalLockEngaged) {
+                                if (-totalDx > slopPx &&
+                                    -totalDx > kotlin.math.abs(totalDy) * 2f
                                 ) {
                                     horizontalLockEngaged = true
                                 }

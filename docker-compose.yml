@@ -548,8 +548,8 @@ services:
       - MESSAGING_REDIS_URL=redis://messaging-redis:6379/0
       - STREAM_NAME=notifications:events
       - CONSUMER_GROUP=notifications-cg
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
-      - FCM_PROJECT_ID=${FCM_PROJECT_ID:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/secrets/firebase.json}
+      - FCM_PROJECT_ID=${FCM_PROJECT_ID:-memegram-362c0}
       - APNS_KEY_PATH=${APNS_KEY_PATH:-}
       - APNS_KEY_ID=${APNS_KEY_ID:-}
       - APNS_TEAM_ID=${APNS_TEAM_ID:-}
@@ -561,8 +561,12 @@ services:
       - USER_GRPC_PORT=50052
       - ITEM_STORAGE_GRPC_HOST=item-storage-service
       - ITEM_STORAGE_GRPC_PORT=50056
+      - CONTACTS_GRPC_HOST=contacts-service
+      - CONTACTS_GRPC_PORT=50053
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    volumes:
+      - ./memegram-362c0-firebase-adminsdk-fbsvc-87eea9959e.json:/app/secrets/firebase.json:ro
     ports:
       - "50057:50057"
     depends_on:
@@ -577,6 +581,8 @@ services:
       user-service:
         condition: service_healthy
       item-storage-service:
+        condition: service_healthy
+      contacts-service:
         condition: service_healthy
     networks:
       - memegram-backend

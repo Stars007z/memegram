@@ -162,6 +162,8 @@ class EventConsumer:
                 await self._handle_member_added(payload)
             elif event_type == "member_kicked":
                 await self._handle_member_kicked(payload)
+            elif event_type == "conversation_deleted":
+                await self._handle_conversation_deleted(payload)
             else:
                 logger.warning("event_consumer.unknown_event_type", event_type=event_type)
 
@@ -280,6 +282,30 @@ class EventConsumer:
             thread_id=conversation_id,
             avatar_url=None,
             event_type="member_kicked",
+            conversation_id=conversation_id,
+        )
+
+    async def _handle_conversation_deleted(self, event: dict) -> None:
+        """Silent push so clients can drop a conversation from local state."""
+        conversation_id = event.get("conversation_id", "")
+        deleted_by = event.get("deleted_by", "")
+        member_user_ids = event.get("member_user_ids", []) or []
+
+        recipient_ids = [uid for uid in member_user_ids if uid and uid != deleted_by]
+        if not recipient_ids:
+            return
+
+        await self._send_push_to_users(
+            recipient_user_ids=recipient_ids,
+            title="",
+            body="",
+            data={
+                "event_type": "conversation_deleted",
+                "conversation_id": conversation_id,
+            },
+            thread_id=conversation_id,
+            avatar_url=None,
+            event_type="conversation_deleted",
             conversation_id=conversation_id,
         )
 

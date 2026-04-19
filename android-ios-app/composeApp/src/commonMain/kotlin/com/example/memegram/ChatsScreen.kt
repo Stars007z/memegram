@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -415,6 +417,9 @@ fun ChatsScreen(
                     )
                 }
                 if (showInviteDialog) {
+                    val clipboardManager = LocalClipboardManager.current
+                    var inviteCopied by remember { mutableStateOf(false) }
+                    LaunchedEffect(createdInviteCode) { inviteCopied = false }
                     AlertDialog(
                         onDismissRequest = {
                             if (!isCreatingInvite) {
@@ -429,12 +434,34 @@ fun ChatsScreen(
                                 if (createdInviteCode != null) {
                                     Text(s.inviteCreated, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.height(8.sdp))
-                                    SelectionContainer {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        SelectionContainer(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = createdInviteCode!!,
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        IconButton(onClick = {
+                                            clipboardManager.setText(AnnotatedString(createdInviteCode!!))
+                                            inviteCopied = true
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = s.copyCode
+                                            )
+                                        }
+                                    }
+                                    if (inviteCopied) {
+                                        Spacer(Modifier.height(4.sdp))
                                         Text(
-                                            text = createdInviteCode!!,
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            text = s.copied,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 12.ssp
                                         )
                                     }
                                 } else {

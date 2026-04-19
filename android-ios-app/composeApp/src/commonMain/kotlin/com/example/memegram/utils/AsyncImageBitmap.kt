@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.decodeToImageBitmap
+import com.example.memegram.decodeToImageBitmapDownsampled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -34,28 +35,39 @@ object ImageBitmapCache {
 @Composable
 fun rememberAsyncImageBitmap(
     bytes: ByteArray?,
-    cacheKey: String? = null
+    cacheKey: String? = null,
+    maxDimension: Int = 0,
 ): ImageBitmap? {
-    var bitmap by remember(cacheKey, bytes) {
-        mutableStateOf(cacheKey?.let { ImageBitmapCache.get(it) })
+    val effectiveKey = remember(cacheKey, maxDimension) {
+        cacheKey?.let { if (maxDimension > 0) "$it@$maxDimension" else it }
     }
 
-    LaunchedEffect(cacheKey, bytes) {
+    var bitmap by remember(effectiveKey, bytes) {
+        mutableStateOf(effectiveKey?.let { ImageBitmapCache.get(it) })
+    }
+
+    LaunchedEffect(effectiveKey, bytes) {
         if (bytes == null) {
             bitmap = null
             return@LaunchedEffect
         }
-        if (cacheKey != null) {
-            ImageBitmapCache.get(cacheKey)?.let {
+        if (effectiveKey != null) {
+            ImageBitmapCache.get(effectiveKey)?.let {
                 bitmap = it
                 return@LaunchedEffect
             }
         }
         val decoded = withContext(Dispatchers.Default) {
-            runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+            runCatching {
+                if (maxDimension > 0) {
+                    bytes.decodeToImageBitmapDownsampled(maxDimension)
+                } else {
+                    bytes.decodeToImageBitmap()
+                }
+            }.getOrNull()
         }
-        if (decoded != null && cacheKey != null) {
-            ImageBitmapCache.put(cacheKey, decoded)
+        if (decoded != null && effectiveKey != null) {
+            ImageBitmapCache.put(effectiveKey, decoded)
         }
         bitmap = decoded
     }
