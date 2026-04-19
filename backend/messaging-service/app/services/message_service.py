@@ -89,6 +89,12 @@ class MessageServiceImpl(IMessageService):
             {
                 "event_type": "new_message",
                 "message": self._msg_to_dict(msg),
+                "conversation_type": getattr(conv, "type", "") if conv is not None else "",
+                "conversation_name": getattr(conv, "name", "") or "",
+                "avatar_media_id": str(getattr(conv, "avatar_media_id", "") or ""),
+                "sender_user_id": str(sender_user_id),
+                "message_type": type,
+                "created_at": msg.created_at.timestamp(),
             },
         )
 

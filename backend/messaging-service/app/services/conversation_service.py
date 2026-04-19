@@ -201,6 +201,26 @@ class ConversationServiceImpl(IConversationService):
             member_count=len(all_members),
         )
 
+        added_user_ids = [str(uid) for uid, _ in members]
+        if added_user_ids:
+            try:
+                await self._stream.publish_event(
+                    conv.id,
+                    {
+                        "event_type": "member_added",
+                        "added_user_ids": added_user_ids,
+                        "conversation_name": name,
+                        "avatar_media_id": str(getattr(conv, "avatar_media_id", "") or ""),
+                        "added_by": str(creator_user_id),
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - notifications best-effort
+                logger.warning(
+                    "conversation.group.member_added_publish_failed",
+                    conversation_id=str(conv.id),
+                    error=str(exc),
+                )
+
         return self._build_conversation_result(
             conv,
             all_members,
@@ -341,6 +361,7 @@ class ConversationServiceImpl(IConversationService):
             {
                 "event_type": "member_kicked",
                 "user_id": str(target_user_id),
+                "kicked_user_id": str(target_user_id),
                 "kicked_by": str(caller_user_id),
             },
         )
@@ -485,11 +506,26 @@ class ConversationServiceImpl(IConversationService):
                 "PERMISSION_DENIED: Only the group owner can delete the group; " "use leave instead",
             )
 
+        member_user_ids: list[str] = []
+        try:
+            active_members = await self._members.get_active_members(conversation_id)
+            if active_members:
+                member_user_ids = [str(m.user_id) for m in active_members]
+        except Exception as exc:  # pragma: no cover - notifications best-effort
+            logger.warning(
+                "conversation.delete.members_lookup_failed",
+                conversation_id=str(conversation_id),
+                error=str(exc),
+            )
+
         await self._stream.publish_event(
             conversation_id,
             {
                 "event_type": "conversation_deleted",
                 "deleted_by": str(caller_user_id),
+                "conversation_type": conv.type,
+                "conversation_name": getattr(conv, "name", "") or "",
+                "member_user_ids": member_user_ids,
             },
         )
 
