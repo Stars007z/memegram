@@ -1,9 +1,12 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, BigInteger, DateTime, Index, text
+
+from sqlalchemy import BigInteger, DateTime, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database.base import Base
+
 
 class StorageItem(Base):
     __tablename__ = "storage_items"

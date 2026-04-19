@@ -22,39 +22,44 @@ from app.logging_config import get_logger
 
 logger = get_logger("http.access")
 
-_SENSITIVE_FIELDS = frozenset({
-    "access_token",
-    "refresh_token",
-    "signature",
-    "identity_key_pub",
-    "init_key_pub",
-    "credential_data",
-    "jwt_secret",
-    "password",
-    "registration_code",
-    "challenge",
-    "push_token",
-    "mls_ciphertext",
-    "welcome_data",
-    "commit_data",
-    "ratchet_tree",
-    "encryption_metadata",
-    "key_packages",
-    "download_url",
-    "upload_url",
-})
+_SENSITIVE_FIELDS = frozenset(
+    {
+        "access_token",
+        "refresh_token",
+        "signature",
+        "identity_key_pub",
+        "init_key_pub",
+        "credential_data",
+        "jwt_secret",
+        "password",
+        "registration_code",
+        "challenge",
+        "push_token",
+        "mls_ciphertext",
+        "welcome_data",
+        "commit_data",
+        "ratchet_tree",
+        "encryption_metadata",
+        "key_packages",
+        "download_url",
+        "upload_url",
+    }
+)
 
-_SKIP_PATHS = frozenset({
-    "/health",
-    "/api/v1/auth/health",
-    "/api/v1/user/health",
-    "/api/v1/contacts/health",
-    "/api/v1/item-storage/health",
-    "/api/v1/notifications/health",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-})
+_SKIP_PATHS = frozenset(
+    {
+        "/health",
+        "/api/v1/auth/health",
+        "/api/v1/user/health",
+        "/api/v1/contacts/health",
+        "/api/v1/item-storage/health",
+        "/api/v1/notifications/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    }
+)
+
 
 def _sanitize_body(body: dict) -> dict:
     """Replace sensitive values with '***'."""
@@ -68,6 +73,7 @@ def _sanitize_body(body: dict) -> dict:
             sanitized[key] = value
     return sanitized
 
+
 def _extract_caller(request: Request) -> dict[str, str]:
     """Extract caller identity from the session context set by auth dependency."""
     info: dict[str, str] = {}
@@ -79,6 +85,7 @@ def _extract_caller(request: Request) -> dict[str, str]:
             info["device_id"] = session.device_id
     return info
 
+
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Emits one structured log entry per HTTP request.
 
@@ -89,7 +96,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint,
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
         if request.url.path in _SKIP_PATHS:
             return await call_next(request)

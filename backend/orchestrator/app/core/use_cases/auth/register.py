@@ -1,6 +1,7 @@
-from app.core.interfaces.auth_gateway import IAuthGateway, RegisterRequest, AuthResult
+from app.core.interfaces.auth_gateway import AuthResult, IAuthGateway, RegisterRequest
 from app.core.interfaces.user_gateway import IUserGateway
 from app.exceptions import GatewayError
+
 
 class RegisterUseCase:
     def __init__(self, auth_gateway: IAuthGateway, user_gateway: IUserGateway):

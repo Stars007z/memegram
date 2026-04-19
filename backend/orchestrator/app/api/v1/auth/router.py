@@ -1,40 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException
 import dataclasses
 
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.api.dependencies import (
-    get_register_use_case,
-    get_login_init_use_case,
-    get_login_complete_use_case,
-    get_logout_use_case,
-    get_create_invite_use_case,
     get_auth_gateway,
+    get_create_invite_use_case,
     get_current_session,
+    get_login_complete_use_case,
+    get_login_init_use_case,
+    get_register_use_case,
     get_user_gateway,
     require_device_type,
 )
 from app.api.v1.auth.schemas import (
-    RegisterRequestSchema,
-    LoginInitRequestSchema,
-    LoginCompleteRequestSchema,
-    LogoutRequestSchema,
-    CreateInviteRequestSchema,
     AuthResponseSchema,
-    LoginInitResponseSchema,
-    LogoutResponseSchema,
-    HealthResponseSchema,
+    CreateInviteRequestSchema,
     CreateInviteResponseSchema,
+    HealthResponseSchema,
+    LoginCompleteRequestSchema,
+    LoginInitRequestSchema,
+    LoginInitResponseSchema,
+    RegisterRequestSchema,
 )
-from app.core.use_cases.auth.register import RegisterUseCase
-from app.core.use_cases.auth.login_init import LoginInitUseCase
-from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
-from app.core.use_cases.auth.logout import LogoutUseCase
-from app.core.use_cases.auth.create_invite import CreateInviteUseCase
 from app.core.interfaces.auth_gateway import IAuthGateway, RegisterRequest
 from app.core.interfaces.user_gateway import IUserGateway
 from app.core.session_context import SessionContext
+from app.core.use_cases.auth.create_invite import CreateInviteUseCase
+from app.core.use_cases.auth.login_complete import LoginCompleteUseCase
+from app.core.use_cases.auth.login_init import LoginInitUseCase
+from app.core.use_cases.auth.register import RegisterUseCase
 from app.exceptions import NotFoundError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 @router.post("/register", response_model=AuthResponseSchema, status_code=201)
 async def register(
@@ -53,6 +51,7 @@ async def register(
     result = await usecase.execute(request)
     return AuthResponseSchema(**dataclasses.asdict(result))
 
+
 @router.post("/login-init", response_model=LoginInitResponseSchema)
 async def login_init(
     body: LoginInitRequestSchema,
@@ -60,6 +59,7 @@ async def login_init(
 ) -> LoginInitResponseSchema:
     result = await use_case.execute(device_id=body.device_id)
     return LoginInitResponseSchema(**result.__dict__)
+
 
 @router.post("/login-complete", response_model=AuthResponseSchema)
 async def login_complete(
@@ -82,13 +82,6 @@ async def login_complete(
         raise HTTPException(status_code=401, detail="Account has been deleted")
     return AuthResponseSchema(**result.__dict__)
 
-@router.post("/logout", response_model=LogoutResponseSchema)
-async def logout(
-    body: LogoutRequestSchema,
-    use_case: LogoutUseCase = Depends(get_logout_use_case),
-) -> LogoutResponseSchema:
-    result = await use_case.execute(access_token=body.access_token)
-    return LogoutResponseSchema(**result.__dict__)
 
 @router.get("/health", response_model=HealthResponseSchema)
 async def health_check(
@@ -96,6 +89,7 @@ async def health_check(
 ) -> HealthResponseSchema:
     result = await gateway.health_check()
     return HealthResponseSchema(**result.__dict__)
+
 
 @router.post("/invite", response_model=CreateInviteResponseSchema, status_code=201)
 async def create_invite(

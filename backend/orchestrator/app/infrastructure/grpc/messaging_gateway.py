@@ -1,39 +1,43 @@
 import base64
-import grpc
 from typing import AsyncIterator
+
+import grpc
 
 from app.config import Settings
 from app.core.interfaces.messaging_gateway import (
-    IMessagingGateway,
-    DeviceWelcome,
-    MemberWithWelcomes,
+    CommitEntryResult,
+    CommitGroupChangeResult,
     ConversationMemberResult,
-    MlsGroupInfoResult,
     ConversationResult,
     ConversationSummaryResult,
+    DeviceWelcome,
     GetConversationsResult,
-    MessageEntryResult,
-    SendMessageResult,
-    GetMessagesResult,
-    KeyPackageResult,
-    UserDeviceKeyPackageResult,
-    CommitGroupChangeResult,
-    WelcomeEntryResult,
-    CommitEntryResult,
-    InitiateMediaUploadResult,
     GetMediaDownloadUrlResult,
+    GetMessagesResult,
+    IMessagingGateway,
+    InitiateMediaUploadResult,
+    KeyPackageResult,
+    MemberWithWelcomes,
+    MessageEntryResult,
     MessagingHealthResult,
+    MlsGroupInfoResult,
+    SendMessageResult,
+    UserDeviceKeyPackageResult,
+    WelcomeEntryResult,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import messaging_pb2, messaging_pb2_grpc
 
 _SERVICE = "Messaging service"
 
+
 def _conversation_from_proto(r) -> ConversationResult:
     members = [
         ConversationMemberResult(
-            user_id=m.user_id, role=m.role, joined_at=m.joined_at,
+            user_id=m.user_id,
+            role=m.role,
+            joined_at=m.joined_at,
         )
         for m in r.members
     ]
@@ -44,10 +48,15 @@ def _conversation_from_proto(r) -> ConversationResult:
             cipher_suite=r.mls_group.cipher_suite,
         )
     return ConversationResult(
-        id=r.id, type=r.type, name=r.name,
-        members=members, mls_group=mls_group, created_at=r.created_at,
+        id=r.id,
+        type=r.type,
+        name=r.name,
+        members=members,
+        mls_group=mls_group,
+        created_at=r.created_at,
         avatar_media_id=r.avatar_media_id,
     )
+
 
 def _message_from_proto(m) -> MessageEntryResult:
     return MessageEntryResult(
@@ -64,13 +73,16 @@ def _message_from_proto(m) -> MessageEntryResult:
         deleted_at=m.deleted_at,
     )
 
+
 def _device_welcomes_to_proto(welcomes: list[DeviceWelcome]):
     return [
         messaging_pb2.DeviceWelcome(
-            device_id=w.device_id, welcome_data=w.welcome_data,
+            device_id=w.device_id,
+            welcome_data=w.welcome_data,
         )
         for w in welcomes
     ]
+
 
 class GrpcMessagingGateway(IMessagingGateway):
 
@@ -86,12 +98,17 @@ class GrpcMessagingGateway(IMessagingGateway):
         return self._settings.MESSAGING_GRPC_TIMEOUT
 
     async def upload_key_packages(
-        self, user_id: str, device_id: str, key_packages: list[bytes],
+        self,
+        user_id: str,
+        device_id: str,
+        key_packages: list[bytes],
     ) -> int:
         try:
             resp = await self._stub().UploadKeyPackages(
                 messaging_pb2.UploadKeyPackagesRequest(
-                    user_id=user_id, device_id=device_id, key_packages=key_packages,
+                    user_id=user_id,
+                    device_id=device_id,
+                    key_packages=key_packages,
                 ),
                 timeout=self._timeout,
             )
@@ -100,7 +117,9 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.uploaded_count
 
     async def get_key_package(
-        self, target_user_id: str, target_device_id: str,
+        self,
+        target_user_id: str,
+        target_device_id: str,
     ) -> KeyPackageResult:
         try:
             resp = await self._stub().GetKeyPackage(
@@ -121,7 +140,8 @@ class GrpcMessagingGateway(IMessagingGateway):
         try:
             resp = await self._stub().GetKeyPackagesCount(
                 messaging_pb2.GetKeyPackagesCountRequest(
-                    user_id=user_id, device_id=device_id,
+                    user_id=user_id,
+                    device_id=device_id,
                 ),
                 timeout=self._timeout,
             )
@@ -130,7 +150,8 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.available_count
 
     async def get_key_packages_for_user(
-        self, target_user_id: str,
+        self,
+        target_user_id: str,
     ) -> list[UserDeviceKeyPackageResult]:
         try:
             resp = await self._stub().GetKeyPackagesForUser(
@@ -151,12 +172,15 @@ class GrpcMessagingGateway(IMessagingGateway):
         ]
 
     async def delete_key_packages_for_device(
-        self, user_id: str, device_id: str,
+        self,
+        user_id: str,
+        device_id: str,
     ) -> int:
         try:
             resp = await self._stub().DeleteKeyPackagesForDevice(
                 messaging_pb2.DeleteKeyPackagesForDeviceRequest(
-                    user_id=user_id, device_id=device_id,
+                    user_id=user_id,
+                    device_id=device_id,
                 ),
                 timeout=self._timeout,
             )
@@ -214,12 +238,17 @@ class GrpcMessagingGateway(IMessagingGateway):
         return _conversation_from_proto(resp)
 
     async def get_conversations(
-        self, user_id: str, limit: int, cursor: str,
+        self,
+        user_id: str,
+        limit: int,
+        cursor: str,
     ) -> GetConversationsResult:
         try:
             resp = await self._stub().GetConversations(
                 messaging_pb2.GetConversationsRequest(
-                    user_id=user_id, limit=limit, cursor=cursor,
+                    user_id=user_id,
+                    limit=limit,
+                    cursor=cursor,
                 ),
                 timeout=self._timeout,
             )
@@ -228,7 +257,9 @@ class GrpcMessagingGateway(IMessagingGateway):
         return GetConversationsResult(
             items=[
                 ConversationSummaryResult(
-                    id=i.id, type=i.type, name=i.name,
+                    id=i.id,
+                    type=i.type,
+                    name=i.name,
                     last_message_type=i.last_message_type,
                     unread_count=i.unread_count,
                     last_activity_at=i.last_activity_at,
@@ -240,12 +271,15 @@ class GrpcMessagingGateway(IMessagingGateway):
         )
 
     async def get_conversation(
-        self, user_id: str, conversation_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
     ) -> ConversationResult:
         try:
             resp = await self._stub().GetConversation(
                 messaging_pb2.GetConversationRequest(
-                    user_id=user_id, conversation_id=conversation_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
                 ),
                 timeout=self._timeout,
             )
@@ -254,13 +288,19 @@ class GrpcMessagingGateway(IMessagingGateway):
         return _conversation_from_proto(resp)
 
     async def leave_conversation(
-        self, user_id: str, device_id: str, conversation_id: str, commit_data: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        commit_data: bytes,
     ) -> bool:
         try:
             resp = await self._stub().LeaveConversation(
                 messaging_pb2.LeaveConversationRequest(
-                    user_id=user_id, device_id=device_id,
-                    conversation_id=conversation_id, commit_data=commit_data,
+                    user_id=user_id,
+                    device_id=device_id,
+                    conversation_id=conversation_id,
+                    commit_data=commit_data,
                 ),
                 timeout=self._timeout,
             )
@@ -269,7 +309,10 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def kick_member(
-        self, user_id: str, conversation_id: str, target_user_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        target_user_id: str,
     ) -> bool:
         try:
             resp = await self._stub().KickMember(
@@ -285,7 +328,11 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def update_member_role(
-        self, user_id: str, conversation_id: str, target_user_id: str, new_role: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        target_user_id: str,
+        new_role: str,
     ) -> bool:
         try:
             resp = await self._stub().UpdateMemberRole(
@@ -302,7 +349,10 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def update_group_avatar(
-        self, user_id: str, conversation_id: str, avatar_media_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        avatar_media_id: str,
     ) -> bool:
         try:
             resp = await self._stub().UpdateGroupAvatar(
@@ -318,7 +368,10 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def update_group_name(
-        self, user_id: str, conversation_id: str, name: str,
+        self,
+        user_id: str,
+        conversation_id: str,
+        name: str,
     ) -> bool:
         try:
             resp = await self._stub().UpdateGroupName(
@@ -334,7 +387,9 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def delete_conversation(
-        self, user_id: str, conversation_id: str,
+        self,
+        user_id: str,
+        conversation_id: str,
     ) -> bool:
         try:
             resp = await self._stub().DeleteConversation(
@@ -378,13 +433,19 @@ class GrpcMessagingGateway(IMessagingGateway):
         return SendMessageResult(message_id=resp.message_id, created_at=resp.created_at)
 
     async def get_messages(
-        self, user_id: str, conversation_id: str, before_message_id: str, limit: int,
+        self,
+        user_id: str,
+        conversation_id: str,
+        before_message_id: str,
+        limit: int,
     ) -> GetMessagesResult:
         try:
             resp = await self._stub().GetMessages(
                 messaging_pb2.GetMessagesRequest(
-                    user_id=user_id, conversation_id=conversation_id,
-                    before_message_id=before_message_id, limit=limit,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    before_message_id=before_message_id,
+                    limit=limit,
                 ),
                 timeout=self._timeout,
             )
@@ -396,13 +457,19 @@ class GrpcMessagingGateway(IMessagingGateway):
         )
 
     async def edit_message(
-        self, user_id: str, device_id: str, message_id: str, new_mls_ciphertext: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        message_id: str,
+        new_mls_ciphertext: bytes,
     ) -> MessageEntryResult:
         try:
             resp = await self._stub().EditMessage(
                 messaging_pb2.EditMessageRequest(
-                    user_id=user_id, device_id=device_id,
-                    message_id=message_id, new_mls_ciphertext=new_mls_ciphertext,
+                    user_id=user_id,
+                    device_id=device_id,
+                    message_id=message_id,
+                    new_mls_ciphertext=new_mls_ciphertext,
                 ),
                 timeout=self._timeout,
             )
@@ -411,12 +478,16 @@ class GrpcMessagingGateway(IMessagingGateway):
         return _message_from_proto(resp.message)
 
     async def delete_message(
-        self, user_id: str, message_id: str, delete_for_everyone: bool,
+        self,
+        user_id: str,
+        message_id: str,
+        delete_for_everyone: bool,
     ) -> bool:
         try:
             resp = await self._stub().DeleteMessage(
                 messaging_pb2.DeleteMessageRequest(
-                    user_id=user_id, message_id=message_id,
+                    user_id=user_id,
+                    message_id=message_id,
                     delete_for_everyone=delete_for_everyone,
                 ),
                 timeout=self._timeout,
@@ -426,12 +497,17 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def mark_as_read(
-        self, user_id: str, device_id: str, conversation_id: str, last_read_message_id: str,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        last_read_message_id: str,
     ) -> int:
         try:
             resp = await self._stub().MarkAsRead(
                 messaging_pb2.MarkAsReadRequest(
-                    user_id=user_id, device_id=device_id,
+                    user_id=user_id,
+                    device_id=device_id,
                     conversation_id=conversation_id,
                     last_read_message_id=last_read_message_id,
                 ),
@@ -471,7 +547,8 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return CommitGroupChangeResult(
-            new_epoch=resp.new_epoch, committed_at=resp.committed_at,
+            new_epoch=resp.new_epoch,
+            committed_at=resp.committed_at,
         )
 
     async def get_pending_welcomes(self, device_id: str) -> list[WelcomeEntryResult]:
@@ -484,8 +561,10 @@ class GrpcMessagingGateway(IMessagingGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return [
             WelcomeEntryResult(
-                id=w.id, conversation_id=w.conversation_id,
-                welcome_data=bytes(w.welcome_data), created_at=w.created_at,
+                id=w.id,
+                conversation_id=w.conversation_id,
+                welcome_data=bytes(w.welcome_data),
+                created_at=w.created_at,
             )
             for w in resp.items
         ]
@@ -494,7 +573,8 @@ class GrpcMessagingGateway(IMessagingGateway):
         try:
             resp = await self._stub().AckWelcome(
                 messaging_pb2.AckWelcomeRequest(
-                    device_id=device_id, welcome_id=welcome_id,
+                    device_id=device_id,
+                    welcome_id=welcome_id,
                 ),
                 timeout=self._timeout,
             )
@@ -503,12 +583,16 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def get_pending_commits(
-        self, device_id: str, conversation_id: str, since_epoch: int,
+        self,
+        device_id: str,
+        conversation_id: str,
+        since_epoch: int,
     ) -> list[CommitEntryResult]:
         try:
             resp = await self._stub().GetPendingCommits(
                 messaging_pb2.GetPendingCommitsRequest(
-                    device_id=device_id, conversation_id=conversation_id,
+                    device_id=device_id,
+                    conversation_id=conversation_id,
                     since_epoch=since_epoch,
                 ),
                 timeout=self._timeout,
@@ -517,7 +601,9 @@ class GrpcMessagingGateway(IMessagingGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return [
             CommitEntryResult(
-                epoch=c.epoch, commit_data=bytes(c.commit_data), created_at=c.created_at,
+                epoch=c.epoch,
+                commit_data=bytes(c.commit_data),
+                created_at=c.created_at,
             )
             for c in resp.commits
         ]
@@ -533,8 +619,10 @@ class GrpcMessagingGateway(IMessagingGateway):
         try:
             resp = await self._stub().InitiateMediaUpload(
                 messaging_pb2.InitiateMediaUploadRequest(
-                    user_id=user_id, conversation_id=conversation_id,
-                    mime_type=mime_type, encrypted_size=encrypted_size,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    mime_type=mime_type,
+                    encrypted_size=encrypted_size,
                     encryption_metadata=encryption_metadata,
                 ),
                 timeout=self._timeout,
@@ -542,14 +630,17 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return InitiateMediaUploadResult(
-            media_id=resp.media_id, upload_url=resp.upload_url, expires_in=resp.expires_in,
+            media_id=resp.media_id,
+            upload_url=resp.upload_url,
+            expires_in=resp.expires_in,
         )
 
     async def confirm_media_upload(self, user_id: str, media_id: str) -> bool:
         try:
             resp = await self._stub().ConfirmMediaUpload(
                 messaging_pb2.ConfirmMediaUploadRequest(
-                    user_id=user_id, media_id=media_id,
+                    user_id=user_id,
+                    media_id=media_id,
                 ),
                 timeout=self._timeout,
             )
@@ -558,12 +649,15 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def get_media_download_url(
-        self, user_id: str, media_id: str,
+        self,
+        user_id: str,
+        media_id: str,
     ) -> GetMediaDownloadUrlResult:
         try:
             resp = await self._stub().GetMediaDownloadUrl(
                 messaging_pb2.GetMediaDownloadUrlRequest(
-                    user_id=user_id, media_id=media_id,
+                    user_id=user_id,
+                    media_id=media_id,
                 ),
                 timeout=self._timeout,
             )
@@ -576,13 +670,19 @@ class GrpcMessagingGateway(IMessagingGateway):
         )
 
     async def set_typing(
-        self, user_id: str, device_id: str, conversation_id: str, is_typing: bool,
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_id: str,
+        is_typing: bool,
     ) -> bool:
         try:
             resp = await self._stub().SetTyping(
                 messaging_pb2.SetTypingRequest(
-                    user_id=user_id, device_id=device_id,
-                    conversation_id=conversation_id, is_typing=is_typing,
+                    user_id=user_id,
+                    device_id=device_id,
+                    conversation_id=conversation_id,
+                    is_typing=is_typing,
                 ),
                 timeout=self._timeout,
             )
@@ -594,7 +694,8 @@ class GrpcMessagingGateway(IMessagingGateway):
         try:
             resp = await self._stub().SetOnline(
                 messaging_pb2.SetOnlineRequest(
-                    user_id=user_id, device_id=device_id,
+                    user_id=user_id,
+                    device_id=device_id,
                 ),
                 timeout=self._timeout,
             )
@@ -603,12 +704,16 @@ class GrpcMessagingGateway(IMessagingGateway):
         return resp.success
 
     async def subscribe_to_conversations(
-        self, user_id: str, device_id: str, conversation_ids: list[str],
+        self,
+        user_id: str,
+        device_id: str,
+        conversation_ids: list[str],
     ) -> AsyncIterator[dict]:
         stub = self._stub()
         stream = stub.SubscribeToConversation(
             messaging_pb2.SubscribeRequest(
-                user_id=user_id, device_id=device_id,
+                user_id=user_id,
+                device_id=device_id,
                 conversation_ids=conversation_ids,
             ),
         )

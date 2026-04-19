@@ -2,19 +2,20 @@ import grpc
 
 from app.config import Settings
 from app.core.interfaces.user_gateway import (
+    AutoDeleteResult,
+    CreateUserResult,
     IUserGateway,
-    UserProfileResult,
-    UserSettingsResult,
     UpdateUserRequest,
     UpdateUserSettingsRequest,
-    CreateUserResult,
-    AutoDeleteResult,
+    UserProfileResult,
+    UserSettingsResult,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import user_pb2, user_pb2_grpc
 
 _SERVICE = "User service"
+
 
 def _profile_from_response(profile) -> UserProfileResult:
     last_active = 0
@@ -33,6 +34,7 @@ def _profile_from_response(profile) -> UserProfileResult:
         avatar_media_id=profile.avatar_media_id or None,
         profile_background_media_id=profile.profile_background_media_id or None,
     )
+
 
 def _settings_from_response(s) -> UserSettingsResult:
     def _opt_int(field: str) -> int:
@@ -72,6 +74,7 @@ def _settings_from_response(s) -> UserSettingsResult:
         their_bubble_media_id=_opt_media_id("their_bubble_media_id"),
     )
 
+
 class GrpcUserGateway(IUserGateway):
 
     def __init__(self, channels: GrpcChannelManager, settings: Settings):
@@ -107,7 +110,9 @@ class GrpcUserGateway(IUserGateway):
         return _profile_from_response(response.profile)
 
     async def get_user_by_public_key(
-        self, user_public_key: str, requester_user_id: str,
+        self,
+        user_public_key: str,
+        requester_user_id: str,
     ) -> UserProfileResult:
         try:
             response = await self._stub().GetUserByUserPublicKey(
@@ -133,7 +138,8 @@ class GrpcUserGateway(IUserGateway):
             pb_request.profile_background_media_id = request.profile_background_media_id
         try:
             response = await self._stub().UpdateUser(
-                pb_request, timeout=self._settings.USER_GRPC_TIMEOUT,
+                pb_request,
+                timeout=self._settings.USER_GRPC_TIMEOUT,
             )
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
@@ -160,15 +166,27 @@ class GrpcUserGateway(IUserGateway):
         return _settings_from_response(response.settings)
 
     async def update_user_settings(
-        self, request: UpdateUserSettingsRequest,
+        self,
+        request: UpdateUserSettingsRequest,
     ) -> UserSettingsResult:
         pb_request = user_pb2.UpdateUserSettingsRequest(user_id=request.user_id)
         optional_fields = [
-            "theme", "language", "is_translator_active", "animations_enabled",
-            "account_auto_delete_after_days", "profile_visible_to", "last_active_visible_to",
-            "chat_background_media_id", "top_bar_color", "ringtone_media_id",
-            "ringtone_vibration_strength", "notification_sound", "notification_vibration_strength",
-            "top_bar_media_id", "my_bubble_media_id", "their_bubble_media_id",
+            "theme",
+            "language",
+            "is_translator_active",
+            "animations_enabled",
+            "account_auto_delete_after_days",
+            "profile_visible_to",
+            "last_active_visible_to",
+            "chat_background_media_id",
+            "top_bar_color",
+            "ringtone_media_id",
+            "ringtone_vibration_strength",
+            "notification_sound",
+            "notification_vibration_strength",
+            "top_bar_media_id",
+            "my_bubble_media_id",
+            "their_bubble_media_id",
         ]
         for f in optional_fields:
             val = getattr(request, f, None)
@@ -176,7 +194,8 @@ class GrpcUserGateway(IUserGateway):
                 setattr(pb_request, f, val)
         try:
             response = await self._stub().UpdateUserSettings(
-                pb_request, timeout=self._settings.USER_GRPC_TIMEOUT,
+                pb_request,
+                timeout=self._settings.USER_GRPC_TIMEOUT,
             )
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)

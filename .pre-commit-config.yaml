@@ -1,0 +1,59 @@
+# Pre-commit hooks для локальной проверки перед коммитом.
+# Установка:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Запуск вручную по всем файлам:
+#   pre-commit run --all-files
+#
+# Хуки совпадают с тем, что проверяет CI (job `lint` в .github/workflows/ci.yml):
+# ruff, black, isort — с теми же версиями и конфигами из pyproject.toml.
+
+exclude: |
+  (?x)^(
+      course-project-2-Stars007z/.*|
+      ml/.*|
+      android-ios-app/.*|
+      .*/generated/.*|
+      .*/proto/.*|
+      .*/alembic/versions/.*|
+      .*/venv/.*|
+      .*/\.venv/.*
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        files: ^backend/.*\.py$
+      - id: end-of-file-fixer
+        files: ^backend/.*\.py$
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: ["--fix"]
+        files: ^backend/.*\.py$
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort
+        files: ^backend/.*\.py$
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: black
+        files: ^backend/.*\.py$

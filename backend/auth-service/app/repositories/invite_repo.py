@@ -1,10 +1,12 @@
-
-import uuid
 import secrets
+import uuid
 from datetime import datetime, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.invite import Invite
 from app.repositories.base import BaseRepository
+
 
 class InviteRepository(BaseRepository[Invite]):
     def __init__(self, session: AsyncSession):
@@ -21,31 +23,27 @@ class InviteRepository(BaseRepository[Invite]):
         invite.used_at = datetime.utcnow()
         return invite
 
-    async def create_invite(
-            self,
-            expires_in_days: int,
-            created_by_admin_device_id: uuid.UUID | None = None
-    ) -> Invite:
+    async def create_invite(self, expires_in_days: int, created_by_admin_device_id: uuid.UUID | None = None) -> Invite:
         """Создать новый инвайт-код."""
 
         if not 1 <= expires_in_days <= 365:
             raise ValueError("expires_in_days must be between 1 and 365")
 
-        code = "-".join([
-            secrets.token_urlsafe(6) for _ in range(4)
-        ])
+        code = "-".join([secrets.token_urlsafe(6) for _ in range(4)])
 
         now = datetime.utcnow()
         expires_at = now + timedelta(days=expires_in_days)
 
-        invite = await self.create({
-            "id": uuid.uuid4(),
-            "code": code,
-            "created_at": now,
-            "expires_at": expires_at,
-            "is_used": False,
-            "is_admin": False,
-            "created_by_admin_device_id": created_by_admin_device_id,
-        })
+        invite = await self.create(
+            {
+                "id": uuid.uuid4(),
+                "code": code,
+                "created_at": now,
+                "expires_at": expires_at,
+                "is_used": False,
+                "is_admin": False,
+                "created_by_admin_device_id": created_by_admin_device_id,
+            }
+        )
 
         return invite

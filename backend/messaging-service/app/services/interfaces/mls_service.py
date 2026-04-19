@@ -1,12 +1,14 @@
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-import uuid
+
 
 @dataclass
 class KeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
+
 
 @dataclass
 class UserDeviceKeyPackageResult:
@@ -14,10 +16,12 @@ class UserDeviceKeyPackageResult:
     key_package_data: bytes
     key_package_ref: bytes
 
+
 @dataclass
 class CommitResult:
     new_epoch: int
     committed_at: float
+
 
 @dataclass
 class WelcomeEntryResult:
@@ -26,11 +30,13 @@ class WelcomeEntryResult:
     welcome_data: bytes
     created_at: float
 
+
 @dataclass
 class CommitEntryResult:
     epoch: int
     commit_data: bytes
     created_at: float
+
 
 class IMlsService(ABC):
 
@@ -49,16 +55,14 @@ class IMlsService(ABC):
         self,
         target_user_id: uuid.UUID,
         target_device_id: uuid.UUID,
-    ) -> KeyPackageResult:
-        ...
+    ) -> KeyPackageResult: ...
 
     @abstractmethod
     async def get_key_packages_count(
         self,
         user_id: uuid.UUID,
         device_id: uuid.UUID,
-    ) -> int:
-        ...
+    ) -> int: ...
 
     @abstractmethod
     async def get_key_packages_for_user(
@@ -92,31 +96,27 @@ class IMlsService(ABC):
         welcome_messages: Optional[list[tuple[uuid.UUID, bytes]]] = None,
         ratchet_tree: Optional[bytes] = None,
         removed_device_ids: Optional[list[uuid.UUID]] = None,
-    ) -> CommitResult:
-        ...
+    ) -> CommitResult: ...
 
     @abstractmethod
     async def get_pending_welcomes(
         self,
         device_id: uuid.UUID,
-    ) -> list[WelcomeEntryResult]:
-        ...
+    ) -> list[WelcomeEntryResult]: ...
 
     @abstractmethod
     async def ack_welcome(
         self,
         device_id: uuid.UUID,
         welcome_id: uuid.UUID,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
     @abstractmethod
     async def get_pending_commits(
         self,
         conversation_id: uuid.UUID,
         since_epoch: int,
-    ) -> list[CommitEntryResult]:
-        ...
+    ) -> list[CommitEntryResult]: ...
 
     @abstractmethod
     async def notify_device_revoked(

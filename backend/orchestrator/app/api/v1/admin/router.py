@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends
+
 from app.api.dependencies import get_user_gateway
-from app.core.interfaces.user_gateway import IUserGateway, AutoDeleteResult
+from app.core.interfaces.user_gateway import AutoDeleteResult, IUserGateway
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
 
 @router.post(
     "/users/auto-delete",

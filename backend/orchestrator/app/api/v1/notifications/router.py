@@ -1,16 +1,17 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_notifications_gateway, get_current_session
+from app.api.dependencies import get_current_session, get_notifications_gateway
 from app.api.v1.notifications.schemas import (
+    NotificationsHealthResponseSchema,
     RegisterPushTokenRequestSchema,
     RegisterPushTokenResponseSchema,
     UnregisterPushTokenResponseSchema,
-    NotificationsHealthResponseSchema,
 )
 from app.core.interfaces.notifications_gateway import INotificationsGateway
 from app.core.session_context import SessionContext
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
 
 @router.get("/health", response_model=NotificationsHealthResponseSchema)
 async def notifications_health(
@@ -18,6 +19,7 @@ async def notifications_health(
 ):
     result = await gw.health_check()
     return NotificationsHealthResponseSchema(**result.__dict__)
+
 
 @router.post("/push-token", response_model=RegisterPushTokenResponseSchema)
 async def register_push_token(
@@ -32,6 +34,7 @@ async def register_push_token(
         push_token=body.push_token,
     )
     return RegisterPushTokenResponseSchema(success=result.success)
+
 
 @router.delete("/push-token", response_model=UnregisterPushTokenResponseSchema)
 async def unregister_push_token(

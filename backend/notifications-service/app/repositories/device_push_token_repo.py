@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device_push_token import DevicePushToken
 
+
 class DevicePushTokenRepository:
 
     def __init__(self, session: AsyncSession) -> None:
@@ -65,15 +66,13 @@ class DevicePushTokenRepository:
         return result.rowcount > 0
 
     async def get_active_tokens_for_users(
-        self, user_ids: list[uuid.UUID],
+        self,
+        user_ids: list[uuid.UUID],
     ) -> Sequence[DevicePushToken]:
         """Return all active push tokens for the given user IDs."""
-        stmt = (
-            select(DevicePushToken)
-            .where(
-                DevicePushToken.user_id.in_(user_ids),
-                DevicePushToken.is_active == True,
-            )
+        stmt = select(DevicePushToken).where(
+            DevicePushToken.user_id.in_(user_ids),
+            DevicePushToken.is_active == True,
         )
         result = await self._session.execute(stmt)
         return result.scalars().all()

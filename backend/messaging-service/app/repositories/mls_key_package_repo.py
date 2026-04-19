@@ -2,18 +2,21 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select, func, delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mls_key_package import MlsKeyPackage
 from app.repositories.base import BaseRepository
+
 
 class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
     def __init__(self, session: AsyncSession):
         super().__init__(MlsKeyPackage, session)
 
     async def consume_one(
-        self, user_id: uuid.UUID, device_id: uuid.UUID,
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
     ) -> Optional[MlsKeyPackage]:
         """Atomically fetch and consume one available key package (FOR UPDATE SKIP LOCKED)."""
         query = (
@@ -35,7 +38,9 @@ class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
         return package
 
     async def count_available(
-        self, user_id: uuid.UUID, device_id: uuid.UUID,
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
     ) -> int:
         query = (
             select(func.count())
@@ -50,7 +55,9 @@ class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
         return result.scalar()
 
     async def delete_by_device(
-        self, user_id: uuid.UUID, device_id: uuid.UUID,
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
         only_unconsumed: bool = True,
     ) -> int:
         """

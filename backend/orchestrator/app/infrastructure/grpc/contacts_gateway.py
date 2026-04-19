@@ -1,27 +1,29 @@
-import grpc
 from typing import Optional
+
+import grpc
 
 from app.config import Settings
 from app.core.interfaces.contacts_gateway import (
-    IContactsGateway,
-    UserBriefProfile,
-    ContactEntry,
-    BlockedEntry,
     AddContactResult,
-    RemoveContactResult,
-    GetContactsResult,
-    UpdateContactResult,
+    BlockedEntry,
     BlockUserResult,
-    UnblockUserResult,
-    GetBlockedUsersResult,
-    IsBlockedResult,
+    ContactEntry,
     ContactsHealthResult,
+    GetBlockedUsersResult,
+    GetContactsResult,
+    IContactsGateway,
+    IsBlockedResult,
+    RemoveContactResult,
+    UnblockUserResult,
+    UpdateContactResult,
+    UserBriefProfile,
 )
-from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.client import GrpcChannelManager
+from app.infrastructure.grpc.errors import grpc_error_to_exception
 from app.infrastructure.grpc.generated import contacts_pb2, contacts_pb2_grpc
 
 _SERVICE = "Contacts service"
+
 
 def _brief_proto_to_dc(p) -> Optional[UserBriefProfile]:
     if not p:
@@ -34,6 +36,7 @@ def _brief_proto_to_dc(p) -> Optional[UserBriefProfile]:
         avatar_media_id=p.avatar_media_id,
     )
 
+
 def _contact_proto_to_dc(c) -> ContactEntry:
     return ContactEntry(
         contact_user_id=c.contact_user_id,
@@ -42,12 +45,14 @@ def _contact_proto_to_dc(c) -> ContactEntry:
         profile=_brief_proto_to_dc(c.profile) if c.HasField("profile") else None,
     )
 
+
 def _blocked_proto_to_dc(b) -> BlockedEntry:
     return BlockedEntry(
         blocked_user_id=b.blocked_user_id,
         blocked_at=b.blocked_at,
         profile=_brief_proto_to_dc(b.profile) if b.HasField("profile") else None,
     )
+
 
 class GrpcContactsGateway(IContactsGateway):
 
@@ -62,7 +67,8 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().AddContact(
                 contacts_pb2.AddContactRequest(
-                    user_id=user_id, user_public_key=user_public_key,
+                    user_id=user_id,
+                    user_public_key=user_public_key,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -74,7 +80,8 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().RemoveContact(
                 contacts_pb2.RemoveContactRequest(
-                    user_id=user_id, contact_user_id=contact_user_id,
+                    user_id=user_id,
+                    contact_user_id=contact_user_id,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -86,7 +93,9 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().GetContacts(
                 contacts_pb2.GetContactsRequest(
-                    user_id=user_id, limit=limit, offset=offset,
+                    user_id=user_id,
+                    limit=limit,
+                    offset=offset,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -98,16 +107,21 @@ class GrpcContactsGateway(IContactsGateway):
             raise grpc_error_to_exception(e, _SERVICE)
 
     async def update_contact(
-        self, user_id: str, contact_user_id: str, is_favorite: Optional[bool],
+        self,
+        user_id: str,
+        contact_user_id: str,
+        is_favorite: Optional[bool],
     ) -> UpdateContactResult:
         req = contacts_pb2.UpdateContactRequest(
-            user_id=user_id, contact_user_id=contact_user_id,
+            user_id=user_id,
+            contact_user_id=contact_user_id,
         )
         if is_favorite is not None:
             req.is_favorite = is_favorite
         try:
             resp = await self._stub().UpdateContact(
-                req, timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
+                req,
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
             return UpdateContactResult(contact=_contact_proto_to_dc(resp.contact))
         except grpc.RpcError as e:
@@ -117,7 +131,8 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().BlockUser(
                 contacts_pb2.BlockUserRequest(
-                    user_id=user_id, blocked_user_id=blocked_user_id,
+                    user_id=user_id,
+                    blocked_user_id=blocked_user_id,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -129,7 +144,8 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().UnblockUser(
                 contacts_pb2.UnblockUserRequest(
-                    user_id=user_id, blocked_user_id=blocked_user_id,
+                    user_id=user_id,
+                    blocked_user_id=blocked_user_id,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -138,12 +154,17 @@ class GrpcContactsGateway(IContactsGateway):
             raise grpc_error_to_exception(e, _SERVICE)
 
     async def get_blocked_users(
-        self, user_id: str, limit: int, offset: int,
+        self,
+        user_id: str,
+        limit: int,
+        offset: int,
     ) -> GetBlockedUsersResult:
         try:
             resp = await self._stub().GetBlockedUsers(
                 contacts_pb2.GetBlockedUsersRequest(
-                    user_id=user_id, limit=limit, offset=offset,
+                    user_id=user_id,
+                    limit=limit,
+                    offset=offset,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )
@@ -158,7 +179,8 @@ class GrpcContactsGateway(IContactsGateway):
         try:
             resp = await self._stub().IsBlocked(
                 contacts_pb2.IsBlockedRequest(
-                    user_id=user_id, blocked_user_id=blocked_user_id,
+                    user_id=user_id,
+                    blocked_user_id=blocked_user_id,
                 ),
                 timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
             )

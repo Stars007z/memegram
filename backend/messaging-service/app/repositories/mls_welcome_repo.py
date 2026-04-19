@@ -6,12 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mls_welcome_message import MlsWelcomeMessage
 from app.repositories.base import BaseRepository
 
+
 class MlsWelcomeRepository(BaseRepository[MlsWelcomeMessage]):
     def __init__(self, session: AsyncSession):
         super().__init__(MlsWelcomeMessage, session)
 
     async def get_pending_for_device(
-        self, device_id: uuid.UUID,
+        self,
+        device_id: uuid.UUID,
     ) -> list[MlsWelcomeMessage]:
         query = (
             select(MlsWelcomeMessage)

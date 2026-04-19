@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
+
 @dataclass
 class RegisterRequest:
     username: str
@@ -12,6 +13,7 @@ class RegisterRequest:
     init_key_pub: bytes
     credential_data: bytes
 
+
 @dataclass
 class AuthResult:
     user_id: str
@@ -21,11 +23,13 @@ class AuthResult:
     refresh_token: str
     expires_at: int
 
+
 @dataclass
 class LoginInitResult:
     challenge: str
     expires_at: int
     device_id: str
+
 
 @dataclass
 class LoginCompleteRequest:
@@ -34,10 +38,12 @@ class LoginCompleteRequest:
     signature: bytes
     device_name: Optional[str] = None
 
+
 @dataclass
 class LogoutResult:
     success: bool
     message: str
+
 
 @dataclass
 class HealthResult:
@@ -45,6 +51,7 @@ class HealthResult:
     db_status: str
     redis_status: str
     version: str
+
 
 @dataclass
 class CreateInviteResult:
@@ -54,6 +61,7 @@ class CreateInviteResult:
     is_used: bool
     message: str
 
+
 @dataclass
 class ValidateTokenResult:
     valid: bool
@@ -61,6 +69,7 @@ class ValidateTokenResult:
     device_id: str
     device_type: str
     expires_at: int
+
 
 @dataclass
 class DeviceInfoResult:
@@ -76,16 +85,19 @@ class DeviceInfoResult:
     init_key_pub: bytes
     revoked_at: int
 
+
 @dataclass
 class InitDeviceAdditionResult:
     registration_id: str
     expires_at: int
     registration_code: str
 
+
 @dataclass
 class SubmitDeviceDataResult:
     status: str
     expires_at: int
+
 
 @dataclass
 class DeviceAdditionStatusResult:
@@ -95,6 +107,7 @@ class DeviceAdditionStatusResult:
     access_token: str
     refresh_token: str
     token_expires_at: int
+
 
 @dataclass
 class PendingRegistrationResult:
@@ -107,6 +120,7 @@ class PendingRegistrationResult:
     device_type: str
     created_at: int
 
+
 @dataclass
 class ConfirmDeviceAdditionResult:
     new_device_id: str
@@ -117,6 +131,7 @@ class ConfirmDeviceAdditionResult:
     refresh_token: str
     expires_at: int
 
+
 @dataclass
 class RevokeDeviceResult:
     success: bool
@@ -124,11 +139,13 @@ class RevokeDeviceResult:
     revoked_device_id: str
     revoked_at: int
 
+
 @dataclass
 class UpdateDeviceKeysResult:
     success: bool
     message: str
     updated_at: int
+
 
 @dataclass
 class RenameDeviceResult:
@@ -136,10 +153,12 @@ class RenameDeviceResult:
     new_name: str
     message: str
 
+
 @dataclass
 class VerifyDeviceResult:
     valid: bool
     message: str
+
 
 @dataclass
 class TransferPrimaryResult:
@@ -147,16 +166,19 @@ class TransferPrimaryResult:
     new_primary_device_id: str
     message: str
 
+
 @dataclass
 class BulkRevokeDevicesResult:
     success: bool
     revoked_count: int
     revoked_device_ids: list[str] = field(default_factory=list)
 
+
 @dataclass
 class DeviceTypeCountResult:
     device_type: str
     count: int
+
 
 @dataclass
 class DeviceStatsResult:
@@ -165,6 +187,7 @@ class DeviceStatsResult:
     primary_count: int
     type_stats: list[DeviceTypeCountResult] = field(default_factory=list)
     last_activity_at: int = 0
+
 
 class IAuthGateway(ABC):
 
@@ -194,9 +217,15 @@ class IAuthGateway(ABC):
 
     @abstractmethod
     async def submit_device_data(
-        self, registration_id: str, registration_code: str,
-        device_id: str, device_name: str, device_type: str,
-        identity_key_pub: bytes, init_key_pub: bytes, credential_data: bytes,
+        self,
+        registration_id: str,
+        registration_code: str,
+        device_id: str,
+        device_name: str,
+        device_type: str,
+        identity_key_pub: bytes,
+        init_key_pub: bytes,
+        credential_data: bytes,
     ) -> SubmitDeviceDataResult: ...
 
     @abstractmethod
@@ -207,8 +236,12 @@ class IAuthGateway(ABC):
 
     @abstractmethod
     async def confirm_device_addition(
-        self, user_id: str, device_id: str, registration_id: str,
-        confirm: bool, new_device_name: str,
+        self,
+        user_id: str,
+        device_id: str,
+        registration_id: str,
+        confirm: bool,
+        new_device_name: str,
     ) -> ConfirmDeviceAdditionResult: ...
 
     @abstractmethod
@@ -219,20 +252,30 @@ class IAuthGateway(ABC):
 
     @abstractmethod
     async def revoke_device(
-        self, user_id: str, requesting_device_id: str,
-        target_device_id: str, reason: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
+        reason: str,
     ) -> RevokeDeviceResult: ...
 
     @abstractmethod
     async def update_device_keys(
-        self, user_id: str, device_id: str,
-        identity_key_pub: bytes, init_key_pub: bytes, credential_data: bytes,
+        self,
+        user_id: str,
+        device_id: str,
+        identity_key_pub: bytes,
+        init_key_pub: bytes,
+        credential_data: bytes,
     ) -> UpdateDeviceKeysResult: ...
 
     @abstractmethod
     async def rename_device(
-        self, user_id: str, requesting_device_id: str,
-        target_device_id: str, new_name: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
+        new_name: str,
     ) -> RenameDeviceResult: ...
 
     @abstractmethod
@@ -240,13 +283,19 @@ class IAuthGateway(ABC):
 
     @abstractmethod
     async def transfer_primary(
-        self, user_id: str, requesting_device_id: str, target_device_id: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_id: str,
     ) -> TransferPrimaryResult: ...
 
     @abstractmethod
     async def bulk_revoke_devices(
-        self, user_id: str, requesting_device_id: str,
-        target_device_ids: list[str], reason: str,
+        self,
+        user_id: str,
+        requesting_device_id: str,
+        target_device_ids: list[str],
+        reason: str,
     ) -> BulkRevokeDevicesResult: ...
 
     @abstractmethod

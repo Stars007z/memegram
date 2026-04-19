@@ -5,6 +5,7 @@ import grpc
 from app.container import Container
 from app.generated import messaging_pb2
 
+
 class PresenceHandler:
 
     def __init__(self, container: Container) -> None:
@@ -62,6 +63,7 @@ class PresenceHandler:
             proto_event = _event_to_proto(event)
             if proto_event:
                 yield proto_event
+
 
 def _event_to_proto(event: dict) -> messaging_pb2.ConversationEvent | None:
     conv_id = event.get("conversation_id", "")

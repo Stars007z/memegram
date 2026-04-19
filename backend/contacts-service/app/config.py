@@ -1,8 +1,10 @@
 import os
 from functools import lru_cache
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 class Settings:
     DATABASE_URL: str = os.getenv(
@@ -31,8 +33,10 @@ class Settings:
     def USER_GRPC_ADDRESS(self) -> str:
         return f"{self.USER_GRPC_HOST}:{self.USER_GRPC_PORT}"
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

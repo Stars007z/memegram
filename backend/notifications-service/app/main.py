@@ -3,17 +3,17 @@ import asyncio
 import grpc.aio
 from grpc_reflection.v1alpha import reflection
 
-from app.logging_config import setup_logging, get_logger
-from app.grpc_interceptor import LoggingInterceptor
 from app.config import settings
 from app.container import Container
 from app.database.redis import MessagingRedisClient, RedisClient
 from app.generated import notifications_pb2, notifications_pb2_grpc
 from app.grpc_handlers.notifications_handler import NotificationsHandler
+from app.grpc_interceptor import LoggingInterceptor
 from app.infrastructure.contacts_client import GrpcContactsClient
 from app.infrastructure.item_storage_client import GrpcItemStorageClient
 from app.infrastructure.messaging_client import GrpcMessagingClient
 from app.infrastructure.user_client import GrpcUserClient
+from app.logging_config import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger(__name__)
@@ -22,6 +22,7 @@ SERVICE_NAMES = (
     notifications_pb2.DESCRIPTOR.services_by_name["NotificationsService"].full_name,
     reflection.SERVICE_NAME,
 )
+
 
 async def _build_container() -> Container:
     own_redis = await RedisClient.get_instance()
@@ -48,12 +49,14 @@ async def _build_container() -> Container:
         contacts_client=contacts_client,
     )
 
+
 async def serve() -> None:
     container = await _build_container()
 
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     notifications_pb2_grpc.add_NotificationsServiceServicer_to_server(
-        NotificationsHandler(container), server,
+        NotificationsHandler(container),
+        server,
     )
     reflection.enable_server_reflection(SERVICE_NAMES, server)
     server.add_insecure_port(f"[::]:{settings.GRPC_PORT}")
@@ -74,10 +77,12 @@ async def serve() -> None:
         await server.stop(0)
 
         from app.database.session import close_db
+
         await close_db()
         await RedisClient.close()
         await MessagingRedisClient.close()
         logger.info("service.stopped")
+
 
 if __name__ == "__main__":
     asyncio.run(serve())

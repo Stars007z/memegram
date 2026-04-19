@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
+
 @dataclass
 class ItemStorageHealthResult:
     status: str
@@ -9,11 +10,13 @@ class ItemStorageHealthResult:
     s3_status: str
     version: str
 
+
 @dataclass
 class DownloadUrlResult:
     download_url: str
     expires_at: int
     mime_type: str
+
 
 @dataclass
 class InitiateUploadResult:
@@ -21,9 +24,11 @@ class InitiateUploadResult:
     upload_url: str
     expires_at: int
 
+
 @dataclass
 class ConfirmUploadResult:
     success: bool
+
 
 class IItemStorageGateway(ABC):
     @abstractmethod
@@ -31,7 +36,9 @@ class IItemStorageGateway(ABC):
 
     @abstractmethod
     async def get_download_url(
-        self, item_id: str, requester_user_id: str,
+        self,
+        item_id: str,
+        requester_user_id: str,
     ) -> DownloadUrlResult: ...
 
     @abstractmethod
@@ -45,5 +52,7 @@ class IItemStorageGateway(ABC):
 
     @abstractmethod
     async def confirm_upload(
-        self, owner_user_id: str, item_id: str,
+        self,
+        owner_user_id: str,
+        item_id: str,
     ) -> ConfirmUploadResult: ...

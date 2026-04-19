@@ -4,12 +4,12 @@ import grpc.aio
 from grpc_reflection.v1alpha import reflection
 
 from app.config import settings
-from app.logging_config import setup_logging, get_logger
-from app.grpc_interceptor import LoggingInterceptor
 from app.container import Container
 from app.generated import media_pb2, media_pb2_grpc
 from app.grpc_handlers.media_handler import MediaServiceHandler
+from app.grpc_interceptor import LoggingInterceptor
 from app.infrastructure.s3_client import S3Client
+from app.logging_config import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger(__name__)
@@ -19,13 +19,15 @@ SERVICE_NAMES = (
     reflection.SERVICE_NAME,
 )
 
+
 async def serve() -> None:
     s3_client = S3Client()
     container = Container(s3=s3_client)
 
     server = grpc.aio.server(interceptors=[LoggingInterceptor()])
     media_pb2_grpc.add_MediaServiceServicer_to_server(
-        MediaServiceHandler(container), server,
+        MediaServiceHandler(container),
+        server,
     )
 
     reflection.enable_server_reflection(SERVICE_NAMES, server)
@@ -41,8 +43,10 @@ async def serve() -> None:
         await server.stop(0)
 
         from app.database.session import close_db
+
         await close_db()
         logger.info("service.stopped")
+
 
 if __name__ == "__main__":
     asyncio.run(serve())

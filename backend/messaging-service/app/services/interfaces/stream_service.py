@@ -1,6 +1,7 @@
+import uuid
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator
-import uuid
+
 
 class IStreamService(ABC):
 
@@ -19,5 +20,4 @@ class IStreamService(ABC):
         self,
         conversation_id: uuid.UUID,
         event: dict[str, Any],
-    ) -> None:
-        ...
+    ) -> None: ...
