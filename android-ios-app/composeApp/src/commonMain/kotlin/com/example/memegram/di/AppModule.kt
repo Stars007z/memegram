@@ -7,7 +7,10 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.local.createPlatformKeyManager
 import com.example.memegram.data.local.createSecureSettings
 import com.example.memegram.data.network.ApiService
+import com.example.memegram.data.network.NsfwModerationService
+import com.example.memegram.data.network.apiBaseUrl
 import com.example.memegram.data.network.createHttpClient
+import com.example.memegram.data.network.nsfwBaseUrl
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.ChatRepositoryImpl
 import com.example.memegram.data.repository.ContactsRepository
@@ -18,6 +21,8 @@ import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
 import com.example.memegram.database.AppDatabase
 import com.example.memegram.audio.GlobalAudioPlayer
+import com.example.memegram.audio.SpeechToTextService
+import com.example.memegram.audio.createSpeechToTextService
 import com.example.memegram.auth.SessionRefresher
 import com.example.memegram.lifecycle.AppLifecycleObserver
 import com.example.memegram.lifecycle.createAppLifecycleObserver
@@ -38,7 +43,8 @@ val appModule = module {
     single { SessionManager(get(named("secure"))) }
     single { createHttpClient() }
     single<KeyManager> { createPlatformKeyManager(get()) }
-    single { ApiService(get(), get(), baseUrl = "https://memegram.win") }
+    single { ApiService(get(), get(), baseUrl = apiBaseUrl) }
+    single { NsfwModerationService(get(), baseUrl = nsfwBaseUrl) }
     single { ThemePreferences(get()) }
     single<UserRepository> { UserRepositoryImpl(get()) }
     single<ContactsRepository> { ContactsRepositoryImpl(get()) }
@@ -56,6 +62,7 @@ val appModule = module {
     single { BlockedUsersCache(get(), get()) }
     single<TranslationService> { createTranslationService() }
     single { TranslationSettings(get()) }
+    single<SpeechToTextService> { createSpeechToTextService() }
 
     single<PushTokenProvider> { createPushTokenProvider() }
     single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }

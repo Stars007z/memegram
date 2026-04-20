@@ -1,4 +1,4 @@
-// кидаем по app/build.gradle
+// Пример модуля: скопировать в app/build.gradle вашего приложения.
 
 plugins {
     id 'com.android.application'
@@ -21,11 +21,15 @@ android {
         externalNativeBuild {
             cmake {
                 path "CMakeLists.txt"
+                arguments "-DANDROID_STL=c++_shared"
+                cppFlags "-std=c++17", "-O3", "-ffast-math", "-fvisibility=hidden"
             }
         }
 
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            // Google Play требует 64-bit с августа 2024. armeabi-v7a/x86 убраны
+            // (на них whisper работает мучительно медленно).
+            abiFilters 'arm64-v8a', 'x86_64'
         }
     }
 
@@ -45,26 +49,39 @@ android {
         jvmTarget = '17'
     }
 
-    // Разрешаем использование assets до 2GB
-    aaptOptions {
-        noCompress "bin"
+    // Не сжимаем ggml-модель — инициализация быстрее, к тому же она уже q5_1.
+    androidResources {
+        noCompress 'bin'
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = false
     }
 }
 
 dependencies {
+    // Kotlin / Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    
+
+    // Networking — Retrofit + Gson + OkHttp logger
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.11.0'
-    
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // ML Kit on-device перевод
     implementation 'com.google.mlkit:translate:17.0.2'
-    
+
+    // AndroidX
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
-    
+
+    // Тесты
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
 }

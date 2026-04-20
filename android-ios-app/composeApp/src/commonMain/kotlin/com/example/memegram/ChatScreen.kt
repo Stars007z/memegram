@@ -36,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -105,7 +106,11 @@ fun ChatScreen(
     val myBubbleImage  by viewModel.myBubbleImage.collectAsState()
     val theirBubbleImage by viewModel.theirBubbleImage.collectAsState()
     val mediaCache by viewModel.mediaCache.collectAsState()
+    val revealedNsfw by viewModel.revealedNsfw.collectAsState()
+    val nsfwCheckState by viewModel.nsfwCheckState.collectAsState()
+    val nsfwBlurredCache by viewModel.nsfwBlurredCache.collectAsState()
     val downloadingFiles by viewModel.downloadingFiles.collectAsState()
+    val transcribingVoiceIds by viewModel.transcribingMessageIds.collectAsState()
     val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
@@ -1063,7 +1068,17 @@ fun ChatScreen(
                                                         }
                                                     },
                                                     downloadingFiles = downloadingFiles,
-                                                    onFileTap        = { viewModel.onFileBubbleTap(it) }
+                                                    onFileTap        = { viewModel.onFileBubbleTap(it) },
+                                                    onTranscribeVoice = { viewModel.toggleVoiceTranscription(it) },
+                                                    transcribingVoiceIds = transcribingVoiceIds,
+                                                    isSttSupported = viewModel.isSttSupported,
+                                                    nsfwReveal = revealedNsfw[message.serverId],
+                                                    nsfwCheckState = nsfwCheckState[message.serverId],
+                                                    nsfwBlurredBytes = nsfwBlurredCache[message.serverId],
+                                                    onRevealNsfw = { asBlurred ->
+                                                        if (asBlurred) viewModel.revealNsfwBlurred(message.serverId)
+                                                        else viewModel.revealNsfwOriginal(message.serverId)
+                                                    }
                                                 )
                                             }
                                         }
@@ -1112,7 +1127,17 @@ fun ChatScreen(
                                                     }
                                                 },
                                                 downloadingFiles = downloadingFiles,
-                                                onFileTap        = { viewModel.onFileBubbleTap(it) }
+                                                onFileTap        = { viewModel.onFileBubbleTap(it) },
+                                                onTranscribeVoice = { viewModel.toggleVoiceTranscription(it) },
+                                                transcribingVoiceIds = transcribingVoiceIds,
+                                                isSttSupported = viewModel.isSttSupported,
+                                                nsfwReveal = revealedNsfw[message.serverId],
+                                                nsfwCheckState = nsfwCheckState[message.serverId],
+                                                nsfwBlurredBytes = nsfwBlurredCache[message.serverId],
+                                                onRevealNsfw = { asBlurred ->
+                                                    if (asBlurred) viewModel.revealNsfwBlurred(message.serverId)
+                                                    else viewModel.revealNsfwOriginal(message.serverId)
+                                                }
                                             )
                                         }
                                     }
@@ -1530,7 +1555,14 @@ fun MessageBubble(
     replyToSenderName: String? = null,
     onReplyClick: (() -> Unit)? = null,
     downloadingFiles: Set<String> = emptySet(),
-    onFileTap: (Message) -> Unit = {}
+    onFileTap: (Message) -> Unit = {},
+    onTranscribeVoice: (Message) -> Unit = {},
+    transcribingVoiceIds: Set<String> = emptySet(),
+    isSttSupported: Boolean = false,
+    nsfwReveal: ChatViewModel.NsfwReveal? = null,
+    nsfwCheckState: ChatViewModel.NsfwCheckState? = null,
+    nsfwBlurredBytes: ByteArray? = null,
+    onRevealNsfw: (asBlurred: Boolean) -> Unit = {}
 ) {
     val isOut       = message.isOutgoing
     val s = LocalStrings.current
@@ -1670,55 +1702,126 @@ fun MessageBubble(
                         totalText
                     }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(200.sdp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.sdp)
-                                .clip(CircleShape)
-                                .background(textColor.copy(alpha = 0.15f))
-                                .clickable {
-                                    if (isPlaying) {
-                                        globalAudioPlayer?.pause()
-                                    } else if (isPaused) {
-                                        globalAudioPlayer?.resume()
-                                    } else {
-                                        val bytes = cachedBytes
-                                        val mid = message.mediaId
-                                        if (bytes != null && mid != null && globalAudioPlayer != null) {
-                                            globalAudioPlayer.play(
-                                                bytes = bytes,
-                                                mediaId = mid,
-                                                chatName = chatName,
-                                                durationMs = durationMs,
-                                                waveform = parsedAmps
-                                            )
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
+                    val transcribingIds = transcribingVoiceIds
+                    val isTranscribing = message.serverId in transcribingIds
+                    val sttSupported = isSttSupported
+                    val hasTranscript = !message.originalText.isNullOrBlank()
+                    val showTranscriptPanel = message.isTranslated && hasTranscript
+
+                    Column(modifier = Modifier.width(240.sdp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).fillMaxWidth()
                         ) {
-                            if (cachedBytes == null) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.sdp), color = textColor, strokeWidth = 2.sdp)
-                            } else {
-                                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
+                            Box(
+                                modifier = Modifier
+                                    .size(44.sdp)
+                                    .clip(CircleShape)
+                                    .background(textColor.copy(alpha = 0.15f))
+                                    .clickable {
+                                        if (isPlaying) {
+                                            globalAudioPlayer?.pause()
+                                        } else if (isPaused) {
+                                            globalAudioPlayer?.resume()
+                                        } else {
+                                            val bytes = cachedBytes
+                                            val mid = message.mediaId
+                                            if (bytes != null && mid != null && globalAudioPlayer != null) {
+                                                globalAudioPlayer.play(
+                                                    bytes = bytes,
+                                                    mediaId = mid,
+                                                    chatName = chatName,
+                                                    durationMs = durationMs,
+                                                    waveform = parsedAmps
+                                                )
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (cachedBytes == null) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.sdp), color = textColor, strokeWidth = 2.sdp)
+                                } else {
+                                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = textColor)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.sdp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                VoiceWaveform(
+                                    amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
+                                    progress = currentProgress,
+                                    modifier = Modifier.fillMaxWidth().height(24.sdp),
+                                    playedColor = textColor,
+                                    unplayedColor = textColor.copy(alpha = 0.3f)
+                                )
+                                Spacer(modifier = Modifier.height(4.sdp))
+                                Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
+                            }
+
+                            if (sttSupported) {
+                                Spacer(modifier = Modifier.width(8.sdp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.sdp)
+                                        .clip(CircleShape)
+                                        .background(textColor.copy(alpha = 0.12f))
+                                        .clickable(enabled = !isTranscribing) {
+                                            onTranscribeVoice(message)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isTranscribing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.sdp),
+                                            color = textColor,
+                                            strokeWidth = 2.sdp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = if (showTranscriptPanel) "Aa" else "→A",
+                                            color = textColor,
+                                            fontSize = 11.ssp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.sdp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            VoiceWaveform(
-                                amplitudes = parsedAmps.ifEmpty { List(30) { 1 } },
-                                progress = currentProgress,
-                                modifier = Modifier.fillMaxWidth().height(24.sdp),
-                                playedColor = textColor,
-                                unplayedColor = textColor.copy(alpha = 0.3f)
-                            )
-                            Spacer(modifier = Modifier.height(4.sdp))
-                            Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
+                        if (showTranscriptPanel) {
+                            val shown = message.translatedText?.takeIf { it.isNotBlank() }
+                                ?: message.originalText.orEmpty()
+                            val isTranslatedShown = !message.translatedText.isNullOrBlank()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.sdp)
+                                    .padding(bottom = 8.sdp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(1.sdp)
+                                        .background(textColor.copy(alpha = 0.15f))
+                                )
+                                Spacer(modifier = Modifier.height(6.sdp))
+                                Text(
+                                    text = shown,
+                                    color = textColor,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (isTranslatedShown && message.translatedFromLang != null) {
+                                    val indicator = com.example.memegram.translation.translationIndicator(message.translatedFromLang)
+                                    Spacer(modifier = Modifier.height(2.sdp))
+                                    Text(
+                                        text = "$indicator ${s.translated}",
+                                        color = textColor.copy(alpha = 0.55f),
+                                        fontSize = 10.ssp
+                                    )
+                                }
+                            }
                         }
                     }
                 } else if (isFileMsg) {
@@ -1797,22 +1900,131 @@ fun MessageBubble(
                     }
                     if (hasText) Spacer(Modifier.height(6.sdp))
                 } else if (isImageMsg) {
-                    if (localBitmap != null) {
-                        val ratio = (localBitmap.width.toFloat() / localBitmap.height.toFloat())
-                            .takeIf { it.isFinite() && it > 0f } ?: 1f
-                        Image(
-                            bitmap             = localBitmap,
-                            contentDescription = null,
-                            contentScale       = ContentScale.Fit,
-                            modifier           = Modifier
+                    val isNsfw = message.nsfwFlag == true
+                    // Receiver still waiting for the docker verdict — never
+                    // expose the picture before we know whether it's safe.
+                    val isPending = !isOut &&
+                        message.nsfwFlag == null &&
+                        nsfwCheckState == ChatViewModel.NsfwCheckState.Pending
+                    val gateIncoming = !isOut && isNsfw && nsfwReveal == null
+
+                    // Pick what to actually decode for the Image:
+                    //  - blurred-reveal + we have docker's partial-blur bytes → use them
+                    //  - otherwise the original/decrypted preview
+                    val showBlurredVariant = !isOut && isNsfw && nsfwReveal == ChatViewModel.NsfwReveal.Blurred
+                    val effectiveBytes: ByteArray? = when {
+                        showBlurredVariant && nsfwBlurredBytes != null -> nsfwBlurredBytes
+                        else -> bytesForDecode
+                    }
+                    val effectiveBitmap = rememberAsyncImageBitmap(
+                        bytes = effectiveBytes,
+                        cacheKey = when {
+                            showBlurredVariant && nsfwBlurredBytes != null ->
+                                message.serverId.takeIf { it.isNotBlank() }?.let { "msg-blurred:$it" }
+                            else -> message.mediaId?.let { "msg:$it" }
+                        }
+                    )
+
+                    if (isPending) {
+                        Box(
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .aspectRatio(ratio)
-                                .clip(RoundedCornerShape(
-                                    topStart    = 16.sdp, topEnd = 16.sdp,
-                                    bottomStart = if (!hasText && isOut) 16.sdp else if (!hasText) 4.sdp else 0.sdp,
-                                    bottomEnd   = if (!hasText && isOut) 4.sdp else if (!hasText) 16.sdp else 0.sdp
-                                ))
-                        )
+                                .height(160.sdp)
+                                .background(bubbleColor.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.sdp),
+                                    color = textColor,
+                                    strokeWidth = 2.sdp
+                                )
+                                Spacer(Modifier.height(8.sdp))
+                                Text(
+                                    s.nsfwChecking,
+                                    color = textColor.copy(alpha = 0.85f),
+                                    fontSize = 11.ssp
+                                )
+                            }
+                        }
+                    } else if (gateIncoming) {
+                        // Receiver-side NSFW gate: do NOT decode/show the image.
+                        // The user must explicitly choose blurred or original
+                        // every time the chat is opened.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(bubbleColor.copy(alpha = 0.6f))
+                                .padding(12.sdp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.WarningAmber,
+                                    contentDescription = null,
+                                    tint = textColor,
+                                    modifier = Modifier.size(28.sdp)
+                                )
+                                Spacer(Modifier.width(8.sdp))
+                                Text(
+                                    s.nsfwWarningTitle,
+                                    color = textColor,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(Modifier.height(8.sdp))
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                TextButton(
+                                    onClick = { onRevealNsfw(true) },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(s.nsfwShowBlurred, color = textColor, fontSize = 12.ssp) }
+                                Spacer(Modifier.width(4.sdp))
+                                TextButton(
+                                    onClick = { onRevealNsfw(false) },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(s.nsfwShowOriginal, color = textColor, fontSize = 12.ssp) }
+                            }
+                        }
+                    } else if (effectiveBitmap != null) {
+                        val ratio = (effectiveBitmap.width.toFloat() / effectiveBitmap.height.toFloat())
+                            .takeIf { it.isFinite() && it > 0f } ?: 1f
+                        // Compose-side blur fallback when the docker didn't
+                        // return processed bytes but the receiver still asked
+                        // for the blurred view.
+                        val applyComposeBlurFallback = showBlurredVariant && nsfwBlurredBytes == null
+                        Box {
+                            Image(
+                                bitmap             = effectiveBitmap,
+                                contentDescription = null,
+                                contentScale       = ContentScale.Fit,
+                                modifier           = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(ratio)
+                                    .clip(RoundedCornerShape(
+                                        topStart    = 16.sdp, topEnd = 16.sdp,
+                                        bottomStart = if (!hasText && isOut) 16.sdp else if (!hasText) 4.sdp else 0.sdp,
+                                        bottomEnd   = if (!hasText && isOut) 4.sdp else if (!hasText) 16.sdp else 0.sdp
+                                    ))
+                                    .let { if (applyComposeBlurFallback) it.blur(30.sdp) else it }
+                            )
+                            if (isNsfw) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(6.sdp)
+                                        .clip(RoundedCornerShape(8.sdp))
+                                        .background(Color.Black.copy(alpha = 0.55f))
+                                        .padding(horizontal = 6.sdp, vertical = 2.sdp)
+                                ) {
+                                    Text(
+                                        "18+",
+                                        color = Color.White,
+                                        fontSize = 10.ssp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         Box(
                             modifier = Modifier

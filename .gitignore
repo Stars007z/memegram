@@ -68,3 +68,5 @@ k8s/base/secrets.yaml
 ml/nsfw/model_to_prod
 ml/nsfw/content_moderation_test/models
 ml/nsfw/content_moderation_test/test_images
+
+android-ios-app/composeApp/build/outputs/apk

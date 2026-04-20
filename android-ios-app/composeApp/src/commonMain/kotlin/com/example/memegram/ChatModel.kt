@@ -37,7 +37,8 @@ data class Message(
     val fileName: String? = null,
     val fileSize: Long? = null,
     val fileMime: String? = null,
-    val localFilePath: String? = null
+    val localFilePath: String? = null,
+    val nsfwFlag: Boolean? = null
 )
 
 enum class MessageStatus { SENDING, SENT, FAILED }

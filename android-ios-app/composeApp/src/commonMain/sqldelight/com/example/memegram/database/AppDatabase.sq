@@ -36,7 +36,8 @@ CREATE TABLE messageEntity (
     fileName             TEXT,
     fileSize             INTEGER,
     fileMime             TEXT,
-    localFilePath        TEXT
+    localFilePath        TEXT,
+    nsfwFlag             INTEGER
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -83,9 +84,9 @@ INSERT OR IGNORE INTO messageEntity(
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
     originalText, translatedText, translatedFromLang, isTranslated,
-    fileName, fileSize, fileMime, localFilePath
+    fileName, fileSize, fileMime, localFilePath, nsfwFlag
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMessagesByConversation:
 DELETE FROM messageEntity WHERE conversationId = ?;
@@ -132,9 +133,9 @@ INSERT OR IGNORE INTO messageEntity(
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
     originalText, translatedText, translatedFromLang, isTranslated,
-    fileName, fileSize, fileMime, localFilePath
+    fileName, fileSize, fileMime, localFilePath, nsfwFlag
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateExistingMessage:
 UPDATE messageEntity
@@ -156,6 +157,11 @@ WHERE serverId = ?;
 updateMessageLocalPreview:
 UPDATE messageEntity
 SET localPreviewBytes = ?
+WHERE serverId = ?;
+
+updateMessageNsfwFlag:
+UPDATE messageEntity
+SET nsfwFlag = ?
 WHERE serverId = ?;
 
 deleteMessageByServerId:
@@ -190,6 +196,26 @@ showCachedTranslation:
 UPDATE messageEntity
 SET text = translatedText, isTranslated = 1
 WHERE serverId = ? AND translatedText IS NOT NULL;
+
+-- ТРАНСКРИБАЦИЯ ГОЛОСОВЫХ
+-- Для войсов text = "duration|waveform" — его НЕЛЬЗЯ перезаписывать.
+-- Кэшируем транскрипт в originalText, перевод (если есть) в translatedText,
+-- detected язык в translatedFromLang. isTranslated=1 значит "показываем panel".
+
+updateVoiceTranscription:
+UPDATE messageEntity
+SET originalText = ?, translatedText = ?, translatedFromLang = ?, isTranslated = 1
+WHERE serverId = ? AND type = 'voice';
+
+hideVoiceTranscription:
+UPDATE messageEntity
+SET isTranslated = 0
+WHERE serverId = ? AND type = 'voice';
+
+showVoiceTranscription:
+UPDATE messageEntity
+SET isTranslated = 1
+WHERE serverId = ? AND type = 'voice' AND originalText IS NOT NULL;
 
 storageByType:
 WITH normalized AS (

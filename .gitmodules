@@ -1,0 +1,3 @@
+[submodule "android-ios-app/composeApp/src/androidMain/cpp/whisper.cpp"]
+	path = android-ios-app/composeApp/src/androidMain/cpp/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp

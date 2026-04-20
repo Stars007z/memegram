@@ -25,6 +25,7 @@ interface ChatRepository {
     suspend fun deleteMessageByServerId(serverId: String)
     suspend fun updateMessageLocalFile(serverId: String, localFilePath: String, previewBytes: ByteArray?)
     suspend fun updateMessageLocalPreview(serverId: String, previewBytes: ByteArray)
+    suspend fun updateMessageNsfwFlag(serverId: String, flag: Boolean)
 
     suspend fun clearAllLocalData()
 
@@ -36,6 +37,22 @@ interface ChatRepository {
     suspend fun updateMessageTranslation(serverId: String, translatedText: String, fromLang: String)
     suspend fun revertMessageTranslation(serverId: String)
     suspend fun showCachedTranslation(serverId: String)
+
+    // ── Voice transcription ──────────────────────────────────────────
+    /**
+     * Сохраняет транскрипт войса. Не трогает [Message.text] (там `duration|waveform`).
+     * @param transcribedText распознанный текст на исходном языке
+     * @param translatedText  перевод на UI-язык (null если язык уже совпадает)
+     * @param detectedLang    ISO-код определённого языка
+     */
+    suspend fun updateVoiceTranscription(
+        serverId: String,
+        transcribedText: String,
+        translatedText: String?,
+        detectedLang: String
+    )
+    suspend fun hideVoiceTranscription(serverId: String)
+    suspend fun showVoiceTranscription(serverId: String)
 
     // ── Storage analytics ────────────────────────────────────────────
     suspend fun getStorageByType(): List<StorageTypeStat>

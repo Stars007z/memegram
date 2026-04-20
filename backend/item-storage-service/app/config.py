@@ -21,6 +21,9 @@ class Settings:
     AWS_REGION: str = os.getenv("AWS_REGION", "eu-central-1")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "messenger-items-dev")
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")
+    # Public endpoint used in presigned URLs (must be reachable from clients).
+    # If empty, falls back to S3_ENDPOINT_URL.
+    S3_PUBLIC_ENDPOINT: str = os.getenv("S3_PUBLIC_ENDPOINT", "")
     S3_SSE_TYPE: str = os.getenv("S3_SSE_TYPE", "AES256")
     KMS_KEY_ID: str = os.getenv("KMS_KEY_ID", "")
 
@@ -39,6 +42,10 @@ class Settings:
     @property
     def s3_endpoint(self) -> str | None:
         return self.S3_ENDPOINT_URL or None
+
+    @property
+    def s3_public_endpoint(self) -> str | None:
+        return self.S3_PUBLIC_ENDPOINT or self.S3_ENDPOINT_URL or None
 
 
 @lru_cache(maxsize=1)

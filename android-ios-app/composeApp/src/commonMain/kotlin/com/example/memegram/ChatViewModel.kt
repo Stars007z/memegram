@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.audio.AudioRecordResult
+import com.example.memegram.audio.SpeechToTextService
 import com.example.memegram.audio.createAudioRecorder
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
@@ -40,7 +41,9 @@ class ChatViewModel(
     private val settings: Settings,
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
-    private val blockedUsersCache: BlockedUsersCache
+    private val speechToTextService: SpeechToTextService,
+    private val blockedUsersCache: BlockedUsersCache,
+    private val nsfwModeration: com.example.memegram.data.network.NsfwModerationService,
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -734,8 +737,8 @@ class ChatViewModel(
             _error.value = S.current.userBlockedSendError
             return
         }
-        _inputText.value = ""
 
+        _inputText.value = ""
         viewModelScope.launch {
             when {
                 attachments.isEmpty() -> sendTextMessageInternal(convId, text)
@@ -755,6 +758,8 @@ class ChatViewModel(
             }
         }
     }
+
+
 
     private suspend fun sendTextMessageInternal(convId: String, text: String) {
         val now = Clock.System.now().toEpochMilliseconds()
@@ -796,7 +801,12 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun sendPhotoMessageInternal(convId: String, item: AttachItem, caption: String = "", groupId: String? = null) {
+    private suspend fun sendPhotoMessageInternal(
+        convId: String,
+        item: AttachItem,
+        caption: String = "",
+        groupId: String? = null,
+    ) {
         val now = Clock.System.now().toEpochMilliseconds()
         val previewBytes = runCatching { item.readUploadBytes() }.getOrNull()
         val replyTo = _replyingTo.value
@@ -828,7 +838,7 @@ class ChatViewModel(
                 return
             }
 
-            val mime     = item.guessMimeType()
+            val mime = item.guessMimeType()
             val encrypted = encryptMediaBytes(rawBytes)
 
             val initResp = api.initiateMediaUpload(
@@ -864,13 +874,17 @@ class ChatViewModel(
                     status             = MessageStatus.SENT,
                     text               = caption,
                     mediaId            = initResp.mediaId,
-                    encryptionMetadata = encrypted.encryptionMetadataB64
+                    encryptionMetadata = encrypted.encryptionMetadataB64,
                 ),
                 convId
             )
             if (replyTo != null && replyTo.serverId.isNotBlank()) {
                 _replyContext.update { it + (response.messageId to replyTo.serverId) }
             }
+
+            // Background NSFW check on the original bytes — never blocks the send.
+            // If flagged, persist nsfwFlag=true so the bubble shows the 18+ badge.
+            launchNsfwCheck(response.messageId, rawBytes, mime)
         } catch (e: Exception) {
             println("MemegramDebug [Photo] ❌ FATAL: ${e::class.simpleName}: ${e.message}")
             chatRepository.saveMessage(
@@ -878,6 +892,86 @@ class ChatViewModel(
             )
             handleBlockedByPeerOnSendError(e)
             _error.value = S.current.photoSendErrorDetail(e.message ?: "")
+        }
+    }
+
+    /**
+     * Sender-side fire-and-forget probe. The message is already sent and
+     * persisted before we ask. We only persist `nsfwFlag` (no byte rewriting)
+     * so the sender's bubble can show the 18+ badge.
+     */
+    private fun launchNsfwCheck(serverId: String, bytes: ByteArray, mime: String) {
+        if (serverId.isBlank()) return
+        viewModelScope.launch {
+            val flagged = runNsfwProbe(bytes, mime)?.first ?: false
+            // Persist verdict (including the negative one) so we don't re-probe
+            // on every reload. saveMessage's mapper writes 0/1.
+            runCatching { chatRepository.updateMessageNsfwFlag(serverId, flagged) }
+        }
+    }
+
+    /**
+     * Receiver-side probe: in addition to persisting the flag, we cache the
+     * partial-blurred PNG bytes from the docker service so the UI can show
+     * either the original or the partially-blurred image when the user reveals
+     * it.
+     */
+    private fun ensureReceiverNsfwCheck(serverId: String, bytes: ByteArray, mime: String) {
+        if (serverId.isBlank()) return
+        if (!_receiverProbeStarted.add(serverId)) {
+            println("MemegramDebug [NSFW-Receiver] skip $serverId — probe already started")
+            return
+        }
+        println("MemegramDebug [NSFW-Receiver] start $serverId, ${bytes.size}B mime=$mime")
+        _nsfwCheckState.update { it + (serverId to NsfwCheckState.Pending) }
+        viewModelScope.launch {
+            val probe = runNsfwProbe(bytes, mime)
+            if (probe == null) {
+                // Treat probe failures as "safe" so the image doesn't stay
+                // hidden behind a spinner forever when the docker is down.
+                _nsfwCheckState.update { it + (serverId to NsfwCheckState.Safe) }
+                runCatching { chatRepository.updateMessageNsfwFlag(serverId, false) }
+                return@launch
+            }
+            val (flagged, processedBytes) = probe
+            if (flagged) {
+                if (processedBytes != null && processedBytes.isNotEmpty()) {
+                    _nsfwBlurredCache.update { it + (serverId to processedBytes) }
+                }
+                _nsfwCheckState.update { it + (serverId to NsfwCheckState.Nsfw) }
+            } else {
+                _nsfwCheckState.update { it + (serverId to NsfwCheckState.Safe) }
+            }
+            runCatching { chatRepository.updateMessageNsfwFlag(serverId, flagged) }
+        }
+    }
+
+    /**
+     * Runs the docker probe and returns (flagged, processedBytesIfBlurred) or
+     * null on transport failure. `processedBytes` is non-null only when the
+     * service actually applied partial blur.
+     */
+    private suspend fun runNsfwProbe(bytes: ByteArray, mime: String): Pair<Boolean, ByteArray?>? {
+        return runCatching {
+            val result = nsfwModeration.moderate(
+                imageBytes = bytes,
+                mimeType = mime,
+                filename = "upload",
+            )
+            val flagged = result.wasBlurred ||
+                (result.predictedClass != null &&
+                    result.predictedClass.lowercase() !in setOf("safe", "neutral", "ok"))
+            val processed = if (result.wasBlurred && result.processedBytes !== bytes) {
+                result.processedBytes
+            } else null
+            println(
+                "MemegramDebug [NSFW-Verdict] predicted=${result.predictedClass} " +
+                    "wasBlurred=${result.wasBlurred} processedSize=${result.processedBytes.size}B " +
+                    "→ flagged=$flagged hasProcessed=${processed != null}"
+            )
+            flagged to processed
+        }.getOrNull().also {
+            if (it == null) println("MemegramDebug [NSFW-Verdict] probe FAILED (transport error)")
         }
     }
 
@@ -1099,16 +1193,15 @@ class ChatViewModel(
                     )
                 )
 
-                chatRepository.saveMessage(
-                    tempMsg.copy(
-                        serverId           = response.messageId,
-                        status             = MessageStatus.SENT,
-                        mediaId            = initResp.mediaId,
-                        encryptionMetadata = encrypted.encryptionMetadataB64,
-                        text               = "${recordResult.durationMs}|${recordResult.waveform}"
-                    ),
-                    convId
-                )
+            chatRepository.saveMessage(
+                tempMsg.copy(
+                    serverId           = response.messageId,
+                    status             = MessageStatus.SENT,
+                    mediaId            = initResp.mediaId,
+                    encryptionMetadata = encrypted.encryptionMetadataB64,
+                ),
+                convId
+            )
             } catch (e: Exception) {
                 println("MemegramDebug [Voice]: 🚨 КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ: ${e.message}")
                 chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
@@ -1210,6 +1303,46 @@ class ChatViewModel(
     private val _mediaCache = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaCache: StateFlow<Map<String, ByteArray>> = _mediaCache.asStateFlow()
 
+    /**
+     * Session-only set of message serverIds the receiver chose to reveal
+     * despite the NSFW flag. Reset on every ViewModel construction (i.e.
+     * each chat open) — we deliberately do NOT persist the choice so the
+     * placeholder reappears the next time the chat is opened.
+     */
+    private val _revealedNsfw = MutableStateFlow<Map<String, NsfwReveal>>(emptyMap())
+    val revealedNsfw: StateFlow<Map<String, NsfwReveal>> = _revealedNsfw.asStateFlow()
+
+    enum class NsfwReveal { Blurred, Original }
+
+    /**
+     * Per-message NSFW check status. Tracks whether the receiver has finished
+     * the docker probe, so the UI can show a spinner while [Pending] and a
+     * placeholder/image only after a verdict.
+     */
+    enum class NsfwCheckState { Pending, Safe, Nsfw }
+
+    private val _nsfwCheckState = MutableStateFlow<Map<String, NsfwCheckState>>(emptyMap())
+    val nsfwCheckState: StateFlow<Map<String, NsfwCheckState>> = _nsfwCheckState.asStateFlow()
+
+    /** In-memory cache of partial-blurred PNG bytes returned by the docker
+     *  service for incoming NSFW images. Session-only — cleared on VM init. */
+    private val _nsfwBlurredCache = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
+    val nsfwBlurredCache: StateFlow<Map<String, ByteArray>> = _nsfwBlurredCache.asStateFlow()
+
+    /** Tracks serverIds whose receiver-side NSFW probe is in flight or done,
+     *  to avoid duplicate HTTP calls when [ensureReceiverNsfwCheck] is invoked
+     *  by both `loadMedia` and message list updates. */
+    private val _receiverProbeStarted = mutableSetOf<String>()
+
+    fun revealNsfwBlurred(serverId: String) {
+        if (serverId.isBlank()) return
+        _revealedNsfw.update { it + (serverId to NsfwReveal.Blurred) }
+    }
+    fun revealNsfwOriginal(serverId: String) {
+        if (serverId.isBlank()) return
+        _revealedNsfw.update { it + (serverId to NsfwReveal.Original) }
+    }
+
     fun loadMedia(mediaId: String, encryptionMetadata: String?) {
         if (_mediaCache.value.containsKey(mediaId)) return
         viewModelScope.launch {
@@ -1222,9 +1355,22 @@ class ChatViewModel(
                 val msg = _messages.value.firstOrNull { it.mediaId == mediaId }
                 if (msg != null && msg.type == "image" && msg.serverId.isNotBlank()) {
                     chatRepository.updateMessageLocalPreview(msg.serverId, decryptedBytes)
+                    // Receiver-side NSFW probe — only run for incoming images and
+                    // only if we don't already have a verdict cached.
+                    if (!msg.isOutgoing && msg.nsfwFlag == null) {
+                        ensureReceiverNsfwCheck(msg.serverId, decryptedBytes, guessImageMime(decryptedBytes))
+                    }
                 }
             } catch (_: Exception) { }
         }
+    }
+
+    private fun guessImageMime(bytes: ByteArray): String {
+        if (bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) return "image/jpeg"
+        if (bytes.size >= 8 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()) return "image/png"
+        if (bytes.size >= 6 && bytes[0] == 0x47.toByte() && bytes[1] == 0x49.toByte() && bytes[2] == 0x46.toByte()) return "image/gif"
+        if (bytes.size >= 12 && bytes[0] == 0x52.toByte() && bytes[8] == 0x57.toByte()) return "image/webp"
+        return "image/jpeg"
     }
 
     fun markMessagesRead(lastVisibleServerId: String) {
@@ -1282,6 +1428,107 @@ class ChatViewModel(
     fun showCachedTranslation(message: Message) {
         viewModelScope.launch {
             chatRepository.showCachedTranslation(message.serverId)
+        }
+    }
+
+    // ── Voice transcription (STT + перевод) ───────────────────────────
+
+    private val _transcribingMessageIds = MutableStateFlow<Set<String>>(emptySet())
+    val transcribingMessageIds: StateFlow<Set<String>> = _transcribingMessageIds.asStateFlow()
+
+    val isSttSupported: Boolean
+        get() = speechToTextService.isSupported
+
+    /**
+     * Транскрибирует войс. Логика:
+     *  1. Если уже есть `originalText` — просто тумблим `isTranslated`
+     *     (`showVoiceTranscription / hideVoiceTranscription`).
+     *  2. Иначе скачиваем/декриптуем байты, распознаём, при необходимости
+     *     переводим на язык UI, сохраняем в БД.
+     */
+    fun toggleVoiceTranscription(message: Message) {
+        if (message.type != "voice" || message.serverId.isBlank()) return
+
+        // Уже распознано → просто toggle show/hide
+        if (!message.originalText.isNullOrBlank()) {
+            viewModelScope.launch {
+                if (message.isTranslated) {
+                    chatRepository.hideVoiceTranscription(message.serverId)
+                } else {
+                    chatRepository.showVoiceTranscription(message.serverId)
+                }
+            }
+            return
+        }
+
+        if (!speechToTextService.isSupported) {
+            _error.value = S.current.transcriptionNotAvailable
+            return
+        }
+
+        val mediaId = message.mediaId ?: return
+        val serverId = message.serverId
+        if (serverId in _transcribingMessageIds.value) return
+
+        viewModelScope.launch {
+            _transcribingMessageIds.value = _transcribingMessageIds.value + serverId
+            try {
+                // 1. bytes (из кэша или скачиваем+дешифруем)
+                val bytes: ByteArray = _mediaCache.value[mediaId] ?: run {
+                    val resp = api.getMediaDownloadUrl(mediaId)
+                    val encryptedBytes = api.downloadBytesFromUrl(resp.downloadUrl)
+                    val meta = resp.encryptionMetadata.takeIf { it.isNotBlank() }
+                        ?: message.encryptionMetadata
+                    val plain = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
+                    _mediaCache.value += (mediaId to plain)
+                    plain
+                }
+
+                // 2. STT
+                println("MemegramDebug [Transcribe]: bytes=${bytes.size}, calling STT…")
+                val stt = speechToTextService.transcribe(
+                    audioBytes = bytes,
+                    mimeType = "audio/mp4", // записываем m4a/AAC на Android
+                    hintLanguage = null
+                )
+                val recognized = stt.text.trim()
+                println("MemegramDebug [Transcribe]: STT returned ${recognized.length} chars, lang=${stt.language}")
+                if (recognized.isBlank()) {
+                    _error.value = "${S.current.transcriptionError}: no speech detected (empty result)"
+                    return@launch
+                }
+
+                // 3. опциональный перевод на язык UI
+                val appLang = settings.getString("app_language", "en")
+                val targetLang = translationSettings.getEffectiveTargetLang(appLang)
+                val sttLang = stt.language.takeIf { it.isNotBlank() && it != "auto" }
+
+                val translated: String? = try {
+                    if (sttLang != null && sttLang.equals(targetLang, ignoreCase = true)) {
+                        null // уже на нужном языке
+                    } else {
+                        val r = translationService.translate(recognized, sttLang, targetLang)
+                        if (r.translatedText.isNotBlank() && r.translatedText != recognized) {
+                            r.translatedText
+                        } else null
+                    }
+                } catch (_: Exception) { null }
+
+                val detected = sttLang ?: "auto"
+
+                // 4. persist
+                chatRepository.updateVoiceTranscription(
+                    serverId = serverId,
+                    transcribedText = recognized,
+                    translatedText = translated,
+                    detectedLang = detected
+                )
+            } catch (e: Exception) {
+                println("MemegramDebug [Transcribe]: Error: ${e::class.simpleName}: ${e.message}")
+                _error.value = "${S.current.transcriptionError}: ${e::class.simpleName} ${e.message ?: ""}"
+            } finally {
+                _transcribingMessageIds.value = _transcribingMessageIds.value - serverId
+            }
         }
     }
 

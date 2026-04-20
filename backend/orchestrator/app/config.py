@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     AUTO_DELETE_CRON_HOUR: int = 3
     AUTO_DELETE_CRON_MINUTE: int = 0
 
+    # CORS — list of allowed origins (parsed from JSON-array env, e.g.
+    # CORS_ORIGINS=["http://localhost:3000","http://10.0.2.2:8000"]).
+    # Use ["*"] to allow everything (dev only).
+    CORS_ORIGINS: list[str] = ["*"]
+
     @property
     def AUTH_GRPC_ADDRESS(self) -> str:
         return f"{self.AUTH_GRPC_HOST}:{self.AUTH_GRPC_PORT}"

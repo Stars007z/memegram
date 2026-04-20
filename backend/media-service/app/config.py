@@ -18,6 +18,9 @@ class Settings:
     AWS_REGION: str = os.getenv("AWS_REGION", "eu-central-1")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "messenger-media-dev")
     S3_ENDPOINT_URL: str | None = os.getenv("S3_ENDPOINT_URL") or None
+    # Public endpoint used in presigned URLs (e.g. http://10.0.2.2:9000 for Android emulator).
+    # If unset, S3_ENDPOINT_URL is used (suitable for production AWS S3).
+    S3_PUBLIC_ENDPOINT: str | None = os.getenv("S3_PUBLIC_ENDPOINT") or None
 
     PRESIGNED_UPLOAD_TTL: int = int(os.getenv("PRESIGNED_UPLOAD_TTL", 3600))
     PRESIGNED_DOWNLOAD_TTL: int = int(os.getenv("PRESIGNED_DOWNLOAD_TTL", 900))

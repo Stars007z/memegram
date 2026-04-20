@@ -1,0 +1,9 @@
+# NSFW service build artefacts
+__pycache__/
+*.pyc
+test_images/
+benchmark_warmup.py
+test_cli.py
+test_owl.py
+# Models are bind-mounted at runtime, never bake them in
+models/

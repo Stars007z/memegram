@@ -38,11 +38,15 @@ class AudioRecorderAndroid : AudioRecorder {
 
             recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()
             recorder?.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
+                // VOICE_RECOGNITION enables Android's built-in noise suppression and disables AGC
+                // that can muffle quiet speech. Falls back to MIC behavior if unsupported.
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(64000)
-                setAudioSamplingRate(44100)
+                // Higher bitrate + native whisper sample rate => less AAC loss, no resampling noise.
+                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(16000)
+                setAudioChannels(1)
                 setOutputFile(outputFile!!.absolutePath)
                 prepare()
                 start()

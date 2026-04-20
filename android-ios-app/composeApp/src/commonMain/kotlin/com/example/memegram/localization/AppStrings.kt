@@ -102,6 +102,10 @@ interface AppStrings {
     fun sendError(msg: String): String
     val photoSendError: String
     fun photoSendErrorDetail(msg: String): String
+    val nsfwWarningTitle: String
+    val nsfwShowBlurred: String
+    val nsfwShowOriginal: String
+    val nsfwChecking: String
     fun voiceSendError(msg: String): String
     fun deleteError(msg: String): String
     fun fileSendError(msg: String): String
@@ -307,6 +311,10 @@ interface AppStrings {
     val appLanguageHint: String
     val targetLanguageHint: String
     val translationNotAvailable: String
+    val transcribe: String
+    val transcribing: String
+    val transcriptionError: String
+    val transcriptionNotAvailable: String
 
     // ── Linked devices ───────────────────────────────────────────────
     val linkedDevicesTitle: String
@@ -486,6 +494,10 @@ object RuStrings : AppStrings {
     override fun sendError(msg: String) = "Ошибка отправки: $msg"
     override val photoSendError = "❌ Ошибка отправки фото"
     override fun photoSendErrorDetail(msg: String) = "Ошибка отправки фото: $msg"
+    override val nsfwWarningTitle = "Это фото может содержать чувствительный контент"
+    override val nsfwShowBlurred = "Скрыть с блюром"
+    override val nsfwShowOriginal = "Показать как есть"
+    override val nsfwChecking = "Проверяем контент…"
     override fun voiceSendError(msg: String) = "Ошибка отправки голосового: $msg"
     override fun deleteError(msg: String) = "Ошибка удаления: $msg"
     override fun fileSendError(msg: String) = "Ошибка отправки файла: $msg"
@@ -691,6 +703,10 @@ object RuStrings : AppStrings {
     override val appLanguageHint = "язык приложения"
     override val targetLanguageHint = "целевой язык"
     override val translationNotAvailable = "Перевод недоступен: недостаточно памяти или модель не загружена"
+    override val transcribe = "Распознать"
+    override val transcribing = "Распознаю…"
+    override val transcriptionError = "Не удалось распознать речь"
+    override val transcriptionNotAvailable = "Распознавание речи недоступно на этой платформе"
     override val linkedDevicesTitle = "Связанные устройства"
     override val refresh = "Обновить"
     override val addDeviceByQr = "Добавить устройство по QR"
@@ -869,6 +885,10 @@ object EnStrings : AppStrings {
     override fun sendError(msg: String) = "Send error: $msg"
     override val photoSendError = "❌ Photo send error"
     override fun photoSendErrorDetail(msg: String) = "Photo send error: $msg"
+    override val nsfwWarningTitle = "This photo may contain sensitive content"
+    override val nsfwShowBlurred = "Show blurred"
+    override val nsfwShowOriginal = "Show as is"
+    override val nsfwChecking = "Checking content…"
     override fun voiceSendError(msg: String) = "Voice send error: $msg"
     override fun deleteError(msg: String) = "Delete error: $msg"
     override fun fileSendError(msg: String) = "File send error: $msg"
@@ -1074,6 +1094,10 @@ object EnStrings : AppStrings {
     override val appLanguageHint = "app language"
     override val targetLanguageHint = "target language"
     override val translationNotAvailable = "Translation unavailable: not enough memory or model not loaded"
+    override val transcribe = "Transcribe"
+    override val transcribing = "Transcribing…"
+    override val transcriptionError = "Couldn't transcribe audio"
+    override val transcriptionNotAvailable = "Speech-to-text is not available on this platform"
     override val linkedDevicesTitle = "Linked Devices"
     override val refresh = "Refresh"
     override val addDeviceByQr = "Add device via QR"

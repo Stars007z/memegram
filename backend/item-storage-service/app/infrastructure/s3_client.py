@@ -25,6 +25,17 @@ async def get_s3_client() -> AsyncGenerator[Any, None]:
         yield client
 
 
+@asynccontextmanager
+async def get_presign_s3_client() -> AsyncGenerator[Any, None]:
+    """S3 client with public endpoint, used only for presigned URL generation."""
+    async with _session.client(
+        "s3",
+        endpoint_url=settings.s3_public_endpoint,
+        config=_boto_config,
+    ) as client:
+        yield client
+
+
 async def generate_presigned_upload_url(
     bucket: str,
     key: str,
@@ -37,7 +48,7 @@ async def generate_presigned_upload_url(
         "ContentType": mime_type,
     }
 
-    async with get_s3_client() as client:
+    async with get_presign_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "put_object",
             Params=params,
@@ -51,7 +62,7 @@ async def generate_presigned_download_url(
     key: str,
     ttl: int,
 ) -> str:
-    async with get_s3_client() as client:
+    async with get_presign_s3_client() as client:
         url: str = await client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": key},

@@ -2,28 +2,39 @@ package com.example.voicetranslator
 
 import android.content.Context
 import android.util.Log
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.Translator
+import com.google.mlkit.nl.translate.TranslatorOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class WhisperManager(private val context: Context) {
-    
+
     companion object {
         private const val TAG = "WhisperManager"
     }
-    
-    enum class Mode {
-        ON_DEVICE,
-        API
-    }
-    
-    private val _state = MutableStateFlow(WhisperState.Idle)
-    val state: StateFlow<WhisperState> = _state
-    
+
+    private val _state = MutableStateFlow<WhisperState>(WhisperState.Idle)
+    val state: StateFlow<WhisperState> = _state.asStateFlow()
+
+    private val pipelineMutex = Mutex() // защита от параллельных вызовов translateVoiceMessage
+
     private var localWhisper: WhisperLocal? = null
     private var apiWhisper: WhisperApi? = null
-    private var currentMode: Mode = Mode.ON_DEVICE
-    
+    private var currentMode: WhisperMode = WhisperMode.ON_DEVICE
+
+    // Кэш ML Kit-переводчиков по паре языков.
+    private val translatorCache = mutableMapOf<String, Translator>()
+
     sealed class WhisperState {
         object Idle : WhisperState()
         object Loading : WhisperState()
@@ -31,23 +42,20 @@ class WhisperManager(private val context: Context) {
         data class Success(val result: TranslationResult) : WhisperState()
         data class Error(val message: String) : WhisperState()
     }
-    
-    suspend fun initialize(mode: Mode, apiKey: String? = null) {
+
+    suspend fun initialize(mode: WhisperMode, apiKey: String? = null) {
         _state.value = WhisperState.Loading
         currentMode = mode
-        
+
         try {
             when (mode) {
-                Mode.ON_DEVICE -> {
-                    localWhisper = WhisperLocal(context)
-                    val success = localWhisper?.initialize() == true
-                    _state.value = if (success) {
-                        WhisperState.Idle
-                    } else {
-                        WhisperState.Error("Failed to load local model")
-                    }
+                WhisperMode.ON_DEVICE -> {
+                    val local = WhisperLocal(context).also { localWhisper = it }
+                    val ok = local.initialize()
+                    _state.value = if (ok) WhisperState.Idle
+                                   else WhisperState.Error("Failed to load local model")
                 }
-                Mode.API -> {
+                WhisperMode.API -> {
                     if (apiKey.isNullOrBlank()) {
                         _state.value = WhisperState.Error("API key required")
                         return
@@ -60,64 +68,129 @@ class WhisperManager(private val context: Context) {
             _state.value = WhisperState.Error(e.message ?: "Unknown error")
         }
     }
-    
+
     suspend fun translateVoiceMessage(
         audioFile: File,
         sourceLanguage: String = "auto",
         targetLanguage: String = "ru"
-    ) {
+    ) = pipelineMutex.withLock {
         _state.value = WhisperState.Processing(10)
-        
+        val startTime = System.currentTimeMillis()
+
         try {
-            val startTime = System.currentTimeMillis()
-            
             _state.value = WhisperState.Processing(30)
-            val transcribedText = when (currentMode) {
-                Mode.ON_DEVICE -> localWhisper?.transcribe(audioFile.path, sourceLanguage) ?: ""
-                Mode.API -> apiWhisper?.transcribe(audioFile, sourceLanguage)?.text ?: ""
+
+            // 1) Транскрибация
+            val transcribed: String
+            val detectedLang: String
+            when (currentMode) {
+                WhisperMode.ON_DEVICE -> {
+                    val local = localWhisper
+                        ?: throw IllegalStateException("Local whisper not initialized")
+                    transcribed = local.transcribe(audioFile.path, sourceLanguage)
+                    // whisper.cpp сам не возвращает язык в текстовом API —
+                    // используем подсказку от пользователя либо авто==unknown.
+                    detectedLang = sourceLanguage.takeIf { it.isNotBlank() && it != "auto" }
+                        ?: "auto"
+                }
+                WhisperMode.API -> {
+                    val api = apiWhisper
+                        ?: throw IllegalStateException("API whisper not initialized")
+                    val resp = api.transcribe(audioFile, sourceLanguage)
+                    transcribed = resp.text
+                    detectedLang = resp.detectedLanguage
+                        ?: sourceLanguage.takeIf { it != "auto" } ?: "auto"
+                }
             }
-            
-            _state.value = WhisperState.Processing(60)
-            
-            if (transcribedText.isBlank() || transcribedText.startsWith("ERROR")) {
-                throw Exception("Transcription failed: $transcribedText")
+
+            if (transcribed.isBlank() || transcribed.startsWith("ERROR")) {
+                throw Exception("Transcription failed: $transcribed")
             }
-            
-            _state.value = WhisperState.Processing(80)
-            val translatedText = if (currentMode == Mode.API) {
-                // API может сразу вернуть русский, если указать language="ru"
-                transcribedText
-            } else {
-                // Для On-Device нужен отдельный перевод
-                apiWhisper?.translate(transcribedText, targetLanguage) ?: transcribedText
+
+            _state.value = WhisperState.Processing(70)
+
+            // 2) Перевод
+            val translated = if (detectedLang == targetLanguage) {
+                transcribed
+            } else when (currentMode) {
+                WhisperMode.ON_DEVICE ->
+                    translateOnDevice(transcribed, detectedLang, targetLanguage)
+                WhisperMode.API ->
+                    apiWhisper?.translate(
+                        transcribed,
+                        sourceLang = detectedLang.takeIf { it != "auto" } ?: "en",
+                        targetLang = targetLanguage
+                    ) ?: transcribed
             }
-            
+
             _state.value = WhisperState.Processing(100)
-            
-            val duration = System.currentTimeMillis() - startTime
-            
+
             val result = TranslationResult(
-                originalText = transcribedText,
-                translatedText = translatedText,
-                language = sourceLanguage,
-                durationMs = duration,
+                originalText = transcribed,
+                translatedText = translated,
+                language = detectedLang,
+                durationMs = System.currentTimeMillis() - startTime,
                 mode = currentMode,
                 success = true
             )
-            
             _state.value = WhisperState.Success(result)
-            Log.d(TAG, "Translation complete in ${duration}ms")
-            
+            Log.d(TAG, "Translation complete in ${result.durationMs} ms")
         } catch (e: Exception) {
-            Log.e(TAG, "Translation error: ${e.message}")
+            Log.e(TAG, "Translation error: ${e.message}", e)
             _state.value = WhisperState.Error(e.message ?: "Unknown error")
         }
     }
-    
+
+    /**
+     * Полностью локальный перевод через ML Kit. Модель скачивается один раз
+     * на пару языков (требуется Wi-Fi при первом вызове).
+     */
+    private suspend fun translateOnDevice(
+        text: String, source: String, target: String
+    ): String {
+        val src = TranslateLanguage.fromLanguageTag(normalizeLang(source))
+            ?: return text.also { Log.w(TAG, "ML Kit: unsupported source '$source'") }
+        val dst = TranslateLanguage.fromLanguageTag(normalizeLang(target))
+            ?: return text.also { Log.w(TAG, "ML Kit: unsupported target '$target'") }
+
+        val key = "$src->$dst"
+        val translator = translatorCache.getOrPut(key) {
+            Translation.getClient(
+                TranslatorOptions.Builder()
+                    .setSourceLanguage(src)
+                    .setTargetLanguage(dst)
+                    .build()
+            )
+        }
+
+        // Скачиваем модель при первом использовании (Wi-Fi only по умолчанию)
+        suspendCancellableCoroutine<Unit> { cont ->
+            translator.downloadModelIfNeeded(
+                DownloadConditions.Builder().requireWifi().build()
+            )
+                .addOnSuccessListener { cont.resume(Unit) }
+                .addOnFailureListener { cont.resumeWithException(it) }
+        }
+
+        return suspendCancellableCoroutine { cont ->
+            translator.translate(text)
+                .addOnSuccessListener { cont.resume(it) }
+                .addOnFailureListener { cont.resumeWithException(it) }
+        }
+    }
+
+    /** auto/empty → en; иначе берём первые 2 буквы (ru, uk, en, de...). */
+    private fun normalizeLang(lang: String): String {
+        if (lang.isBlank() || lang == "auto") return "en"
+        return lang.substringBefore('-').lowercase()
+    }
+
     fun release() {
         localWhisper?.release()
         localWhisper = null
         apiWhisper = null
+        translatorCache.values.forEach { it.close() }
+        translatorCache.clear()
         _state.value = WhisperState.Idle
     }
 }

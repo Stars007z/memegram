@@ -26,10 +26,20 @@ class S3Client:
         self._extra: dict[str, str] = {}
         if settings.S3_ENDPOINT_URL:
             self._extra["endpoint_url"] = settings.S3_ENDPOINT_URL
+        # Separate endpoint for presigned URL generation (must be reachable from clients).
+        # Falls back to S3_ENDPOINT_URL if not set.
+        self._presign_extra: dict[str, str] = {}
+        public_ep = settings.S3_PUBLIC_ENDPOINT or settings.S3_ENDPOINT_URL
+        if public_ep:
+            self._presign_extra["endpoint_url"] = public_ep
         self._boto_config = BotoConfig(signature_version="s3v4")
 
     def _client_ctx(self):
         return self._session.client("s3", config=self._boto_config, **self._extra)
+
+    def _presign_client_ctx(self):
+        """Client used only for generating presigned URLs with the public endpoint."""
+        return self._session.client("s3", config=self._boto_config, **self._presign_extra)
 
     async def generate_presigned_upload_url(
         self,
@@ -39,7 +49,7 @@ class S3Client:
         content_length: int,
         expires_in: int,
     ) -> str:
-        async with self._client_ctx() as client:
+        async with self._presign_client_ctx() as client:
             url = await client.generate_presigned_url(
                 "put_object",
                 Params={
@@ -58,7 +68,7 @@ class S3Client:
         key: str,
         expires_in: int,
     ) -> str:
-        async with self._client_ctx() as client:
+        async with self._presign_client_ctx() as client:
             url = await client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": bucket, "Key": key},

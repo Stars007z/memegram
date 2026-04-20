@@ -179,7 +179,8 @@ class ChatRepositoryImpl(
                         fileName           = entity.fileName,
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
-                        localFilePath      = entity.localFilePath
+                        localFilePath      = entity.localFilePath,
+                        nsfwFlag           = entity.nsfwFlag?.let { it == 1L }
                     )
 
                 }
@@ -204,7 +205,8 @@ class ChatRepositoryImpl(
                     message.groupId,
                     message.originalText, message.translatedText, message.translatedFromLang,
                     if (message.isTranslated) 1L else 0L,
-                    message.fileName, message.fileSize, message.fileMime, message.localFilePath
+                    message.fileName, message.fileSize, message.fileMime, message.localFilePath,
+                    message.nsfwFlag?.let { if (it) 1L else 0L }
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
@@ -250,7 +252,8 @@ class ChatRepositoryImpl(
                         fileName           = message.fileName,
                         fileSize           = message.fileSize,
                         fileMime           = message.fileMime,
-                        localFilePath      = message.localFilePath
+                        localFilePath      = message.localFilePath,
+                        nsfwFlag           = message.nsfwFlag?.let { if (it) 1L else 0L }
                     )
                     chatQueries.updateExistingMessage(
                         message.text, message.status.name,
@@ -297,6 +300,12 @@ class ChatRepositoryImpl(
         }
     }
 
+    override suspend fun updateMessageNsfwFlag(serverId: String, flag: Boolean) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageNsfwFlag(if (flag) 1L else 0L, serverId)
+        }
+    }
+
     override suspend fun clearAllLocalData() {
         withContext(ioDispatcher) {
             chatQueries.transaction {
@@ -334,7 +343,8 @@ class ChatRepositoryImpl(
                         fileName           = entity.fileName,
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
-                        localFilePath      = entity.localFilePath
+                        localFilePath      = entity.localFilePath,
+                        nsfwFlag           = entity.nsfwFlag?.let { it == 1L }
                     )
                 }
         }
@@ -368,6 +378,36 @@ class ChatRepositoryImpl(
     override suspend fun showCachedTranslation(serverId: String) {
         withContext(ioDispatcher) {
             chatQueries.showCachedTranslation(serverId)
+        }
+    }
+
+    // ── Voice transcription ─────────────────────────────────────────
+
+    override suspend fun updateVoiceTranscription(
+        serverId: String,
+        transcribedText: String,
+        translatedText: String?,
+        detectedLang: String
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateVoiceTranscription(
+                transcribedText,
+                translatedText,
+                detectedLang,
+                serverId
+            )
+        }
+    }
+
+    override suspend fun hideVoiceTranscription(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.hideVoiceTranscription(serverId)
+        }
+    }
+
+    override suspend fun showVoiceTranscription(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.showVoiceTranscription(serverId)
         }
     }
 

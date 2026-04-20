@@ -19,3 +19,8 @@ captures
 node_modules/
 mls-rust/target/
 mls-rust/Cargo.lock
+
+android-ios-app.composeApp/build/outputs/apk
+ml/nsfw/model_to_prod/ViT-L14_336px_model_Andrey_v61_prod
+ml/nsfw/content_moderation_test/models
+ml/nsfw/content_moderation_test/test_images

@@ -432,23 +432,24 @@ class ContentModerator:
             combined_mask = np.maximum(combined_mask, sw_mask)
             info["stages"].append(sw_info)
 
-        # --- Этап 3: OWL-ViTv2 hate symbols (per-class trigger thresholds) ---
+        # --- Этап 3: OWL-ViTv2 hate symbols (всегда активен) ---
+        # Раньше OWL запускался только при negative>=0.20 или military>=0.30,
+        # но ViT-L14 даёт свастике всего ~25% negative и иногда <20% — тогда
+        # OWL не стартовал и свастика проходила как safe. Теперь гоним OWL
+        # всегда: он сам решает по своим OWL_MIN_SCORE есть ли символы.
+        # Стоимость ~5-10с CPU на фото, но проверка идёт в фоне.
         if USE_OWL:
-            owl_trigger = any(
-                all_scores.get(cls, 0) >= OWL_TRIGGER_PROB_PER_CLASS.get(cls, OWL_TRIGGER_PROB)
-                for cls in OWL_TRIGGER_CLASSES
+            negative_score = all_scores.get("negative", 0)
+            military_score = all_scores.get("military", 0)
+            print(
+                f"[PartialBlur] OWL forced=True "
+                f"(negative={negative_score:.3f}, military={military_score:.3f})"
             )
-            owl_scores_snapshot = {
-                cls: f"{all_scores.get(cls, 0):.3f}>={OWL_TRIGGER_PROB_PER_CLASS.get(cls, OWL_TRIGGER_PROB):.2f}"
-                for cls in OWL_TRIGGER_CLASSES
-            }
-            print(f"[PartialBlur] OWL trigger={owl_trigger}, checks={owl_scores_snapshot}")
-            if owl_trigger:
-                owl_result = self._try_owl_hate_symbols(img, h, w)
-                if owl_result is not None:
-                    o_mask, o_info = owl_result
-                    combined_mask = np.maximum(combined_mask, o_mask)
-                    info["stages"].append(o_info)
+            owl_result = self._try_owl_hate_symbols(img, h, w)
+            if owl_result is not None:
+                o_mask, o_info = owl_result
+                combined_mask = np.maximum(combined_mask, o_mask)
+                info["stages"].append(o_info)
 
         # Если ни один этап ничего не нашёл — пустая маска (отдадим оригинал)
         if not info["stages"]:

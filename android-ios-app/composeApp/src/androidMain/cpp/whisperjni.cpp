@@ -1,9 +1,22 @@
+// JNI bridge for whisper.cpp, привязан к
+// `com.example.memegram.audio.WhisperSpeechToTextService` (Memegram).
+//
+// Экспортирует три функции:
+//   nativeInit(modelPath: String): Boolean
+//   nativeTranscribe(wavPath: String, language: String): String
+//   nativeRelease()
+//
+// WAV-парсер robust: поддерживает PCM 8/16/24/32 + IEEE float32, downmix в
+// mono и линейный ресемпл в 16 kHz (whisper.cpp требует 16 kHz mono float).
+// Глобальное состояние защищено std::mutex.
+
 #include <jni.h>
 #include <string>
 #include <vector>
 #include <fstream>
 #include <cstring>
 #include <cstdint>
+#include <cmath>
 #include <mutex>
 #include <ctime>
 #include <whisper.h>
@@ -14,14 +27,12 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
 
-// -----------------------------------------------------------------------------
-// Forward declarations (C++ требует объявить до использования)
-// -----------------------------------------------------------------------------
+// ── Forward declarations ──────────────────────────────────────────────
 struct WavInfo {
-    uint16_t num_channels   = 0;
-    uint32_t sample_rate    = 0;
+    uint16_t num_channels    = 0;
+    uint32_t sample_rate     = 0;
     uint16_t bits_per_sample = 0;
-    uint16_t audio_format   = 0; // 1 = PCM, 3 = IEEE float
+    uint16_t audio_format    = 0; // 1 = PCM, 3 = IEEE float
 };
 
 static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k);
@@ -30,17 +41,14 @@ static void downmix_to_mono(const std::vector<float>& in, int channels, std::vec
 static void resample_linear(const std::vector<float>& in, int src_hz, int dst_hz,
                             std::vector<float>& out);
 
-// -----------------------------------------------------------------------------
-// Глобальное состояние защищено мьютексом (два параллельных transcribe
-// с одним g_ctx приводили бы к UB).
-// -----------------------------------------------------------------------------
+// ── Глобальное состояние ──────────────────────────────────────────────
 static whisper_context* g_ctx = nullptr;
 static std::mutex       g_ctx_mutex;
 
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_example_voicetranslator_WhisperLocal_initModel(
+Java_com_example_memegram_audio_WhisperSpeechToTextService_nativeInit(
         JNIEnv* env, jobject /*thiz*/, jstring modelPath) {
 
     std::lock_guard<std::mutex> lock(g_ctx_mutex);
@@ -54,8 +62,7 @@ Java_com_example_voicetranslator_WhisperLocal_initModel(
     LOGI("Loading model from: %s", path);
 
     whisper_context_params cparams = whisper_context_default_params();
-    // GPU-бэкенд на Android часто нестабилен / не собран вовсе.
-    cparams.use_gpu = false;
+    cparams.use_gpu = false; // GPU-бэкенд на Android часто нестабилен / не собран
 
     g_ctx = whisper_init_from_file_with_params(path, cparams);
 
@@ -70,7 +77,7 @@ Java_com_example_voicetranslator_WhisperLocal_initModel(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_voicetranslator_WhisperLocal_transcribeFile(
+Java_com_example_memegram_audio_WhisperSpeechToTextService_nativeTranscribe(
         JNIEnv* env, jobject /*thiz*/, jstring audioPath, jstring language) {
 
     std::lock_guard<std::mutex> lock(g_ctx_mutex);
@@ -89,52 +96,102 @@ Java_com_example_voicetranslator_WhisperLocal_transcribeFile(
     wparams.print_special    = false;
     wparams.print_realtime   = false;
     wparams.print_timestamps = false;
-    wparams.translate        = false; // оставляем язык исходника
+    wparams.translate        = false;
     wparams.n_threads        = 4;
     wparams.offset_ms        = 0;
     wparams.duration_ms      = 0;
+    wparams.no_speech_thold  = 0.3f;     // чуть мягче чем default 0.6
+    wparams.no_context       = true;
+    wparams.single_segment   = false;
 
-    // whisper.cpp ожидает либо nullptr/"" для автодетекта, либо ISO-код ("ru", "en"...).
-    // Строка "auto" приведёт к whisper_lang_id() == -1 и молчаливому fallback на EN.
+    // Real-time callback — логируем КАЖДЫЙ сегмент в момент его создания.
+    wparams.new_segment_callback = [](struct whisper_context* ctx,
+                                      struct whisper_state* /*state*/,
+                                      int n_new, void* /*user*/) {
+        const int n = whisper_full_n_segments(ctx);
+        for (int i = n - n_new; i < n; ++i) {
+            const char* t = whisper_full_get_segment_text(ctx, i);
+            LOGI("  [callback] seg[%d]: \"%s\"", i, t ? t : "(null)");
+        }
+    };
+    wparams.new_segment_callback_user_data = nullptr;
+
+    // whisper.cpp ожидает либо nullptr/"" для автодетекта, либо ISO-код.
+    // Строка "auto" приведёт к whisper_lang_id() == -1 → silent fallback на EN.
     std::string langStr = (langC != nullptr) ? std::string(langC) : std::string();
     if (langStr.empty() || langStr == "auto") {
         wparams.language        = nullptr;
         wparams.detect_language = true;
     } else {
-        wparams.language        = langC; // валиден до ReleaseStringUTFChars в конце функции
+        wparams.language        = langC;
         wparams.detect_language = false;
     }
 
     std::vector<float> pcm_data;
     bool wav_ok = load_wav_file(audioPathC, pcm_data);
 
-    // Отпускаем JNI-строки после использования в wparams.language.
-    // Копируем результат в std::string, чтобы безопасно вернуть из функции.
     auto cleanup_and_return = [&](const std::string& out) -> jstring {
         env->ReleaseStringUTFChars(audioPath, audioPathC);
         env->ReleaseStringUTFChars(language,  langC);
         return env->NewStringUTF(out.c_str());
     };
 
-    if (!wav_ok) {
-        return cleanup_and_return("ERROR: Failed to load audio file");
-    }
-    if (pcm_data.empty()) {
-        return cleanup_and_return("ERROR: Empty audio data");
+    if (!wav_ok)              return cleanup_and_return("ERROR: Failed to load audio file");
+    if (pcm_data.empty())     return cleanup_and_return("ERROR: Empty audio data");
+
+    // Анализ уровня сигнала + автоматический gain (на случай очень тихой записи).
+    {
+        float peak = 0.0f;
+        double sumsq = 0.0;
+        for (float s : pcm_data) {
+            float a = s < 0 ? -s : s;
+            if (a > peak) peak = a;
+            sumsq += (double) s * (double) s;
+        }
+        float rms = (float) std::sqrt(sumsq / (double) pcm_data.size());
+        float duration_s = (float) pcm_data.size() / 16000.0f;
+        LOGI("PCM stats: samples=%zu (%.2fs) peak=%.4f rms=%.4f",
+             pcm_data.size(), duration_s, peak, rms);
+
+        if (peak > 0.0f && peak < 0.3f) {
+            // Усиливаем до пика 0.9, но не больше чем в 20× (иначе шум усилим).
+            float gain = 0.9f / peak;
+            if (gain > 20.0f) gain = 20.0f;
+            LOGI("Applying gain x%.2f (signal too quiet)", gain);
+            for (float& s : pcm_data) {
+                float v = s * gain;
+                if (v >  1.0f) v =  1.0f;
+                if (v < -1.0f) v = -1.0f;
+                s = v;
+            }
+        } else if (peak == 0.0f) {
+            LOGE("PCM is completely silent (peak=0)");
+        }
     }
 
     long t0 = get_current_time_ms();
     int rc = whisper_full(g_ctx, wparams, pcm_data.data(), (int) pcm_data.size());
     long t1 = get_current_time_ms();
-    LOGI("Transcription took: %ld ms (samples=%zu)", t1 - t0, pcm_data.size());
+
+    int detected_lang_id = whisper_full_lang_id(g_ctx);
+    const char* detected_lang = (detected_lang_id >= 0)
+        ? whisper_lang_str(detected_lang_id) : "?";
+    int n_segments = whisper_full_n_segments(g_ctx);
+    LOGI("whisper_full rc=%d took=%ldms segments=%d lang=%s(id=%d)",
+         rc, t1 - t0, n_segments, detected_lang, detected_lang_id);
 
     std::string finalText;
     if (rc == 0) {
-        const int n = whisper_full_n_segments(g_ctx);
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < n_segments; ++i) {
             const char* seg = whisper_full_get_segment_text(g_ctx, i);
-            if (seg) finalText += seg;
-            if (i < n - 1) finalText += " ";
+            if (seg) {
+                LOGI("  seg[%d] = \"%s\"", i, seg);
+                finalText += seg;
+            }
+            if (i < n_segments - 1) finalText += " ";
+        }
+        if (finalText.empty()) {
+            LOGW("whisper returned 0 segments — silence or threshold rejected");
         }
     } else {
         finalText = "ERROR: Transcription failed (code: " + std::to_string(rc) + ")";
@@ -144,7 +201,7 @@ Java_com_example_voicetranslator_WhisperLocal_transcribeFile(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_voicetranslator_WhisperLocal_releaseModel(
+Java_com_example_memegram_audio_WhisperSpeechToTextService_nativeRelease(
         JNIEnv* /*env*/, jobject /*thiz*/) {
     std::lock_guard<std::mutex> lock(g_ctx_mutex);
     if (g_ctx != nullptr) {
@@ -156,12 +213,7 @@ Java_com_example_voicetranslator_WhisperLocal_releaseModel(
 
 } // extern "C"
 
-// -----------------------------------------------------------------------------
-// WAV loader. Раньше тупо пропускал 44 байта и читал как int16 — падало на
-// любых не-16kHz/mono/16bit файлах. Теперь парсим чанки RIFF, поддерживаем
-// PCM8/16/24/32 + IEEE float32, downmix в mono и линейный ресемпл в 16 kHz
-// (whisper требует строго 16 kHz mono float).
-// -----------------------------------------------------------------------------
+// ── WAV loader ────────────────────────────────────────────────────────
 static uint32_t read_u32_le(const uint8_t* p) {
     return (uint32_t) p[0] | ((uint32_t) p[1] << 8) |
            ((uint32_t) p[2] << 16) | ((uint32_t) p[3] << 24);
@@ -172,27 +224,20 @@ static uint16_t read_u16_le(const uint8_t* p) {
 
 static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k) {
     std::ifstream file(filename, std::ios::binary);
-    if (!file) {
-        LOGE("Cannot open file: %s", filename);
-        return false;
-    }
+    if (!file) { LOGE("Cannot open file: %s", filename); return false; }
     std::vector<uint8_t> buf((std::istreambuf_iterator<char>(file)),
                               std::istreambuf_iterator<char>());
-    if (buf.size() < 44) {
-        LOGE("WAV too small: %zu bytes", buf.size());
-        return false;
-    }
+    if (buf.size() < 44) { LOGE("WAV too small: %zu bytes", buf.size()); return false; }
     if (std::memcmp(buf.data(), "RIFF", 4) != 0 ||
         std::memcmp(buf.data() + 8, "WAVE", 4) != 0) {
-        LOGE("Not a RIFF/WAVE file");
-        return false;
+        LOGE("Not a RIFF/WAVE file"); return false;
     }
 
     WavInfo info;
     const uint8_t* data_ptr = nullptr;
     uint32_t data_size = 0;
 
-    size_t pos = 12; // после RIFF/size/WAVE
+    size_t pos = 12;
     while (pos + 8 <= buf.size()) {
         const uint8_t* chunk_id = buf.data() + pos;
         uint32_t chunk_size = read_u32_le(buf.data() + pos + 4);
@@ -212,7 +257,6 @@ static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k
             data_size = chunk_size;
             break;
         }
-        // выравнивание по 2 байтам
         pos = body + chunk_size + (chunk_size & 1u);
     }
 
@@ -225,16 +269,14 @@ static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k
          info.audio_format, info.num_channels, info.sample_rate,
          info.bits_per_sample, data_size);
 
-    // Декодируем в float interleaved [-1..1]
     std::vector<float> interleaved;
-    if (info.audio_format == 1) { // PCM
+    if (info.audio_format == 1) {
         if (info.bits_per_sample == 16) {
             const size_t n = data_size / 2;
             interleaved.resize(n);
             const int16_t* src = reinterpret_cast<const int16_t*>(data_ptr);
             for (size_t i = 0; i < n; ++i) interleaved[i] = src[i] / 32768.0f;
         } else if (info.bits_per_sample == 8) {
-            // 8-bit PCM в WAV — unsigned, bias 128
             const size_t n = data_size;
             interleaved.resize(n);
             for (size_t i = 0; i < n; ++i)
@@ -246,7 +288,7 @@ static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k
                 int32_t v = (int32_t) data_ptr[i * 3 + 0]
                           | ((int32_t) data_ptr[i * 3 + 1] << 8)
                           | ((int32_t) data_ptr[i * 3 + 2] << 16);
-                if (v & 0x00800000) v |= 0xFF000000; // sign-extend
+                if (v & 0x00800000) v |= 0xFF000000;
                 interleaved[i] = (float) v / 8388608.0f;
             }
         } else if (info.bits_per_sample == 32) {
@@ -258,7 +300,7 @@ static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k
             LOGE("Unsupported PCM bit depth: %u", info.bits_per_sample);
             return false;
         }
-    } else if (info.audio_format == 3 && info.bits_per_sample == 32) { // IEEE float
+    } else if (info.audio_format == 3 && info.bits_per_sample == 32) {
         const size_t n = data_size / 4;
         interleaved.resize(n);
         std::memcpy(interleaved.data(), data_ptr, n * sizeof(float));
@@ -267,16 +309,11 @@ static bool load_wav_file(const char* filename, std::vector<float>& pcm_mono_16k
         return false;
     }
 
-    // Downmix stereo/N -> mono
     std::vector<float> mono;
     downmix_to_mono(interleaved, info.num_channels, mono);
 
-    // Resample -> 16 kHz
-    if (info.sample_rate == 16000) {
-        pcm_mono_16k = std::move(mono);
-    } else {
-        resample_linear(mono, (int) info.sample_rate, 16000, pcm_mono_16k);
-    }
+    if (info.sample_rate == 16000) pcm_mono_16k = std::move(mono);
+    else resample_linear(mono, (int) info.sample_rate, 16000, pcm_mono_16k);
     return true;
 }
 

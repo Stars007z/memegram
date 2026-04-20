@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import v1_router
@@ -79,6 +80,16 @@ app = FastAPI(
 )
 
 app.add_middleware(LoggingMiddleware)
+
+# CORS — needed when serving browsers / web frontends. Native mobile clients
+# (Ktor on Android / iOS) ignore CORS, so this is purely for web dev.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(v1_router)
 
