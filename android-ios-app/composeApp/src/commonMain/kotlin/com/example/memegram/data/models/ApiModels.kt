@@ -25,8 +25,6 @@ data class LoginCompleteRequest(
     @SerialName("device_name") val deviceName: String? = null
 )
 
-@Serializable data class LogoutRequest(@SerialName("access_token") val accessToken: String)
-
 @Serializable
 data class AuthResponse(
     @SerialName("user_id") val userId: String,
@@ -43,8 +41,6 @@ data class LoginInitResponse(
     @SerialName("expires_at") val expiresAt: Long,
     @SerialName("device_id") val deviceId: String
 )
-
-@Serializable data class LogoutResponse(val success: Boolean, val message: String)
 
 @Serializable
 data class UserProfileResponse(
@@ -393,4 +389,17 @@ data class UpdateGroupNameRequest(
 @Serializable
 data class UpdateGroupAvatarRequest(
     @SerialName("avatar_media_id") val avatarMediaId: String
+)
+
+// ── Push notifications ───────────────────────────────────────────────
+
+@Serializable
+data class RegisterPushTokenRequest(
+    val platform: String,
+    @SerialName("push_token") val pushToken: String
+)
+
+@Serializable
+data class RegisterPushTokenResponse(
+    val success: Boolean
 )

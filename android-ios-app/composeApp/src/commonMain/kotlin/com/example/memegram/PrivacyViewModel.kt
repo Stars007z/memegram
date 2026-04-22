@@ -6,12 +6,14 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.UpdateSettingsRequest
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.localization.AppStrings
+import com.example.memegram.push.PushTokenProvider
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class PrivacyViewModel(
     private val userRepository: UserRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val pushTokenProvider: PushTokenProvider
 ) : ViewModel() {
 
     private val _profileVisibleTo = MutableStateFlow("everybody")
@@ -71,6 +73,7 @@ class PrivacyViewModel(
             _isLoading.value = true
             userRepository.deleteAccount()
                 .onSuccess {
+                    runCatching { pushTokenProvider.deleteToken() }
                     sessionManager.clear()
                     sessionManager.clearDeviceId()
                     _accountDeleted.value = true

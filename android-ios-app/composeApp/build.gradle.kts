@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.googleServices)
     id("dev.gobley.cargo")  version "0.3.7"
     id("dev.gobley.uniffi") version "0.3.7"
     id("org.jetbrains.kotlin.plugin.atomicfu") version "2.3.20"
@@ -56,6 +57,9 @@ kotlin {
             implementation(libs.androidx.camera.lifecycle)
             implementation(libs.androidx.camera.view)
             implementation(libs.barcode.scanning)
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.messaging)
+            implementation("androidx.lifecycle:lifecycle-process:2.10.0")
         }
 
         commonMain.dependencies {

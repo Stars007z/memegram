@@ -60,16 +60,6 @@ class ApiService(
         return response.body()
     }
 
-    suspend fun logout(body: LogoutRequest): LogoutResponse {
-        val response = client.post("$baseUrl/api/v1/auth/logout") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
-        if (!response.status.isSuccess())
-            throw Exception("Logout: ${response.status.value} — ${response.bodyAsText()}")
-        return response.body()
-    }
-
     suspend fun createInvite(request: CreateInviteRequest): CreateInviteResponse {
         val response = client.post("$baseUrl/api/v1/auth/invite") {
             bearerAuth(token())
@@ -604,4 +594,17 @@ class ApiService(
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
+
+    // ── Push notifications ────────────────────────────────────────────────
+
+    suspend fun registerPushToken(request: RegisterPushTokenRequest): RegisterPushTokenResponse {
+        val response = client.post("$baseUrl/api/v1/notifications/push-token") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        if (!response.status.isSuccess())
+            throw Exception("RegisterPushToken: ${response.status.value} — ${response.bodyAsText()}")
+        return response.body()
+    }
 }

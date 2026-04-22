@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.CommitGroupChangeRequest
 import com.example.memegram.data.models.LeaveConversationRequest
-import com.example.memegram.data.models.LogoutRequest
 import com.example.memegram.data.models.SseEvent
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
@@ -580,29 +579,4 @@ class ChatsViewModel(
     }
 
     fun setSearchQuery(query: String) { _searchQuery.value = query }
-
-    fun logout(onDone: () -> Unit) {
-        viewModelScope.launch {
-            try {
-                val deleted = api.deleteMyKeyPackages()
-                sessionManager.clearPendingKpCleanup()
-                println("MemegramDebug [Logout] Server KPs purged: $deleted")
-            } catch (e: Exception) {
-                sessionManager.markPendingKpCleanup()
-                println("MemegramDebug [Logout] KP purge FAILED (${e.message}) — will retry on next login")
-            }
-
-            try {
-                sessionManager.getAccessToken()?.let { api.logout(LogoutRequest(it)) }
-            } catch (_: Exception) {}
-            finally {
-                pollingJob?.cancel()
-                sseJob?.cancel()
-                blockedUnreadOffset.clear()
-                mlsManager.clearAll()
-                sessionManager.clear()
-                onDone()
-            }
-        }
-    }
 }
