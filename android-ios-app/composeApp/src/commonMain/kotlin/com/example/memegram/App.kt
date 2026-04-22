@@ -70,6 +70,11 @@ import org.koin.compose.viewmodel.koinViewModel
 @Serializable object CreateGroupRoute
 @Serializable data class UserProfileRoute(val userId: String, val username: String)
 @Serializable data class GroupProfileRoute(val conversationId: String, val groupName: String)
+@Serializable data class PhotoViewerRoute(
+    val conversationId: String,
+    val messageId: Int,
+    val chatName: String = "",
+)
 
 // ── Light color scheme ───────────────────────────────────────────────
 private val LightColors = lightColorScheme(
@@ -281,6 +286,14 @@ fun App() {
                             }
                         }
 
+                        val savedStateHandle = backStackEntry.savedStateHandle
+                        val scrollToMessageId by savedStateHandle
+                            .getStateFlow<Int?>("scrollToMessageId", null)
+                            .collectAsState()
+                        val replyToMessageId by savedStateHandle
+                            .getStateFlow<Int?>("replyToMessageId", null)
+                            .collectAsState()
+
                         ChatScreen(
                             topBarColor = topBarColor,
                             chatName = route.chatName,
@@ -299,7 +312,48 @@ fun App() {
                                     }
                                 }
                             },
+                            onPhotoClick = { messageId ->
+                                navController.navigate(
+                                    PhotoViewerRoute(
+                                        conversationId = route.conversationId,
+                                        messageId = messageId,
+                                        chatName = route.chatName,
+                                    )
+                                ) { launchSingleTop = true }
+                            },
+                            scrollToMessageId = scrollToMessageId,
+                            replyToMessageId = replyToMessageId,
+                            onScrollToConsumed = { savedStateHandle["scrollToMessageId"] = null },
+                            onReplyToConsumed = { savedStateHandle["replyToMessageId"] = null },
                             viewModel = viewModel
+                        )
+                    }
+                    composable<PhotoViewerRoute> { backStackEntry ->
+                        val route = backStackEntry.toRoute<PhotoViewerRoute>()
+                        val parentEntry = remember(backStackEntry) {
+                            navController.previousBackStackEntry ?: backStackEntry
+                        }
+                        val viewModel = koinViewModel<ChatViewModel>(
+                            key = route.conversationId,
+                            viewModelStoreOwner = parentEntry,
+                        )
+                        PhotoViewerScreen(
+                            initialMessageId = route.messageId,
+                            chatName = route.chatName,
+                            viewModel = viewModel,
+                            onBack = { navController.popBackStack() },
+                            onShowInChat = { msgId ->
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("scrollToMessageId", msgId)
+                                navController.popBackStack()
+                            },
+                            onReply = { msgId ->
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("replyToMessageId", msgId)
+                                navController.popBackStack()
+                            },
                         )
                     }
                     composable<AppearanceRoute> {

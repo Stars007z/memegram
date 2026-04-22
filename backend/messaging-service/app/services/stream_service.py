@@ -5,7 +5,24 @@ from typing import Any, AsyncIterator
 
 import redis.asyncio as aioredis
 
+from app.logging_config import get_logger
 from app.services.interfaces.stream_service import IStreamService
+
+logger = get_logger(__name__)
+
+# Event types that should also be persisted to the notifications stream so the
+# notifications-service can deliver pushes to offline / background clients.
+_NOTIFICATION_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "new_message",
+        "message_edited",
+        "member_added",
+        "member_kicked",
+        "conversation_deleted",
+    }
+)
+_NOTIFICATIONS_STREAM = "notifications:events"
+_NOTIFICATIONS_STREAM_MAXLEN = 100_000
 
 
 class StreamServiceImpl(IStreamService):
@@ -50,3 +67,20 @@ class StreamServiceImpl(IStreamService):
         event["conversation_id"] = str(conversation_id)
         payload = json.dumps(event)
         await self._redis.publish(channel, payload)
+
+        event_type = event.get("event_type", "")
+        if event_type in _NOTIFICATION_EVENT_TYPES:
+            try:
+                await self._redis.xadd(
+                    _NOTIFICATIONS_STREAM,
+                    {"type": event_type, "payload": payload},
+                    maxlen=_NOTIFICATIONS_STREAM_MAXLEN,
+                    approximate=True,
+                )
+            except Exception as exc:  # pragma: no cover - best-effort fan-out
+                logger.warning(
+                    "stream.notifications_xadd_failed",
+                    event_type=event_type,
+                    conversation_id=str(conversation_id),
+                    error=str(exc),
+                )
