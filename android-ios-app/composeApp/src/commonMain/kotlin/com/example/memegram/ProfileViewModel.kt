@@ -39,14 +39,25 @@ class ProfileViewModel(
         .map { it?.id ?: "" }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
-    private val _avatarBytes = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("profile_avatar")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
+    private fun isDecodableImage(bytes: ByteArray): Boolean =
+        runCatching { bytes.decodeToImageBitmap() }.isSuccess
+
+    private fun loadValidatedImage(key: String): ByteArray? {
+        val raw = settings.getStringOrNull(key) ?: return null
+        val bytes = runCatching { Base64.decode(raw) }.getOrNull()
+        if (bytes == null || bytes.isEmpty() || !isDecodableImage(bytes)) {
+            println("MemegramDebug [ProfileVM] $key invalid, clearing cached blob")
+            settings.remove(key)
+            settings.remove(key + "_media_id")
+            return null
+        }
+        return bytes
+    }
+
+    private val _avatarBytes = MutableStateFlow<ByteArray?>(loadValidatedImage("profile_avatar"))
     val avatarBytes: StateFlow<ByteArray?> = _avatarBytes.asStateFlow()
 
-    private val _coverBytes = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("profile_cover")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
+    private val _coverBytes = MutableStateFlow<ByteArray?>(loadValidatedImage("profile_cover"))
     val coverBytes: StateFlow<ByteArray?> = _coverBytes.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -66,10 +77,8 @@ class ProfileViewModel(
         viewModelScope.launch {
             _isLoading.value = true
 
-            _avatarBytes.value = settings.getStringOrNull("profile_avatar")
-                ?.let { runCatching { Base64.decode(it) }.getOrNull() }
-            _coverBytes.value = settings.getStringOrNull("profile_cover")
-                ?.let { runCatching { Base64.decode(it) }.getOrNull() }
+            _avatarBytes.value = loadValidatedImage("profile_avatar")
+            _coverBytes.value = loadValidatedImage("profile_cover")
 
             userRepository.loadProfile()
                 .onSuccess { profile ->
@@ -93,6 +102,10 @@ class ProfileViewModel(
         try {
             val downloadInfo = api.getItemDownloadUrl(mediaId)
             val bytes = api.downloadBytesFromUrl(downloadInfo.downloadUrl)
+            if (!isDecodableImage(bytes)) {
+                println("MemegramDebug [ProfileVM] fetched $type bytes are not decodable (size=${bytes.size}), skipping cache")
+                return
+            }
             when (type) {
                 "avatar" -> {
                     _avatarBytes.value = bytes
@@ -128,6 +141,10 @@ class ProfileViewModel(
 
     fun updateAvatar(bytes: ByteArray) {
         viewModelScope.launch {
+            if (!isDecodableImage(bytes)) {
+                _error.value = "Selected avatar is not a valid image"
+                return@launch
+            }
             _isLoading.value = true
             try {
                 val mediaId = uploadImageToItemStorage(bytes, "avatar", "image/jpeg")
@@ -146,6 +163,10 @@ class ProfileViewModel(
 
     fun updateCover(bytes: ByteArray) {
         viewModelScope.launch {
+            if (!isDecodableImage(bytes)) {
+                _error.value = "Selected cover is not a valid image"
+                return@launch
+            }
             _isLoading.value = true
             try {
                 val mediaId = uploadImageToItemStorage(bytes, "profile_background", "image/jpeg")

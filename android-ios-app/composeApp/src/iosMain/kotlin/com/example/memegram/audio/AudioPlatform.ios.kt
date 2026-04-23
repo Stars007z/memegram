@@ -3,6 +3,7 @@ package com.example.memegram.audio
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlin.math.pow
 import platform.AVFAudio.*
 import platform.CoreAudioTypes.kAudioFormatMPEG4AAC
 import platform.Foundation.*
@@ -34,6 +35,7 @@ class AudioRecorderIOS : AudioRecorder {
         val settings = mapOf<Any?, Any>(AVFormatIDKey to kAudioFormatMPEG4AAC)
 
         recorder = AVAudioRecorder(recordUrl!!, settings, null)
+        recorder?.meteringEnabled = true
         recorder?.record()
         startTime = kotlin.time.Clock.System.now().toEpochMilliseconds()
     }
@@ -53,27 +55,28 @@ class AudioRecorderIOS : AudioRecorder {
     }
 
     override fun pauseRecording() {
-        // TODO: implement pause/resume on iOS
         recorder?.pause()
     }
 
     override fun resumeRecording() {
-        // TODO: implement pause/resume on iOS
         recorder?.record()
     }
 
     override fun getMaxAmplitude(): Int {
-        // TODO: implement amplitude metering on iOS (updateMeters / averagePowerForChannel)
-        return 0
+        val r = recorder ?: return 0
+        r.updateMeters()
+        val db = r.averagePowerForChannel(0u)
+        if (db <= -160.0f) return 0
+        val linear = 10.0.pow(db.toDouble() / 20.0)
+        return (linear * 32767.0).toInt().coerceIn(0, 32767)
     }
 
     override fun hasPermission(): Boolean {
-        // TODO: implement permission check via AVAudioSession.recordPermission
-        return true
+        return AVAudioSession.sharedInstance().recordPermission == AVAudioSessionRecordPermissionGranted
     }
 
     override fun requestPermission() {
-        // TODO: implement AVAudioSession.requestRecordPermission
+        AVAudioSession.sharedInstance().requestRecordPermission { _ -> }
     }
 
     override fun cancelRecording() {

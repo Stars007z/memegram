@@ -28,7 +28,6 @@ class ApiService(
         header("Pragma", "no-cache")
         header("Expires", "0")
     }
-// ── Auth ──────────────────────────────────────────────────────────────────
 
     suspend fun register(body: RegisterRequest): AuthResponse {
         val response = client.post("$baseUrl/api/v1/auth/register") {
@@ -70,8 +69,6 @@ class ApiService(
             throw Exception("CreateInvite: ${response.status.value} — ${response.bodyAsText()}")
         return response.body()
     }
-
-// ── User ──────────────────────────────────────────────────────────────────
 
     suspend fun getMe(): UserProfileResponse =
         client.get("$baseUrl/api/v1/user/me") {
@@ -116,8 +113,6 @@ class ApiService(
             bearerAuth(token())
             noCache()
         }.body()
-
-// ── Contacts ──────────────────────────────────────────────────────────────
 
     suspend fun getContacts(limit: Int = 50, offset: Int = 0): ContactsListResponse =
         client.get("$baseUrl/api/v1/contacts") {
@@ -175,8 +170,6 @@ class ApiService(
 
     suspend fun unblockUser(blockedUserId: String): UnblockUserResponse =
         client.delete("$baseUrl/api/v1/contacts/blocked/$blockedUserId") { bearerAuth(token()) }.body()
-
-// ── Messaging ─────────────────────────────────────────────────────────────
 
     suspend fun getConversations(limit: Int = 50, cursor: String = ""): GetConversationsResponse =
         client.get("$baseUrl/api/v1/messaging/conversations") {
@@ -314,7 +307,7 @@ class ApiService(
                         }
                     }
 
-                    line.startsWith(":") -> { /* keep-alive, ignore */ }
+                    line.startsWith(":") -> { }
 
                     else -> eventBuffer.appendLine(line)
                 }
@@ -447,8 +440,6 @@ class ApiService(
         return response.body()
     }
 
-// ── Media ─────────────────────────────────────────────────────────────────
-
     suspend fun initiateMediaUpload(
         request: InitiateMediaUploadRequest
     ): InitiateMediaUploadResponse {
@@ -490,7 +481,7 @@ class ApiService(
         }
         if (!response.status.isSuccess())
             throw Exception("downloadBytes: ${response.status.value}")
-        return response.body()
+        return response.readRawBytes()
     }
 
     suspend fun getMediaDownloadUrl(mediaId: String): GetMediaDownloadUrlResponse =
@@ -498,8 +489,6 @@ class ApiService(
             bearerAuth(token())
             noCache()
         }.body<GetMediaDownloadUrlResponse>()
-
-// ── Item Storage ──────────────────────────────────────────────────────────
 
     suspend fun initiateItemUpload(request: InitiateItemUploadRequest): InitiateItemUploadResponse {
         val response = client.post("$baseUrl/api/v1/item-storage/upload/initiate") {
@@ -539,8 +528,6 @@ class ApiService(
             bearerAuth(token())
             noCache()
         }.body()
-
-// ── Devices ────────────────────────────────────────────────────
 
     suspend fun submitDeviceData(
         registrationId: String,
@@ -594,8 +581,6 @@ class ApiService(
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
-
-    // ── Push notifications ────────────────────────────────────────────────
 
     suspend fun registerPushToken(request: RegisterPushTokenRequest): RegisterPushTokenResponse {
         val response = client.post("$baseUrl/api/v1/notifications/push-token") {
