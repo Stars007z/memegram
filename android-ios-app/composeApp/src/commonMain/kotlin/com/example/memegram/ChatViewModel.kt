@@ -153,6 +153,15 @@ class ChatViewModel(
         const val INLINE_BLOB_LIMIT_BYTES: Int = 2 * 1024 * 1024
     }
 
+    /**
+     * Конвертирует серверный `created_at` (Unix-секунды UTC) в миллисекунды,
+     * как мы храним локально. Если сервер вернул 0 (старый ответ без поля) —
+     * оставляем локальный fallback. Серверное время — источник истины
+     * для timestamp'а сообщений.
+     */
+    private fun serverTimestampMs(createdAtSeconds: Long, fallback: Long): Long =
+        if (createdAtSeconds > 0L) createdAtSeconds * 1000L else fallback
+
     enum class RecordState { IDLE, HOLDING, LOCKED, PAUSED }
     private val _recordState = MutableStateFlow(RecordState.IDLE)
     val recordState: StateFlow<RecordState> = _recordState.asStateFlow()
@@ -346,8 +355,6 @@ class ChatViewModel(
         }
     }
 
-    // ───────────────────────── SSE ─────────────────────────
-
     private fun subscribeToEvents(conversationId: String) {
         sseJob = viewModelScope.launch {
             var backoffMs = 1_000L
@@ -447,8 +454,6 @@ class ChatViewModel(
         }
     }
 
-    // ───────────────────────── System messages ────────────────────────────
-
     private suspend fun insertSystemMessage(convId: String, text: String) {
         val systemMsg = Message(
             id = text.hashCode() + Clock.System.now().toEpochMilliseconds().toInt(),
@@ -461,8 +466,6 @@ class ChatViewModel(
         )
         chatRepository.saveMessage(systemMsg, convId)
     }
-
-    // ───────────────────────── Polling fallback ─────────────────────────
 
     private fun startMessagePolling(conversationId: String) {
         pollingJob?.cancel()
@@ -555,8 +558,6 @@ class ChatViewModel(
         } catch (_: Exception) { }
     }
 
-    // ───────────────────────── General logic of decryption ─────────────────────────
-
     private suspend fun decryptAndSave(
         convId: String,
         msgId: String,
@@ -631,8 +632,6 @@ class ChatViewModel(
             }
         }
     }
-
-    // ───────────────────────── MLS sync ─────────────────────────
 
     private suspend fun findWelcomeWithRetry(
         conversationId: String,
@@ -712,7 +711,6 @@ class ChatViewModel(
         return true
     }
 
-    // ───────────────────────── Input & Send ─────────────────────────
     fun updateInput(text: String) {
         _inputText.value = text
         sendTypingIndicator()
@@ -784,7 +782,11 @@ class ChatViewModel(
                     replyToMessageId = replyTo?.serverId
                 )
             )
-            val sentMsg = tempMsg.copy(serverId = response.messageId, status = MessageStatus.SENT)
+            val sentMsg = tempMsg.copy(
+                serverId  = response.messageId,
+                status    = MessageStatus.SENT,
+                timestamp = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp)
+            )
             chatRepository.saveMessage(sentMsg, convId)
             if (replyTo != null && replyTo.serverId.isNotBlank()) {
                 _replyContext.update { it + (response.messageId to replyTo.serverId) }
@@ -862,6 +864,7 @@ class ChatViewModel(
                 tempMsg.copy(
                     serverId           = response.messageId,
                     status             = MessageStatus.SENT,
+                    timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                     text               = caption,
                     mediaId            = initResp.mediaId,
                     encryptionMetadata = encrypted.encryptionMetadataB64
@@ -963,6 +966,7 @@ class ChatViewModel(
                 tempMsg.copy(
                     serverId           = response.messageId,
                     status             = MessageStatus.SENT,
+                    timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                     text               = caption,
                     mediaId            = initResp.mediaId,
                     encryptionMetadata = encrypted.encryptionMetadataB64
@@ -1101,6 +1105,7 @@ class ChatViewModel(
                     tempMsg.copy(
                         serverId           = response.messageId,
                         status             = MessageStatus.SENT,
+                        timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                         mediaId            = initResp.mediaId,
                         encryptionMetadata = encrypted.encryptionMetadataB64,
                         text               = "${recordResult.durationMs}|${recordResult.waveform}"
@@ -1253,7 +1258,6 @@ class ChatViewModel(
     fun setReplyTo(message: Message?) { _replyingTo.value = message }
     fun clearReply() { _replyingTo.value = null }
 
-
     fun translateMessage(message: Message, forcedSourceLang: String? = null) {
         viewModelScope.launch {
             try {
@@ -1358,8 +1362,6 @@ class ChatViewModel(
 
     private fun decodeBase64Utf8(s: String): String =
         kotlin.io.encoding.Base64.decode(s).decodeToString()
-
-    // ───────────────────────── Block / Unblock ─────────────────────────
 
     fun blockPeer() {
         val peerId = peerUserId ?: return

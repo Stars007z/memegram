@@ -29,7 +29,6 @@ sealed class SessionState {
     data class Failed(val message: String) : SessionState()
 }
 
-
 class SessionRefresher(
     private val api: ApiService,
     private val sessionManager: SessionManager,
@@ -61,11 +60,16 @@ class SessionRefresher(
 
     @OptIn(ExperimentalEncodingApi::class)
     private suspend fun doRefresh() {
-        if (!keyManager.hasKeyPair() || !sessionManager.isLoggedIn) {
+        val hasKp = keyManager.hasKeyPair()
+        val isLogged = sessionManager.isLoggedIn
+        println("MemegramDebug [SessionRefresher] doRefresh: hasKeyPair=$hasKp, isLoggedIn=$isLogged")
+        if (!hasKp || !isLogged) {
             _state.value = SessionState.NoCredentials
             return
         }
-        if (!sessionManager.isTokenExpired) {
+        val expired = sessionManager.isTokenExpired
+        println("MemegramDebug [SessionRefresher] tokenExpired=$expired")
+        if (!expired) {
             _state.value = SessionState.Authenticated
             return
         }

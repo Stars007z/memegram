@@ -1,5 +1,4 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -93,7 +92,9 @@ kotlin {
             implementation(libs.ktor.client.darwin)
             implementation(libs.native.driver)
             implementation(libs.cryptography.core)
-            implementation(libs.cryptography.provider.apple)
+            // CryptoKit provider supports AES-GCM on Apple platforms
+            // (Apple/CommonCrypto provider only supports CBC/CTR/ECB).
+            implementation(libs.cryptography.provider.cryptokit)
         }
 
         commonTest.dependencies {
@@ -153,102 +154,5 @@ sqldelight {
     }
 }
 
-tasks.register("pushModelsToDevice") {
-    description = "Push NLLB-200 translation model to connected devices via adb"
-    group = "memegram"
-
-    val modelsRootPath = file("${rootProject.projectDir}/../exported_models").absolutePath
-    val localPropsPath = rootProject.file("local.properties").absolutePath
-    val appId = "com.example.memegram"
-    val internalBase = "files/translation_models"
-    val modelDirName = "nllb-200-distilled-600M"
-
-    doLast {
-        val modelDir = File(modelsRootPath, modelDirName)
-        if (!modelDir.isDirectory) {
-            logger.lifecycle("pushModels: exported_models/$modelDirName/ not found -- skip")
-            return@doLast
-        }
-
-        val localProps = File(localPropsPath)
-        val sdkDir: String? = if (localProps.exists()) {
-            Properties().apply { load(localProps.inputStream()) }
-                .getProperty("sdk.dir")
-        } else {
-            System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
-        }
-        if (sdkDir == null) {
-            logger.warn("pushModels: cannot locate Android SDK")
-            return@doLast
-        }
-
-        val isWin = System.getProperty("os.name").lowercase().contains("win")
-        val adb = File(sdkDir, "platform-tools${File.separator}adb${if (isWin) ".exe" else ""}")
-        if (!adb.isFile) {
-            logger.warn("pushModels: adb not found at ${adb.absolutePath}")
-            return@doLast
-        }
-
-        fun runAdb(vararg args: String): Pair<String, Int> {
-            val proc = ProcessBuilder(adb.absolutePath, *args)
-                .redirectErrorStream(true)
-                .start()
-            val output = proc.inputStream.bufferedReader().readText()
-            val exitCode = proc.waitFor()
-            return output to exitCode
-        }
-
-        val (devicesOutput, _) = runAdb("devices")
-        val devices = devicesOutput.lines()
-            .filter { it.endsWith("\tdevice") }
-            .map { it.split("\t").first() }
-
-        if (devices.isEmpty()) {
-            logger.lifecycle("pushModels: no connected devices -- skip")
-            return@doLast
-        }
-
-        val remoteDirRel = "$internalBase/$modelDirName"
-        val files = modelDir.listFiles() ?: return@doLast
-
-        for (device in devices) {
-            runAdb("-s", device, "shell", "run-as", appId, "mkdir", internalBase.split("/").first())
-            runAdb("-s", device, "shell", "run-as", appId, "mkdir", internalBase)
-            runAdb("-s", device, "shell", "run-as", appId, "mkdir", remoteDirRel)
-
-            for (f in files) {
-                if (!f.isFile) continue
-                val tmpPath = "/data/local/tmp/${f.name}"
-                logger.lifecycle("  pushing $modelDirName/${f.name} (${f.length() / 1024 / 1024}MB) -> $device")
-                val (pushOut, pushExit) = runAdb("-s", device, "push", f.absolutePath, tmpPath)
-                if (pushExit != 0) {
-                    logger.warn("  WARN: adb push failed: ${pushOut.trim()}")
-                    continue
-                }
-                val (cpOut, cpExit) = runAdb(
-                    "-s", device, "shell",
-                    "run-as", appId, "cp", tmpPath, "$remoteDirRel/${f.name}"
-                )
-                if (cpExit != 0) {
-                    val (catOut, catExit) = runAdb(
-                        "-s", device, "shell",
-                        "run-as", appId, "sh", "-c",
-                        "cat $tmpPath > $remoteDirRel/${f.name}"
-                    )
-                    if (catExit != 0) {
-                        logger.warn("  WARN: copy failed: ${catOut.trim()}")
-                    }
-                }
-                runAdb("-s", device, "shell", "rm", "-f", tmpPath)
-            }
-            logger.lifecycle("  $device: done")
-        }
-        logger.lifecycle("pushModels: done")
-    }
-}
-
-afterEvaluate {
-    tasks.named("installDebug") {
-        finalizedBy("pushModelsToDevice")
-    }
-}
+// NLLB-200 translation model is downloaded at runtime from Cloudflare R2
+// (https://models.memegram.win) — no local push to device required.

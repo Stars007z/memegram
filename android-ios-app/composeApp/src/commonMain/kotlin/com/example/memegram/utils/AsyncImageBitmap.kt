@@ -7,19 +7,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.decodeToImageBitmap
+import com.example.memegram.decodeToImageBitmap
 import com.example.memegram.decodeToImageBitmapDownsampled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-
 object ImageBitmapCache {
-    private const val MAX_ENTRIES = 64
-    private val cache = LinkedHashMap<String, ImageBitmap>(16, 0.75f)
+    private const val MAX_ENTRIES = 256
+    private val cache = LinkedHashMap<String, ImageBitmap>()
 
-    fun get(key: String): ImageBitmap? = cache[key]
+    fun get(key: String): ImageBitmap? {
+        val v = cache.remove(key) ?: return null
+        cache[key] = v
+        return v
+    }
 
     fun put(key: String, bitmap: ImageBitmap) {
+        cache.remove(key)
         cache[key] = bitmap
         while (cache.size > MAX_ENTRIES) {
             val firstKey = cache.keys.firstOrNull() ?: break

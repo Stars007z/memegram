@@ -51,8 +51,10 @@ fun AvatarImage(
         )
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        if (bytes != null) {
-            val bitmap = remember(bytes) { bytes!!.decodeToImageBitmap() }
+        val bitmap = remember(bytes) {
+            bytes?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+        }
+        if (bitmap != null) {
             Image(
                 bitmap = bitmap,
                 contentDescription = null,

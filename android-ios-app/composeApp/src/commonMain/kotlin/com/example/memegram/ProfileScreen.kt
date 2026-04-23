@@ -22,8 +22,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,9 +29,6 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
-import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
-import io.github.vinceglb.filekit.core.PickerMode
-import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.launch
 
 private enum class CropTarget { AVATAR, COVER }
@@ -59,27 +54,31 @@ fun ProfileScreen(
     var usernameInput by remember(username) { mutableStateOf(username) }
     var bioInput      by remember(bio)      { mutableStateOf(bio) }
     val scope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
     var keyCopied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(keyCopied) {
+        if (keyCopied) {
+            kotlinx.coroutines.delay(2000)
+            keyCopied = false
+        }
+    }
 
     var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
     var cropTarget by remember { mutableStateOf<CropTarget?>(null) }
 
-    val avatarPicker = rememberFilePickerLauncher(
-        type = PickerType.Image, mode = PickerMode.Single
-    ) { file -> file?.let { scope.launch {
-        val bytes = it.readBytes()
-        cropBytes = bytes
-        cropTarget = CropTarget.AVATAR
-    } } }
+    val avatarPicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { bytes ->
+            cropBytes = bytes
+            cropTarget = CropTarget.AVATAR
+        }
+    }
 
-    val coverPicker = rememberFilePickerLauncher(
-        type = PickerType.Image, mode = PickerMode.Single
-    ) { file -> file?.let { scope.launch {
-        val bytes = it.readBytes()
-        cropBytes = bytes
-        cropTarget = CropTarget.COVER
-    } } }
+    val coverPicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { bytes ->
+            cropBytes = bytes
+            cropTarget = CropTarget.COVER
+        }
+    }
 
     error?.let { msg ->
         AlertDialog(
@@ -144,7 +143,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(2.5f)
-                    .clickable { coverPicker.launch() },
+                    .clickable { coverPicker() },
                 contentAlignment = Alignment.BottomEnd
             ) {
                 if (coverBytes != null) {
@@ -186,7 +185,7 @@ fun ProfileScreen(
                         .size(80.sdp)
                         .clip(CircleShape)
                         .border(3.sdp, MaterialTheme.colorScheme.background, CircleShape)
-                        .clickable { avatarPicker.launch() },
+                        .clickable { avatarPicker() },
                     contentAlignment = Alignment.Center
                 ) {
                     if (avatarBytes != null) {
@@ -268,7 +267,7 @@ fun ProfileScreen(
                 if (myPublicKey.isNotBlank()) {
                     OutlinedButton(
                         onClick = {
-                            clipboardManager.setText(AnnotatedString(myPublicKey))
+                            copyTextToClipboard(myPublicKey)
                             keyCopied = true
                         },
                         modifier = Modifier.fillMaxWidth(),

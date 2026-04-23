@@ -15,10 +15,13 @@ import java.io.InputStream
 import androidx.core.net.toUri
 
 actual suspend fun AttachItem.readUploadBytes(): ByteArray = withContext(Dispatchers.IO) {
+    if (this@readUploadBytes is AttachItem.FromBytes) return@withContext bytes
+
     val ctx = AppContextHolder.context
     val (uri, mime) = when (this@readUploadBytes) {
         is AttachItem.FromPicker  -> file.uri to (ctx.contentResolver.getType(file.uri) ?: "")
         is AttachItem.FromGallery -> thumb.id.toUri() to (ctx.contentResolver.getType(thumb.id.toUri()) ?: "")
+        is AttachItem.FromBytes   -> error("unreachable")
     }
 
     val raw: ByteArray = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -80,4 +83,6 @@ actual fun AttachItem.guessMimeType(): String = when (this) {
         val ctx = AppContextHolder.context
         ctx.contentResolver.getType(thumb.id.toUri()) ?: "image/jpeg"
     }
+
+    is AttachItem.FromBytes -> mime
 }

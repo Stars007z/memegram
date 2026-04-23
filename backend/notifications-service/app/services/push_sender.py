@@ -86,21 +86,31 @@ class FcmSender(IPushSender):
         try:
             from firebase_admin import messaging as fcm_messaging
 
+            def _s(v: Any) -> str:
+                if v is None:
+                    return ""
+                if isinstance(v, bool):
+                    return "true" if v else "false"
+                return str(v)
+
+            raw_data = {
+                "event_type": _s(payload.data.get("event_type", "")),
+                "conversation_id": _s(payload.data.get("conversation_id", "")),
+                "conversation_type": _s(payload.data.get("conversation_type", "")),
+                "conversation_name": _s(payload.data.get("conversation_name", "")),
+                "sender_user_id": _s(payload.data.get("sender_user_id", "")),
+                "sender_name": _s(payload.data.get("sender_name", "")),
+                "msg_type": _s(payload.data.get("message_type", "")),
+                "avatar_url": _s(payload.avatar_url or ""),
+                "timestamp": _s(payload.data.get("timestamp", "")),
+                "title": _s(payload.title),
+                "body": _s(payload.body),
+            }
+            data_payload = {k: (v if isinstance(v, str) else str(v)) for k, v in raw_data.items()}
+
             message = fcm_messaging.Message(
                 token=payload.token,
-                data={
-                    "event_type": payload.data.get("event_type", ""),
-                    "conversation_id": payload.data.get("conversation_id", ""),
-                    "conversation_type": payload.data.get("conversation_type", ""),
-                    "conversation_name": payload.data.get("conversation_name", ""),
-                    "sender_user_id": payload.data.get("sender_user_id", ""),
-                    "sender_name": payload.data.get("sender_name", ""),
-                    "message_type": payload.data.get("message_type", ""),
-                    "avatar_url": payload.avatar_url or "",
-                    "timestamp": payload.data.get("timestamp", ""),
-                    "title": payload.title,
-                    "body": payload.body,
-                },
+                data=data_payload,
                 android=fcm_messaging.AndroidConfig(
                     priority="high",
                     ttl=86400,
@@ -113,6 +123,12 @@ class FcmSender(IPushSender):
 
         except Exception as e:
             error_str = str(e).lower()
+            logger.warning(
+                "fcm.send_exception",
+                error_class=type(e).__name__,
+                error=str(e)[:500],
+                token_prefix=payload.token[:20],
+            )
             if "unregistered" in error_str or "not-registered" in error_str:
                 return PushResult(success=False, error_type=PushErrorType.PERMANENT_TOKEN, error_code="UNREGISTERED")
             if "invalid" in error_str and "argument" in error_str:

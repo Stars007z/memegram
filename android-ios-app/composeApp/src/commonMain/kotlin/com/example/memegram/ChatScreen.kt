@@ -206,11 +206,15 @@ fun ChatScreen(
         }
     }
 
-    val imagePicker = rememberFilePickerLauncher(
-        type = PickerType.Image,
-        mode = PickerMode.Multiple()
-    ) { files ->
-        files?.forEach { attachments = attachments + AttachItem.FromPicker(it) }
+    val imagePicker = com.example.memegram.picker.rememberImagePicker(
+        multiple = true,
+    ) { byteList ->
+        if (byteList.isEmpty()) return@rememberImagePicker
+        val stamp = kotlin.random.Random.Default.nextInt().toUInt().toString(16)
+        val newAttachments = byteList.mapIndexed { idx, bytes ->
+            AttachItem.FromBytes(bytes = bytes, name = "IMG_${stamp}_$idx.jpg", mime = "image/jpeg")
+        }
+        attachments = attachments + newAttachments
     }
 
     val filePicker = rememberFilePickerLauncher(
@@ -302,7 +306,6 @@ fun ChatScreen(
         keyboardController?.show()
     }
 
-
     val errorMessage by viewModel.error.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(errorMessage) {
@@ -354,7 +357,7 @@ fun ChatScreen(
                                 Text(s.file, fontSize = 13.ssp)
                             }
                             OutlinedButton(
-                                onClick        = { imagePicker.launch(); showAttachSheet = false },
+                                onClick        = { imagePicker(); showAttachSheet = false },
                                 contentPadding = PaddingValues(horizontal = 12.sdp, vertical = 6.sdp)
                             ) {
                                 Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.sdp))
@@ -384,7 +387,7 @@ fun ChatScreen(
                                     Spacer(Modifier.height(8.sdp))
                                     Text(s.noGalleryAccess, color = Color.Gray)
                                     Spacer(Modifier.height(8.sdp))
-                                    Button(onClick = { imagePicker.launch(); showAttachSheet = false }) {
+                                    Button(onClick = { imagePicker(); showAttachSheet = false }) {
                                         Text(s.openGallery)
                                     }
                                 }
@@ -1452,7 +1455,9 @@ fun GalleryGridItem(
         thumb.id
     ) {
         if (value == null) {
-            value = galleryLoader.loadThumbBytes(thumb.id)
+            value = withContext(Dispatchers.Default) {
+                runCatching { galleryLoader.loadThumbBytes(thumb.id) }.getOrNull()
+            }
         }
     }
     val bitmap = rememberAsyncImageBitmap(
@@ -1515,6 +1520,7 @@ fun AttachmentThumbnail(
                     is AttachItem.FromGallery ->
                         if (item.thumb.bytes.isNotEmpty()) item.thumb.bytes
                         else galleryLoader.loadThumbBytes(item.thumb.id)
+                    is AttachItem.FromBytes   -> item.bytes
                 }
             }
         }.getOrNull()

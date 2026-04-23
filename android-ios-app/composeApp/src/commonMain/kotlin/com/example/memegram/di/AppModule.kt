@@ -54,7 +54,12 @@ val appModule = module {
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
     single { BlockedUsersCache(get(), get()) }
-    single<TranslationService> { createTranslationService() }
+    single<TranslationService> {
+        createTranslationService(
+            httpClient = get(),
+            modelBaseUrl = "https://models.memegram.win/memegram-models",
+        )
+    }
     single { TranslationSettings(get()) }
 
     single<PushTokenProvider> { createPushTokenProvider() }
