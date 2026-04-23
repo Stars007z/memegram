@@ -2,12 +2,12 @@ package com.example.memegram.mls
 
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.AES
+import dev.whyoleg.cryptography.providers.cryptokit.CryptoKit
 import kotlinx.coroutines.runBlocking
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-@OptIn(ExperimentalEncodingApi::class)
-private val provider: CryptographyProvider by lazy { CryptographyProvider.Default }
+private val provider: CryptographyProvider by lazy { CryptographyProvider.CryptoKit }
 
 @OptIn(ExperimentalEncodingApi::class)
 actual fun encryptMediaBytes(plainBytes: ByteArray): MediaEncryptResult = runBlocking {

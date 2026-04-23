@@ -18,56 +18,88 @@ class IOSKeyManager : KeyManager {
     private val KEY_PUBLIC = "identity_public_key"
     private val SERVICE = "com.example.memegram.keys"
 
-    private fun saveToKeychain(account: String, value: String) {
-        val data = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return
+    /**
+     * Builds a CFDictionary by adding entries one-by-one to a CFMutableDictionary.
+     * Caller is responsible for releasing the returned ref.
+     */
+    private fun buildQuery(entries: List<Pair<CFStringRef?, CFTypeRef?>>): CFMutableDictionaryRef {
+        val dict = CFDictionaryCreateMutable(
+            null, entries.size.convert(),
+            kCFTypeDictionaryKeyCallBacks.ptr,
+            kCFTypeDictionaryValueCallBacks.ptr
+        )!!
+        for ((k, v) in entries) {
+            CFDictionarySetValue(dict, k, v)
+        }
+        return dict
+    }
 
-        val deleteQuery = mapOf(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to account
-        )
-        val deleteRef = CFBridgingRetain(deleteQuery) as CFDictionaryRef?
-        SecItemDelete(deleteRef)
-        CFBridgingRelease(deleteRef)
+    private fun saveToKeychain(account: String, value: String): Boolean {
+        val nsValue = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding)
+        if (nsValue == null) {
+            println("MemegramDebug [KeyManager.ios] saveToKeychain($account): UTF8 encode failed")
+            return false
+        }
+        val accountCF = CFBridgingRetain(account) as CFStringRef?
+        val serviceCF = CFBridgingRetain(SERVICE) as CFStringRef?
+        val dataCF = CFBridgingRetain(nsValue) as CFDataRef?
+        try {
+            val deleteQuery = buildQuery(listOf(
+                kSecClass to kSecClassGenericPassword,
+                kSecAttrService to serviceCF,
+                kSecAttrAccount to accountCF,
+            ))
+            val deleteStatus = SecItemDelete(deleteQuery)
+            CFRelease(deleteQuery)
+            println("MemegramDebug [KeyManager.ios] SecItemDelete($account) status=$deleteStatus")
 
-        val insertQuery = mapOf(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to account,
-            kSecValueData to data,
-            kSecAttrAccessible to kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        )
-        val insertRef = CFBridgingRetain(insertQuery) as CFDictionaryRef?
-        SecItemAdd(insertRef, null)
-        CFBridgingRelease(insertRef)
+            val insertQuery = buildQuery(listOf(
+                kSecClass to kSecClassGenericPassword,
+                kSecAttrService to serviceCF,
+                kSecAttrAccount to accountCF,
+                kSecValueData to dataCF,
+                kSecAttrAccessible to kSecAttrAccessibleAfterFirstUnlock,
+            ))
+            val addStatus = SecItemAdd(insertQuery, null)
+            CFRelease(insertQuery)
+            println("MemegramDebug [KeyManager.ios] SecItemAdd($account) status=$addStatus")
+            return addStatus == errSecSuccess
+        } finally {
+            CFBridgingRelease(accountCF)
+            CFBridgingRelease(serviceCF)
+            CFBridgingRelease(dataCF)
+        }
     }
 
     private fun getFromKeychain(account: String): String? {
-        val query = mapOf(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to account,
-            kSecReturnData to true,
-            kSecMatchLimit to kSecMatchLimitOne
-        )
-
-        val queryRef = CFBridgingRetain(query) as CFDictionaryRef?
-        var resultString: String? = null
-
-        memScoped {
-            val resultPtr = alloc<CFTypeRefVar>()
-            val status = SecItemCopyMatching(queryRef, resultPtr.ptr)
-
-            if (status == errSecSuccess) {
-                val dataRef = resultPtr.value
-                if (dataRef != null) {
-                    val nsData = CFBridgingRelease(dataRef) as NSData
-                    resultString = NSString.create(data = nsData, encoding = NSUTF8StringEncoding)?.toString()
+        val accountCF = CFBridgingRetain(account) as CFStringRef?
+        val serviceCF = CFBridgingRetain(SERVICE) as CFStringRef?
+        try {
+            val query = buildQuery(listOf(
+                kSecClass to kSecClassGenericPassword,
+                kSecAttrService to serviceCF,
+                kSecAttrAccount to accountCF,
+                kSecReturnData to kCFBooleanTrue,
+                kSecMatchLimit to kSecMatchLimitOne,
+            ))
+            return memScoped {
+                val resultPtr = alloc<CFTypeRefVar>()
+                val status = SecItemCopyMatching(query, resultPtr.ptr)
+                CFRelease(query)
+                if (status != errSecSuccess) {
+                    if (status != errSecItemNotFound) {
+                        println("MemegramDebug [KeyManager.ios] SecItemCopyMatching($account) status=$status")
+                    }
+                    return@memScoped null
                 }
+                val dataRef = resultPtr.value ?: return@memScoped null
+                val nsData = CFBridgingRelease(dataRef) as NSData
+                NSString.create(data = nsData, encoding = NSUTF8StringEncoding)?.toString()
             }
+        } finally {
+            CFBridgingRelease(accountCF)
+            CFBridgingRelease(serviceCF)
         }
-        CFBridgingRelease(queryRef)
-        return resultString
     }
 
     override fun getOrCreateKeyPair(): Pair<ByteArray, ByteArray> {
@@ -75,15 +107,18 @@ class IOSKeyManager : KeyManager {
         val existingPub = getFromKeychain(KEY_PUBLIC)
 
         if (existingPriv != null && existingPub != null) {
+            println("MemegramDebug [KeyManager.ios] getOrCreateKeyPair: loaded existing pair from Keychain")
             return Pair(Base64.decode(existingPriv), Base64.decode(existingPub))
         }
 
+        println("MemegramDebug [KeyManager.ios] getOrCreateKeyPair: generating new (existingPriv=${existingPriv != null}, existingPub=${existingPub != null})")
         val keyPair = Signature.keypair()
         val privBytes = keyPair.secretKey.asByteArray()
         val pubBytes = keyPair.publicKey.asByteArray()
 
-        saveToKeychain(KEY_PRIVATE, Base64.encode(privBytes))
-        saveToKeychain(KEY_PUBLIC, Base64.encode(pubBytes))
+        val savedPriv = saveToKeychain(KEY_PRIVATE, Base64.encode(privBytes))
+        val savedPub = saveToKeychain(KEY_PUBLIC, Base64.encode(pubBytes))
+        println("MemegramDebug [KeyManager.ios] getOrCreateKeyPair: saved priv=$savedPriv pub=$savedPub")
 
         return Pair(privBytes, pubBytes)
     }
@@ -104,5 +139,9 @@ class IOSKeyManager : KeyManager {
         return Base64.encode(pub)
     }
 
-    override fun hasKeyPair(): Boolean = getFromKeychain(KEY_PRIVATE) != null
+    override fun hasKeyPair(): Boolean {
+        val has = getFromKeychain(KEY_PRIVATE) != null
+        println("MemegramDebug [KeyManager.ios] hasKeyPair=$has")
+        return has
+    }
 }

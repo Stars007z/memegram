@@ -4,7 +4,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 
 interface AppStrings {
 
-    // ── Common ────────────────────────────────────────────────────────
     val cancel: String
     val error: String
     val delete: String
@@ -17,7 +16,6 @@ interface AppStrings {
     val copied: String
     val ok: String
 
-    // ── Auth ──────────────────────────────────────────────────────────
     val nickname: String
     val inviteCode: String
     val autoLoginHint: String
@@ -27,7 +25,6 @@ interface AppStrings {
     val hasAccountLogin: String
     val loginFromOtherDevice: String
 
-    // ── Settings menu (drawer) ───────────────────────────────────────
     val settingsAppearance: String
     val settingsNotifications: String
     val settingsPrivacy: String
@@ -37,7 +34,6 @@ interface AppStrings {
     val settingsLanguage: String
     val darkTheme: String
 
-    // ── Chats list ───────────────────────────────────────────────────
     val searchPlaceholder: String
     val createGroup: String
     val addByKey: String
@@ -50,7 +46,6 @@ interface AppStrings {
     val nothingFound: String
     val youPrefix: String
 
-    // ── Chat ─────────────────────────────────────────────────────────
     val gallery: String
     val file: String
     val all: String
@@ -92,7 +87,6 @@ interface AppStrings {
     val savedToGallery: String
     val saveFailed: String
 
-    // ── ChatViewModel (non-composable) ───────────────────────────────
     val mlsNotReady: String
     val encrypted: String
     val sentFromOtherDevice: String
@@ -115,7 +109,6 @@ interface AppStrings {
     val fileDownloadError: String
     val fileSaveError: String
 
-    // ── Contacts ─────────────────────────────────────────────────────
     val newContact: String
     val enterPublicKey: String
     val deleteContactTitle: String
@@ -131,13 +124,11 @@ interface AppStrings {
     val removeFromFavorites: String
     val addToFavorites: String
 
-    // ── Profile ──────────────────────────────────────────────────────
     val profileTitle: String
     val username: String
     val aboutMe: String
     val copyMyPublicKey: String
 
-    // ── Group profile ────────────────────────────────────────────────
     val roleOwner: String
     val roleAdmin: String
     val roleMember: String
@@ -165,16 +156,13 @@ interface AppStrings {
     val editGroupName: String
     val changeGroupPhoto: String
 
-    // ── User profile ─────────────────────────────────────────────────
     val sendMessage: String
     val addToContactsButton: String
 
-    // ── Create group ─────────────────────────────────────────────────
     val groupName: String
     fun membersSelected(n: Int): String
     val noContactsYet: String
 
-    // ── Privacy ──────────────────────────────────────────────────────
     val privacyTitle: String
     val whoSeesProfile: String
     val whoSeesLastSeen: String
@@ -192,7 +180,6 @@ interface AppStrings {
     val autoDeleteSection: String
     val deleteAccountAction: String
 
-    // ── Privacy ViewModel ────────────────────────────────────────────
     val visEverybody: String
     val visContacts: String
     val visNobody: String
@@ -202,7 +189,6 @@ interface AppStrings {
     val days1Year: String
     val daysOff: String
 
-    // ── Notifications ────────────────────────────────────────────────
     val notificationsTitle: String
     val privateChats: String
     val groups: String
@@ -220,7 +206,6 @@ interface AppStrings {
     val callsSection: String
     val vibration: String
 
-    // ── Notifications ViewModel ──────────────────────────────────────
     val vibrateNone: String
     val vibrateWeak: String
     val vibrateMedium: String
@@ -230,7 +215,6 @@ interface AppStrings {
     val ringtoneSimple: String
     val ringtoneNone: String
 
-    // ── Appearance ───────────────────────────────────────────────────
     val appearanceTitle: String
     val preview: String
     val chatPreview: String
@@ -250,7 +234,6 @@ interface AppStrings {
     val setPhoto: String
     val colorOrPhoto: String
 
-    // ── Storage ──────────────────────────────────────────────────────
     val dataAndStorageTitle: String
     val autoClearCache: String
     val deleteOldByTime: String
@@ -266,7 +249,6 @@ interface AppStrings {
     val lruDescription: String
     val lfuDescription: String
 
-    // ── Storage Usage ────────────────────────────────────────────────
     val storageUsage: String
     fun storageUsageOnDevice(size: String): String
     fun currentCacheLimit(value: String): String
@@ -294,7 +276,6 @@ interface AppStrings {
     val advancedCleanup: String
     val stories: String
 
-    // ── Language / Translation ───────────────────────────────────────
     val languageTitle: String
     val searchLanguage: String
     val aiTranslation: String
@@ -311,7 +292,16 @@ interface AppStrings {
     val targetLanguageHint: String
     val translationNotAvailable: String
 
-    // ── Linked devices ───────────────────────────────────────────────
+    val translationModel: String
+    val translationModelDescription: String
+    val downloadModel: String
+    val downloadingModel: String
+    val cancelDownload: String
+    val deleteModel: String
+    val modelReady: String
+    val modelNotDownloaded: String
+    val modelDownloadFailed: String
+
     val linkedDevicesTitle: String
     val refresh: String
     val addDeviceByQr: String
@@ -330,7 +320,6 @@ interface AppStrings {
     val codeCopied: String
     val scanQrInstead: String
 
-    // ── Add device ───────────────────────────────────────────────────
     val scanQrHint: String
     val pasteCodeHint: String
     val codeOrQrLink: String
@@ -343,7 +332,6 @@ interface AppStrings {
     val errorOccurred: String
     val tryAgain: String
 
-    // ── Black list ───────────────────────────────────────────────────
     val unblockTitle: String
     fun unblockMessage(name: String): String
     val unblockAction: String
@@ -362,7 +350,6 @@ interface AppStrings {
     val cannotMessageBlockedByPeer: String
     val mlsChatBrokenBanner: String
 
-    // ── Date scrubber ────────────────────────────────────────────────
     val mon: String
     val tue: String
     val wed: String
@@ -371,11 +358,9 @@ interface AppStrings {
     val sat: String
     val sun: String
 
-    // ── App / misc ───────────────────────────────────────────────────
     val groupDefault: String
     val create: String
 
-    // ── Admin invite ─────────────────────────────────────────────────
     val createInvite: String
     val createInviteTitle: String
     val createInviteExpiresDays: String
@@ -384,12 +369,8 @@ interface AppStrings {
     val inviteExpiresAt: String
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Russian
-// ═══════════════════════════════════════════════════════════════════════
 object RuStrings : AppStrings {
 
-    // Common
     override val cancel = "Отмена"
     override val error = "Ошибка"
     override val delete = "Удалить"
@@ -402,7 +383,6 @@ object RuStrings : AppStrings {
     override val copied = "Скопировано!"
     override val ok = "OK"
 
-    // Auth
     override val nickname = "Никнейм"
     override val inviteCode = "Инвайт-код"
     override val autoLoginHint = "Вход выполнится автоматически\nс помощью ключа на устройстве"
@@ -412,7 +392,6 @@ object RuStrings : AppStrings {
     override val hasAccountLogin = "Уже есть аккаунт? Войти"
     override val loginFromOtherDevice = "Войти с другого устройства"
 
-    // Settings menu
     override val settingsAppearance = "Внешний вид"
     override val settingsNotifications = "Уведомления"
     override val settingsPrivacy = "Конфиденциальность"
@@ -422,7 +401,6 @@ object RuStrings : AppStrings {
     override val settingsLanguage = "Язык"
     override val darkTheme = "Тёмная тема"
 
-    // Chats list
     override val searchPlaceholder = "Поиск..."
     override val createGroup = "Создать группу"
     override val addByKey = "Добавить по ключу"
@@ -436,7 +414,6 @@ object RuStrings : AppStrings {
     override val nothingFound = "Ничего не найдено"
     override val youPrefix = "Вы: "
 
-    // Chat
     override val gallery = "Галерея"
     override val file = "Файл"
     override val all = "Все"
@@ -478,7 +455,6 @@ object RuStrings : AppStrings {
     override val savedToGallery = "Сохранено в галерею"
     override val saveFailed = "Не удалось сохранить"
 
-    // ChatViewModel
     override val mlsNotReady = "MLS не готов для этого чата"
     override val encrypted = "\uD83D\uDD12 [Зашифровано]"
     override val sentFromOtherDevice = "\uD83D\uDD12 [Отправлено с другого устройства]"
@@ -502,7 +478,6 @@ object RuStrings : AppStrings {
     override val fileDownloadError = "Ошибка загрузки файла"
     override val fileSaveError = "Не удалось сохранить файл"
 
-    // Contacts
     override val newContact = "Новый контакт"
     override val enterPublicKey = "Введите публичный ключ пользователя"
     override val deleteContactTitle = "Удалить контакт?"
@@ -518,13 +493,11 @@ object RuStrings : AppStrings {
     override val removeFromFavorites = "Убрать из избранного"
     override val addToFavorites = "В избранное"
 
-    // Profile
     override val profileTitle = "Профиль"
     override val username = "Имя пользователя"
     override val aboutMe = "О себе"
     override val copyMyPublicKey = "Скопировать мой публичный ключ"
 
-    // Group profile
     override val roleOwner = "Владелец"
     override val roleAdmin = "Администратор"
     override val roleMember = "Участник"
@@ -552,16 +525,13 @@ object RuStrings : AppStrings {
     override val editGroupName = "Изменить название"
     override val changeGroupPhoto = "Изменить фото группы"
 
-    // User profile
     override val sendMessage = "Написать"
     override val addToContactsButton = "В контакты"
 
-    // Create group
     override val groupName = "Название группы"
     override fun membersSelected(n: Int) = "Участники ($n выбрано)"
     override val noContactsYet = "У вас пока нет контактов"
 
-    // Privacy
     override val privacyTitle = "Конфиденциальность"
     override val whoSeesProfile = "Кто видит мой профиль"
     override val whoSeesLastSeen = "Кто видит время активности"
@@ -579,7 +549,6 @@ object RuStrings : AppStrings {
     override val autoDeleteSection = "Авто-удаление"
     override val deleteAccountAction = "Удалить аккаунт"
 
-    // Privacy ViewModel
     override val visEverybody = "Все"
     override val visContacts = "Контакты"
     override val visNobody = "Никто"
@@ -589,7 +558,6 @@ object RuStrings : AppStrings {
     override val days1Year = "1 год"
     override val daysOff = "Выкл"
 
-    // Notifications
     override val notificationsTitle = "Уведомления"
     override val privateChats = "Личные чаты"
     override val groups = "Группы"
@@ -607,7 +575,6 @@ object RuStrings : AppStrings {
     override val callsSection = "ЗВОНКИ"
     override val vibration = "Вибрация"
 
-    // Notifications ViewModel
     override val vibrateNone = "Нет"
     override val vibrateWeak = "Слабая"
     override val vibrateMedium = "Средняя"
@@ -617,7 +584,6 @@ object RuStrings : AppStrings {
     override val ringtoneSimple = "Простой"
     override val ringtoneNone = "Нет"
 
-    // Appearance
     override val appearanceTitle = "Внешний вид"
     override val preview = "Предпросмотр"
     override val chatPreview = "Чат"
@@ -637,7 +603,6 @@ object RuStrings : AppStrings {
     override val setPhoto = "Фото"
     override val colorOrPhoto = "Цвет / Фото"
 
-    // Storage
     override val dataAndStorageTitle = "Данные и память"
     override val autoClearCache = "Автоматическая очистка кэша"
     override val deleteOldByTime = "Удалять старые по времени (1 месяц)"
@@ -653,7 +618,6 @@ object RuStrings : AppStrings {
     override val lruDescription = "Удаляются сообщения из чатов, которые давно не открывались"
     override val lfuDescription = "Удаляются сообщения из чатов, в которые реже всего заходят"
 
-    // Storage Usage
     override val storageUsage = "Использование памяти"
     override fun storageUsageOnDevice(size: String) = "Memegram занимает $size на этом устройстве"
     override fun currentCacheLimit(value: String) = "Текущий лимит: $value"
@@ -681,7 +645,6 @@ object RuStrings : AppStrings {
     override val advancedCleanup = "Расширенная очистка"
     override val stories = "Истории"
 
-    // Language / Translation
     override val languageTitle = "Язык"
     override val searchLanguage = "Поиск языка..."
     override val aiTranslation = "AI-перевод"
@@ -697,6 +660,15 @@ object RuStrings : AppStrings {
     override val appLanguageHint = "язык приложения"
     override val targetLanguageHint = "целевой язык"
     override val translationNotAvailable = "Перевод недоступен: недостаточно памяти или модель не загружена"
+    override val translationModel = "Модель перевода"
+    override val translationModelDescription = "NLLB-200 (~300 МБ). Скачивается один раз с серверов Memegram."
+    override val downloadModel = "Загрузить модель"
+    override val downloadingModel = "Загрузка модели…"
+    override val cancelDownload = "Отменить"
+    override val deleteModel = "Удалить модель"
+    override val modelReady = "Модель готова"
+    override val modelNotDownloaded = "Модель не загружена"
+    override val modelDownloadFailed = "Не удалось загрузить модель"
     override val linkedDevicesTitle = "Связанные устройства"
     override val refresh = "Обновить"
     override val addDeviceByQr = "Добавить устройство по QR"
@@ -715,7 +687,6 @@ object RuStrings : AppStrings {
     override val codeCopied = "✓ Скопировано"
     override val scanQrInstead = "Хочу отсканировать QR вместо этого"
 
-    // Add device
     override val scanQrHint = "Отсканируй QR-код\nс основного устройства"
     override val pasteCodeHint = "Или вставьте код с другого устройства"
     override val codeOrQrLink = "Код или QR-ссылка"
@@ -729,7 +700,6 @@ object RuStrings : AppStrings {
     override val errorOccurred = "Произошла ошибка"
     override val tryAgain = "Попробовать снова"
 
-    // Black list
     override val unblockTitle = "Разблокировать?"
     override fun unblockMessage(name: String) = "Разблокировать $name?"
     override val unblockAction = "Разблокировать"
@@ -748,7 +718,6 @@ object RuStrings : AppStrings {
     override val cannotMessageBlockedByPeer = "Этот пользователь заблокировал вас. Вы не можете отправлять ему сообщения."
     override val mlsChatBrokenBanner = "Чат недоступен для расшифровки. Попросите собеседника создать новый чат."
 
-    // Date scrubber
     override val mon = "Пн"
     override val tue = "Вт"
     override val wed = "Ср"
@@ -757,11 +726,9 @@ object RuStrings : AppStrings {
     override val sat = "Сб"
     override val sun = "Вс"
 
-    // App / misc
     override val groupDefault = "Группа"
     override val create = "Создать"
 
-    // Admin invite
     override val createInvite = "Создать инвайт"
     override val createInviteTitle = "Новый инвайт-код"
     override val createInviteExpiresDays = "Срок действия (дней)"
@@ -770,12 +737,8 @@ object RuStrings : AppStrings {
     override val inviteExpiresAt = "Действует до"
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// English
-// ═══════════════════════════════════════════════════════════════════════
 object EnStrings : AppStrings {
 
-    // Common
     override val cancel = "Cancel"
     override val error = "Error"
     override val delete = "Delete"
@@ -788,7 +751,6 @@ object EnStrings : AppStrings {
     override val copied = "Copied!"
     override val ok = "OK"
 
-    // Auth
     override val nickname = "Nickname"
     override val inviteCode = "Invite code"
     override val autoLoginHint = "Login will happen automatically\nusing the key on this device"
@@ -798,7 +760,6 @@ object EnStrings : AppStrings {
     override val hasAccountLogin = "Already have an account? Log in"
     override val loginFromOtherDevice = "Log in from another device"
 
-    // Settings menu
     override val settingsAppearance = "Appearance"
     override val settingsNotifications = "Notifications"
     override val settingsPrivacy = "Privacy"
@@ -808,7 +769,6 @@ object EnStrings : AppStrings {
     override val settingsLanguage = "Language"
     override val darkTheme = "Dark theme"
 
-    // Chats list
     override val searchPlaceholder = "Search..."
     override val createGroup = "Create group"
     override val addByKey = "Add by key"
@@ -822,7 +782,6 @@ object EnStrings : AppStrings {
     override val nothingFound = "Nothing found"
     override val youPrefix = "You: "
 
-    // Chat
     override val gallery = "Gallery"
     override val file = "File"
     override val all = "All"
@@ -864,7 +823,6 @@ object EnStrings : AppStrings {
     override val savedToGallery = "Saved to gallery"
     override val saveFailed = "Save failed"
 
-    // ChatViewModel
     override val mlsNotReady = "MLS is not ready for this chat"
     override val encrypted = "\uD83D\uDD12 [Encrypted]"
     override val sentFromOtherDevice = "\uD83D\uDD12 [Sent from another device]"
@@ -888,7 +846,6 @@ object EnStrings : AppStrings {
     override val fileDownloadError = "File download error"
     override val fileSaveError = "Failed to save file"
 
-    // Contacts
     override val newContact = "New contact"
     override val enterPublicKey = "Enter the user's public key"
     override val deleteContactTitle = "Delete contact?"
@@ -904,13 +861,11 @@ object EnStrings : AppStrings {
     override val removeFromFavorites = "Remove from favorites"
     override val addToFavorites = "Add to favorites"
 
-    // Profile
     override val profileTitle = "Profile"
     override val username = "Username"
     override val aboutMe = "About"
     override val copyMyPublicKey = "Copy my public key"
 
-    // Group profile
     override val roleOwner = "Owner"
     override val roleAdmin = "Admin"
     override val roleMember = "Member"
@@ -938,16 +893,13 @@ object EnStrings : AppStrings {
     override val editGroupName = "Edit name"
     override val changeGroupPhoto = "Change group photo"
 
-    // User profile
     override val sendMessage = "Message"
     override val addToContactsButton = "Add to contacts"
 
-    // Create group
     override val groupName = "Group name"
     override fun membersSelected(n: Int) = "Members ($n selected)"
     override val noContactsYet = "You have no contacts yet"
 
-    // Privacy
     override val privacyTitle = "Privacy"
     override val whoSeesProfile = "Who can see my profile"
     override val whoSeesLastSeen = "Who can see my last seen"
@@ -965,7 +917,6 @@ object EnStrings : AppStrings {
     override val autoDeleteSection = "Auto-delete"
     override val deleteAccountAction = "Delete account"
 
-    // Privacy ViewModel
     override val visEverybody = "Everybody"
     override val visContacts = "Contacts"
     override val visNobody = "Nobody"
@@ -975,7 +926,6 @@ object EnStrings : AppStrings {
     override val days1Year = "1 year"
     override val daysOff = "Off"
 
-    // Notifications
     override val notificationsTitle = "Notifications"
     override val privateChats = "Private chats"
     override val groups = "Groups"
@@ -993,7 +943,6 @@ object EnStrings : AppStrings {
     override val callsSection = "CALLS"
     override val vibration = "Vibration"
 
-    // Notifications ViewModel
     override val vibrateNone = "None"
     override val vibrateWeak = "Weak"
     override val vibrateMedium = "Medium"
@@ -1003,7 +952,6 @@ object EnStrings : AppStrings {
     override val ringtoneSimple = "Simple"
     override val ringtoneNone = "None"
 
-    // Appearance
     override val appearanceTitle = "Appearance"
     override val preview = "Preview"
     override val chatPreview = "Chat"
@@ -1023,7 +971,6 @@ object EnStrings : AppStrings {
     override val setPhoto = "Photo"
     override val colorOrPhoto = "Color / Photo"
 
-    // Storage
     override val dataAndStorageTitle = "Data and Storage"
     override val autoClearCache = "Automatic cache cleanup"
     override val deleteOldByTime = "Delete old by time (1 month)"
@@ -1039,7 +986,6 @@ object EnStrings : AppStrings {
     override val lruDescription = "Messages are deleted from chats that haven't been opened for a long time"
     override val lfuDescription = "Messages are deleted from the least frequently accessed chats"
 
-    // Storage Usage
     override val storageUsage = "Storage Usage"
     override fun storageUsageOnDevice(size: String) = "Memegram is using $size on this device"
     override fun currentCacheLimit(value: String) = "Current limit: $value"
@@ -1067,7 +1013,6 @@ object EnStrings : AppStrings {
     override val advancedCleanup = "Advanced cleanup"
     override val stories = "Stories"
 
-    // Language / Translation
     override val languageTitle = "Language"
     override val searchLanguage = "Search language..."
     override val aiTranslation = "AI Translation"
@@ -1083,6 +1028,15 @@ object EnStrings : AppStrings {
     override val appLanguageHint = "app language"
     override val targetLanguageHint = "target language"
     override val translationNotAvailable = "Translation unavailable: not enough memory or model not loaded"
+    override val translationModel = "Translation model"
+    override val translationModelDescription = "NLLB-200 (~300 MB). Downloaded once from Memegram servers."
+    override val downloadModel = "Download model"
+    override val downloadingModel = "Downloading model…"
+    override val cancelDownload = "Cancel"
+    override val deleteModel = "Delete model"
+    override val modelReady = "Model ready"
+    override val modelNotDownloaded = "Model not downloaded"
+    override val modelDownloadFailed = "Model download failed"
     override val linkedDevicesTitle = "Linked Devices"
     override val refresh = "Refresh"
     override val addDeviceByQr = "Add device via QR"
@@ -1101,7 +1055,6 @@ object EnStrings : AppStrings {
     override val codeCopied = "✓ Copied"
     override val scanQrInstead = "I want to scan a QR instead"
 
-    // Add device
     override val scanQrHint = "Scan the QR code\nfrom your main device"
     override val pasteCodeHint = "Or paste a code from another device"
     override val codeOrQrLink = "Code or QR link"
@@ -1115,7 +1068,6 @@ object EnStrings : AppStrings {
     override val errorOccurred = "An error occurred"
     override val tryAgain = "Try again"
 
-    // Black list
     override val unblockTitle = "Unblock?"
     override fun unblockMessage(name: String) = "Unblock $name?"
     override val unblockAction = "Unblock"
@@ -1134,7 +1086,6 @@ object EnStrings : AppStrings {
     override val cannotMessageBlockedByPeer = "This user has blocked you. You cannot send them messages."
     override val mlsChatBrokenBanner = "This chat can't be decrypted. Ask the other person to create a new chat."
 
-    // Date scrubber
     override val mon = "Mon"
     override val tue = "Tue"
     override val wed = "Wed"
@@ -1143,11 +1094,9 @@ object EnStrings : AppStrings {
     override val sat = "Sat"
     override val sun = "Sun"
 
-    // App / misc
     override val groupDefault = "Group"
     override val create = "Create"
 
-    // Admin invite
     override val createInvite = "Create Invite"
     override val createInviteTitle = "New Invite Code"
     override val createInviteExpiresDays = "Expires in (days)"

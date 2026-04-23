@@ -3,54 +3,56 @@ package com.example.memegram.translation
 import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.onDownload
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.zip.ZipInputStream
 
 /**
  * Manages the single NLLB-200 translation model.
  *
- * Unlike the old TranslationModelManager which handled 24+ opus-mt model pairs,
- * this manages ONE model that covers all 200 languages.
- *
- * Model location: {app_files}/translation_models/nllb-200-distilled-600M/
+ * Storage layout: {app_files}/translation_models/nllb-200-distilled-600M/
  *   - encoder_model.onnx
  *   - decoder_model.onnx
  *   - tokenizer.json
  *   - config.json
+ *
+ * The model is downloaded on demand from Cloudflare R2:
+ *   GET {modelBaseUrl}/nllb-200-distilled-600M.zip
  */
-class NllbModelManager(private val context: Context) {
+class NllbModelManager(
+    private val context: Context,
+    private val httpClient: HttpClient,
+    private val modelBaseUrl: String,
+) {
 
     companion object {
         private const val TAG = "NLLB"
         /**
          * Minimum free RAM (in bytes) required to safely run NLLB translation.
          * With sequential session loading, peak memory is ~700MB (decoder only,
-         * encoder is closed before decoder loads). We require 512MB free as a
-         * safety margin — the actual session creation will need ~700MB but the
-         * system can reclaim file cache pages.
+         * encoder is closed before decoder loads). 512MB safety margin.
          */
-        private const val MIN_FREE_RAM_BYTES = 512L * 1024 * 1024 // 512 MB
+        private const val MIN_FREE_RAM_BYTES = 512L * 1024 * 1024
+        private const val MODEL_DIR_NAME = "nllb-200-distilled-600M"
     }
 
     private val modelsDir: File = File(context.filesDir, "translation_models")
-    private val modelDirName = "nllb-200-distilled-600M"
+    private val modelDirName = MODEL_DIR_NAME
 
     private var cachedEngine: NllbTranslationEngine? = null
     private val loadMutex = Mutex()
-
-    /**
-     * Base URL for downloading the model.
-     * Expected: {baseUrl}/nllb-200-distilled-600M.zip
-     * Set to null to disable downloads (use only pre-installed model).
-     */
-    var modelBaseUrl: String? = null
 
     init {
         modelsDir.mkdirs()
@@ -58,14 +60,12 @@ class NllbModelManager(private val context: Context) {
 
     /**
      * Get a ready-to-use translation engine.
-     * Returns null if the model is not available, cannot be downloaded,
-     * or the device doesn't have enough free RAM to load it safely.
-     * Thread-safe: concurrent calls will wait for the first load to finish.
+     * Returns null if the model is not available, or RAM is too low.
+     * Note: this does NOT download — call [downloadModel] explicitly first.
      */
     suspend fun getEngine(): NllbTranslationEngine? {
         Log.d(TAG, "getEngine(): called, cachedEngine=${cachedEngine != null}")
 
-        // Fast path: already loaded
         loadMutex.withLock {
             cachedEngine?.let {
                 Log.d(TAG, "getEngine(): returning cached engine")
@@ -73,36 +73,25 @@ class NllbModelManager(private val context: Context) {
             }
         }
 
-        // Check available memory before attempting to load ~300MB model.
         if (!hasEnoughMemory()) {
             Log.e(TAG, "getEngine(): BLOCKED by memory check — not enough free RAM")
             return null
         }
 
-        // Find model directory
-        val modelDir = resolveModelDir()
-        if (modelDir == null) {
-            Log.e(TAG, "getEngine(): model files NOT FOUND on disk")
+        val modelDir = File(modelsDir, modelDirName)
+        if (!isModelComplete(modelDir)) {
+            Log.e(TAG, "getEngine(): model files NOT FOUND at ${modelDir.absolutePath}")
             return null
         }
         Log.d(TAG, "getEngine(): model dir = ${modelDir.absolutePath}")
 
-        // Load engine (only one thread loads)
         return loadMutex.withLock {
-            cachedEngine?.let {
-                Log.d(TAG, "getEngine(): returning cached engine (inside lock)")
-                return it
-            }
+            cachedEngine?.let { return it }
 
-            // Re-check memory inside lock (another coroutine may have consumed RAM)
-            if (!hasEnoughMemory()) {
-                Log.e(TAG, "getEngine(): BLOCKED by memory re-check inside lock")
-                return null
-            }
+            if (!hasEnoughMemory()) return null
 
             try {
                 val t0 = System.currentTimeMillis()
-                Log.d(TAG, "getEngine(): loading ONNX sessions...")
                 val engine = NllbTranslationEngine.load(modelDir)
                 val loadMs = System.currentTimeMillis() - t0
                 cachedEngine = engine
@@ -116,26 +105,19 @@ class NllbModelManager(private val context: Context) {
         }
     }
 
-    /**
-     * Check if the model is available on device (ready to load).
-     */
+    /** Check if the model is fully present on disk. */
     fun isModelAvailable(): Boolean {
-        val dir = File(modelsDir, modelDirName)
-        return isModelComplete(dir)
+        return isModelComplete(File(modelsDir, modelDirName))
     }
 
-    /**
-     * Get approximate model size in bytes. Returns 0 if not downloaded.
-     */
+    /** Approximate model size in bytes. Returns 0 if not downloaded. */
     fun getModelSize(): Long {
         val dir = File(modelsDir, modelDirName)
         if (!dir.exists()) return 0
         return dir.listFiles()?.sumOf { it.length() } ?: 0
     }
 
-    /**
-     * Delete the model to free disk space.
-     */
+    /** Delete the model to free disk space. */
     suspend fun deleteModel() = withContext(Dispatchers.IO) {
         loadMutex.withLock {
             cachedEngine?.close()
@@ -145,9 +127,7 @@ class NllbModelManager(private val context: Context) {
         if (dir.exists()) dir.deleteRecursively()
     }
 
-    /**
-     * Release loaded engine and free memory.
-     */
+    /** Release the loaded engine and free native memory. */
     fun release() {
         val hadEngine = cachedEngine != null
         cachedEngine?.close()
@@ -155,46 +135,95 @@ class NllbModelManager(private val context: Context) {
         Log.d(TAG, "release(): hadEngine=$hadEngine")
     }
 
-    /**
-     * Check whether there is enough free RAM to load the model.
-     * Useful for UI to show "not enough memory" message.
-     */
     fun canLoadModel(): Boolean = isModelAvailable() && hasEnoughMemory()
 
-    // ── Internal ─────────────────────────────────────────────────
-
     /**
-     * Check if the device has enough free RAM to safely load the NLLB model.
-     * Uses ActivityManager.MemoryInfo to read system-wide available memory.
+     * Stream the NLLB model ZIP from R2 and unzip into [modelsDir].
+     * Emits incremental [ModelDownloadProgress]. Cancellation deletes the
+     * partially extracted directory.
+     *
+     * Uses [channelFlow] because Ktor's onDownload callback runs in a
+     * different coroutine context than a plain `flow { … }` builder.
      */
+    fun downloadModel(): Flow<ModelDownloadProgress> = channelFlow {
+        if (isModelAvailable()) {
+            val size = getModelSize()
+            send(ModelDownloadProgress(size, size))
+            return@channelFlow
+        }
+
+        val zipUrl = "${modelBaseUrl.trimEnd('/')}/$modelDirName.zip"
+        val targetDir = File(modelsDir, modelDirName)
+        if (targetDir.exists()) targetDir.deleteRecursively()
+        targetDir.mkdirs()
+
+        Log.d(TAG, "downloadModel(): GET $zipUrl")
+
+        try {
+            val tmpZip = File(modelsDir, "$modelDirName.zip.part")
+            if (tmpZip.exists()) tmpZip.delete()
+
+            var lastEmitted: Long = -1
+            httpClient.prepareGet(zipUrl) {
+                onDownload { bytesSentTotal, contentLength ->
+                    val total = contentLength ?: -1L
+                    if (bytesSentTotal - lastEmitted >= 256 * 1024 || bytesSentTotal == total) {
+                        lastEmitted = bytesSentTotal
+                        trySend(ModelDownloadProgress(bytesSentTotal, total))
+                    }
+                }
+            }.execute { response ->
+                response.bodyAsChannel().toInputStream().use { input ->
+                    FileOutputStream(tmpZip).use { fos -> input.copyTo(fos) }
+                }
+            }
+
+            Log.d(TAG, "downloadModel(): download complete (${tmpZip.length()} bytes), extracting…")
+
+            ZipInputStream(tmpZip.inputStream().buffered()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val outFile = File(targetDir, File(entry.name).name)
+                    if (!entry.isDirectory) {
+                        FileOutputStream(outFile).use { fos -> zis.copyTo(fos) }
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+            tmpZip.delete()
+
+            if (!isModelComplete(targetDir)) {
+                error("Downloaded archive is missing required model files")
+            }
+
+            val finalSize = getModelSize()
+            send(ModelDownloadProgress(finalSize, finalSize))
+            Log.d(TAG, "downloadModel(): OK, finalSize=$finalSize")
+        } catch (e: Throwable) {
+            Log.e(TAG, "downloadModel(): FAILED: ${e::class.simpleName}: ${e.message}", e)
+            targetDir.deleteRecursively()
+            File(modelsDir, "$modelDirName.zip.part").delete()
+            throw e
+        }
+    }.flowOn(Dispatchers.IO)
+
     private fun hasEnoughMemory(): Boolean {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            ?: return true // can't check — proceed optimistically
+            ?: return true
         val memInfo = ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memInfo)
-        val availMB = memInfo.availMem / (1024 * 1024)
-        val totalMB = memInfo.totalMem / (1024 * 1024)
-        val thresholdMB = MIN_FREE_RAM_BYTES / (1024 * 1024)
-        val rt = Runtime.getRuntime()
-        val javaMaxMB = rt.maxMemory() / (1024 * 1024)
-        val javaUsedMB = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)
-        Log.d(TAG, "memCheck: avail=${availMB}MB / total=${totalMB}MB, " +
-                "threshold=${thresholdMB}MB, lowMemory=${memInfo.lowMemory}, " +
-                "javaHeap=${javaUsedMB}MB/${javaMaxMB}MB")
         if (memInfo.lowMemory) {
             Log.w(TAG, "memCheck: system reports lowMemory=true → BLOCKED")
             return false
         }
         val ok = memInfo.availMem > MIN_FREE_RAM_BYTES
         if (!ok) {
-            Log.w(TAG, "memCheck: ${availMB}MB < ${thresholdMB}MB → BLOCKED")
+            Log.w(TAG, "memCheck: ${memInfo.availMem / 1024 / 1024}MB < ${MIN_FREE_RAM_BYTES / 1024 / 1024}MB → BLOCKED")
         }
         return ok
     }
 
-    /**
-     * Log current memory state for diagnostics.
-     */
     private fun logMemoryState(label: String) {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return
         val memInfo = ActivityManager.MemoryInfo()
@@ -203,102 +232,12 @@ class NllbModelManager(private val context: Context) {
         val rt = Runtime.getRuntime()
         val nativeHeapMB = android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024)
         val javaUsedMB = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)
-        Log.d(TAG, "memState[$label]: systemAvail=${availMB}MB, nativeHeap=${nativeHeapMB}MB, javaHeap=${javaUsedMB}MB, lowMem=${memInfo.lowMemory}")
-    }
-
-    private suspend fun resolveModelDir(): File? {
-        // 1. Internal storage (primary)
-        val internalDir = File(modelsDir, modelDirName)
-        if (isModelComplete(internalDir)) {
-            Log.d(TAG, "resolveModelDir(): found in internal storage: ${internalDir.absolutePath}")
-            return internalDir
-        }
-
-        // 2. Try downloading
-        if (modelBaseUrl != null) {
-            try {
-                downloadModel()
-                if (isModelComplete(internalDir)) return internalDir
-            } catch (e: Exception) {
-                Log.e(TAG, "resolveModelDir(): download failed: ${e.message}")
-            }
-        }
-
-        // 3. App-specific external storage (adb push target)
-        val appExternalDirs = context.getExternalFilesDirs(null)
-        for (base in appExternalDirs) {
-            if (base == null) continue
-            val dir = File(base, "models/$modelDirName")
-            if (isModelComplete(dir)) {
-                Log.d(TAG, "resolveModelDir(): found in app external: ${dir.absolutePath}")
-                return dir
-            }
-        }
-
-        // 4. Legacy sdcard path
-        val sdcardDir = File("/sdcard/memegram/models/$modelDirName")
-        if (isModelComplete(sdcardDir)) {
-            Log.d(TAG, "resolveModelDir(): found in sdcard")
-            return sdcardDir
-        }
-
-        Log.e(TAG, "resolveModelDir(): model NOT FOUND anywhere. Checked:")
-        Log.e(TAG, "  internal: ${internalDir.absolutePath} (exists=${internalDir.exists()})")
-        appExternalDirs.forEachIndexed { i, base ->
-            if (base != null) {
-                val dir = File(base, "models/$modelDirName")
-                Log.e(TAG, "  external[$i]: ${dir.absolutePath} (exists=${dir.exists()})")
-            }
-        }
-        Log.e(TAG, "  sdcard: ${sdcardDir.absolutePath} (exists=${sdcardDir.exists()})")
-        return null
+        Log.d(TAG, "memState[$label]: systemAvail=${availMB}MB, nativeHeap=${nativeHeapMB}MB, javaHeap=${javaUsedMB}MB")
     }
 
     private fun isModelComplete(dir: File): Boolean {
         if (!dir.isDirectory) return false
         val required = listOf("encoder_model.onnx", "decoder_model.onnx", "tokenizer.json")
         return required.all { File(dir, it).exists() }
-    }
-
-    private suspend fun downloadModel() = withContext(Dispatchers.IO) {
-        val baseUrl = modelBaseUrl ?: error("Model download URL not configured")
-        val zipUrl = "$baseUrl/$modelDirName.zip"
-        val modelDir = File(modelsDir, modelDirName)
-
-        println("MemegramDebug [NllbModelManager]: Downloading $zipUrl")
-
-        val url = URL(zipUrl)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 30_000
-        connection.readTimeout = 300_000 // 5 minutes for ~300MB
-
-        try {
-            if (connection.responseCode != 200) {
-                error("HTTP ${connection.responseCode} downloading $zipUrl")
-            }
-
-            modelDir.mkdirs()
-
-            ZipInputStream(connection.inputStream.buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val outFile = File(modelDir, entry.name)
-                    if (entry.isDirectory) {
-                        outFile.mkdirs()
-                    } else {
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { fos -> zis.copyTo(fos) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
-            }
-            println("MemegramDebug [NllbModelManager]: Downloaded and extracted NLLB model")
-        } catch (e: Exception) {
-            modelDir.deleteRecursively()
-            throw e
-        } finally {
-            connection.disconnect()
-        }
     }
 }

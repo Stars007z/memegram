@@ -144,8 +144,10 @@ fun ChatsScreen(
                         .aspectRatio(2.5f)
                         .clickable { scope.launch { drawerState.close(); onProfileClick() } }
                 ) {
-                    if (profileCover != null) {
-                        val coverBitmap = remember(profileCover) { profileCover!!.decodeToImageBitmap() }
+                    val coverBitmap = remember(profileCover) {
+                        profileCover?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+                    }
+                    if (coverBitmap != null) {
                         Image(bitmap = coverBitmap, contentDescription = null,
                             modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
@@ -162,8 +164,10 @@ fun ChatsScreen(
                                 .border(2.sdp, Color.White, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (profileAvatar != null) {
-                                val avatarBitmap = remember(profileAvatar) { profileAvatar!!.decodeToImageBitmap() }
+                            val avatarBitmap = remember(profileAvatar) {
+                                profileAvatar?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() }
+                            }
+                            if (avatarBitmap != null) {
                                 Image(bitmap = avatarBitmap, contentDescription = null,
                                     modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             } else {
@@ -528,7 +532,6 @@ fun ChatsScreen(
                     )
                 }
 
-                // Mute duration selector
                 pendingMuteIds?.let { ids ->
                     AlertDialog(
                         onDismissRequest = { pendingMuteIds = null },
@@ -581,7 +584,6 @@ fun ChatsScreen(
                     )
                 }
 
-                // Delete confirmation
                 if (showDeleteConfirm) {
                     val anyGroup = chats.any { it.conversationId in selectedIds && it.isGroup }
                     val title = if (anyGroup) s.leaveGroupTitle else s.deleteChatTitle

@@ -46,6 +46,30 @@ sealed class AttachItem {
         override val asFile: Boolean = false
     ) : AttachItem() { override val name get() = file.name }
     data class FromGallery(val thumb: GalleryThumb) : AttachItem() { override val name get() = thumb.name }
+
+    /**
+     * In-memory image bytes produced by the native iOS PHPicker (already
+     * transcoded to JPEG) or any other source that yields ready bytes.
+     * Used by [com.example.memegram.picker.rememberImagePicker] so that
+     * iOS doesn't need a `PlatformFile`.
+     */
+    data class FromBytes(
+        val bytes: ByteArray,
+        override val name: String,
+        val mime: String = "image/jpeg",
+    ) : AttachItem() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is FromBytes) return false
+            return name == other.name && mime == other.mime && bytes.contentEquals(other.bytes)
+        }
+        override fun hashCode(): Int {
+            var r = name.hashCode()
+            r = 31 * r + mime.hashCode()
+            r = 31 * r + bytes.contentHashCode()
+            return r
+        }
+    }
 }
 
 interface GalleryLoader {

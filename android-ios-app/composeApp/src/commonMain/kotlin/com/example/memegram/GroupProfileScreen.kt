@@ -28,9 +28,6 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
-import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
-import io.github.vinceglb.filekit.core.PickerMode
-import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -75,21 +72,17 @@ fun GroupProfileScreen(
     val isAdmin = myRole == "owner" || myRole == "admin"
     val isOwner = myRole == "owner"
 
-    // ── Group name editing ───────────────────────
     val currentGroupName by viewModel.groupName.collectAsState()
     val groupAvatarMediaId by viewModel.groupAvatarMediaId.collectAsState()
     val displayName = currentGroupName.ifBlank { groupName }
     var showEditNameDialog by remember { mutableStateOf(false) }
     var editNameInput by remember(displayName) { mutableStateOf(displayName) }
 
-    // ── Avatar picker / crop ─────────────────────
     var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
     val scope = rememberCoroutineScope()
-    val avatarPicker = rememberFilePickerLauncher(
-        type = PickerType.Image, mode = PickerMode.Single
-    ) { file -> file?.let { scope.launch {
-        cropBytes = it.readBytes()
-    } } }
+    val avatarPicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { cropBytes = it }
+    }
 
     LaunchedEffect(conversationId) {
         viewModel.loadGroup(conversationId)
@@ -112,7 +105,6 @@ fun GroupProfileScreen(
         error?.let { snackbarHostState.showSnackbar(it) }
     }
 
-    // ── Leave confirmation ───────────────────────
     if (showLeaveConfirm) {
         AlertDialog(
             onDismissRequest = { showLeaveConfirm = false },
@@ -133,7 +125,6 @@ fun GroupProfileScreen(
         )
     }
 
-    // ── Kick confirmation ────────────────────────
     if (showKickConfirm && kickTargetMember != null) {
         val target = kickTargetMember!!
         AlertDialog(
@@ -156,7 +147,6 @@ fun GroupProfileScreen(
         )
     }
 
-    // ── Member context menu (long-press) ─────────
     contextMenuMember?.let { member ->
         val isSelf = member.user.id == viewModel.currentUserId
         val canKick = isAdmin && member.role != "owner" && (isOwner || member.role != "admin") && !isSelf
@@ -251,7 +241,6 @@ fun GroupProfileScreen(
         )
     }
 
-    // ── Add member dialog ────────────────────────
     if (showAddMemberDialog) {
         AlertDialog(
             onDismissRequest = { showAddMemberDialog = false; selectedContactId = null },
@@ -307,7 +296,6 @@ fun GroupProfileScreen(
         )
     }
 
-    // ── Image crop overlay ───────────────────────
     if (cropBytes != null) {
         ImageCropScreen(
             imageBytes = cropBytes!!,
@@ -321,7 +309,6 @@ fun GroupProfileScreen(
         return
     }
 
-    // ── Edit group name dialog ───────────────────
     if (showEditNameDialog) {
         AlertDialog(
             onDismissRequest = { showEditNameDialog = false },
@@ -388,7 +375,7 @@ fun GroupProfileScreen(
                         Surface(
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable { avatarPicker.launch() },
+                                .clickable { avatarPicker() },
                             shape = CircleShape,
                             color = Color.Black.copy(alpha = 0.45f)
                         ) {

@@ -113,7 +113,7 @@ fun ImageCropScreen(
     }
 
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
-    val handleSize = 40f
+    val handleSize = 80f
 
     fun detectDragMode(pos: Offset): DragMode {
         val r = cropRect
@@ -248,20 +248,15 @@ fun ImageCropScreen(
                 )
 
                 val overlayColor = Color.Black.copy(alpha = 0.55f)
-                // Top
                 drawRect(overlayColor, Offset(drawnRect.left, drawnRect.top),
                     Size(drawnRect.width, (cropRect.top - drawnRect.top).coerceAtLeast(0f)))
-                // Bottom
                 drawRect(overlayColor, Offset(drawnRect.left, cropRect.bottom),
                     Size(drawnRect.width, (drawnRect.bottom - cropRect.bottom).coerceAtLeast(0f)))
-                // Left
                 drawRect(overlayColor, Offset(drawnRect.left, cropRect.top),
                     Size((cropRect.left - drawnRect.left).coerceAtLeast(0f), cropRect.height))
-                // Right
                 drawRect(overlayColor, Offset(cropRect.right, cropRect.top),
                     Size((drawnRect.right - cropRect.right).coerceAtLeast(0f), cropRect.height))
 
-                // Crop frame border
                 drawRect(
                     color = Color.White,
                     topLeft = Offset(cropRect.left, cropRect.top),
@@ -269,24 +264,20 @@ fun ImageCropScreen(
                     style = Stroke(width = 2f)
                 )
 
-                // Grid lines
                 val thirdW = cropRect.width / 3f
                 val thirdH = cropRect.height / 3f
                 val gridColor = Color.White.copy(alpha = 0.4f)
                 for (i in 1..2) {
-                    // Vertical
                     drawLine(gridColor,
                         Offset(cropRect.left + thirdW * i, cropRect.top),
                         Offset(cropRect.left + thirdW * i, cropRect.bottom),
                         strokeWidth = 1f)
-                    // Horizontal
                     drawLine(gridColor,
                         Offset(cropRect.left, cropRect.top + thirdH * i),
                         Offset(cropRect.right, cropRect.top + thirdH * i),
                         strokeWidth = 1f)
                 }
 
-                // Corner handles
                 val cornerLen = 24f
                 val cornerWidth = 4f
                 val white = Color.White
@@ -304,7 +295,6 @@ fun ImageCropScreen(
             }
         }
 
-        // Bottom buttons
         Row(
             modifier = Modifier
                 .fillMaxWidth()

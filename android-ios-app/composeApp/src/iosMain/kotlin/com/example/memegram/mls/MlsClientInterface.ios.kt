@@ -1,41 +1,76 @@
 package com.example.memegram.mls
 
-private class IosMlsClient : MlsPlatformClient {
-    private fun notImplemented(): Nothing =
-        throw UnsupportedOperationException(
-            "MLS не реализован на iOS. Подключи Swift UniFFI фреймворк (см. README)."
-        )
+import uniffi.mls_core.IncomingMessage
+import uniffi.mls_core.MlsClientHandle
 
-    override fun exportProviderState(): ByteArray = notImplemented()
-    override fun exportSigningKey(): ByteArray = notImplemented()
-    override fun generateKeyPackage(): ByteArray = notImplemented()
-    override fun createGroupWithId(groupId: ByteArray) = notImplemented()
-    override fun addMember(groupId: ByteArray, keyPackageBytes: ByteArray): WelcomeBundleKt = notImplemented()
-    override fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray = notImplemented()
-    override fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray = notImplemented()
-    override fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt = notImplemented()
-    override fun leaveGroup(groupId: ByteArray): ByteArray = notImplemented()
-    override fun deleteGroup(groupId: ByteArray) = notImplemented()
-    override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray = notImplemented()
-    override fun getGroupEpoch(groupId: ByteArray): ULong = notImplemented()
-    override fun memberCount(groupId: ByteArray): ULong = notImplemented()
+private class IosMlsClient(
+    private val handle: MlsClientHandle
+) : MlsPlatformClient {
+
+    override fun exportProviderState(): ByteArray = handle.exportProviderState()
+    override fun exportSigningKey(): ByteArray = handle.exportSigningKey()
+    override fun generateKeyPackage(): ByteArray = handle.generateKeyPackage()
+    override fun createGroupWithId(groupId: ByteArray) = handle.createGroupWithId(groupId)
+
+    override fun addMember(
+        groupId: ByteArray,
+        keyPackageBytes: ByteArray
+    ): WelcomeBundleKt {
+        val bundle = handle.addMember(groupId, keyPackageBytes)
+        return WelcomeBundleKt(commit = bundle.commit, welcome = bundle.welcome)
+    }
+
+    override fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray =
+        handle.joinFromWelcome(welcomeBytes)
+
+    override fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray =
+        handle.encryptMessage(groupId, plaintext)
+
+    override fun processMessage(
+        groupId: ByteArray,
+        msgBytes: ByteArray
+    ): IncomingMessageKt =
+        when (val result = handle.processMessage(groupId, msgBytes)) {
+            is IncomingMessage.Application   -> IncomingMessageKt.Application(result.data)
+            is IncomingMessage.CommitApplied -> IncomingMessageKt.CommitApplied
+            is IncomingMessage.Proposal      -> IncomingMessageKt.Proposal
+            else                             -> IncomingMessageKt.Other
+        }
+
+    override fun leaveGroup(groupId: ByteArray): ByteArray =
+        handle.leaveGroup(groupId)
+
+    override fun deleteGroup(groupId: ByteArray) =
+        handle.deleteGroup(groupId)
+
+    override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray =
+        handle.removeMemberByIdentity(groupId, identity)
+
+    override fun getGroupEpoch(groupId: ByteArray): ULong =
+        handle.getGroupEpoch(groupId)
+
+    override fun memberCount(groupId: ByteArray): ULong =
+        handle.memberCount(groupId)
+
     override fun mergePendingCommit(groupId: ByteArray) {
-        notImplemented()
+        handle.mergePendingCommit(groupId)
     }
 
     override fun clearPendingCommit(groupId: ByteArray) {
-        notImplemented()
+        handle.clearPendingCommit(groupId)
     }
 
     override fun clearPendingProposals(groupId: ByteArray) {
-        notImplemented()
+        handle.clearPendingProposals(groupId)
     }
 }
 
-actual fun createMlsClient(identity: String): MlsPlatformClient = IosMlsClient()
+actual fun createMlsClient(identity: String): MlsPlatformClient =
+    IosMlsClient(MlsClientHandle(identity))
 
 actual fun restoreMlsClient(
     identity: String,
     providerState: ByteArray,
     signingKey: ByteArray
-): MlsPlatformClient = IosMlsClient()
+): MlsPlatformClient =
+    IosMlsClient(MlsClientHandle.newFromState(identity, providerState, signingKey))

@@ -43,9 +43,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import com.example.memegram.localization.LocalStrings
-import io.github.vinceglb.filekit.compose.rememberFilePickerLauncher
-import io.github.vinceglb.filekit.core.PickerMode
-import io.github.vinceglb.filekit.core.PickerType
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.example.memegram.utils.sdp
@@ -57,7 +54,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 
-// ── HSV utilities ────────────────────────────────────────────────────
 private data class HsvColor(val hue: Float, val saturation: Float, val value: Float) {
     fun toColor(): Color {
         val c = value * saturation
@@ -131,17 +127,17 @@ fun AppearanceScreen(
     var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
     var cropKey by remember { mutableStateOf<String?>(null) }
 
-    val chatBgPicker = rememberFilePickerLauncher(PickerType.Image, PickerMode.Single) { f ->
-        f?.let { scope.launch { cropBytes = it.readBytes(); cropKey = "chatbg" } }
+    val chatBgPicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { cropBytes = it; cropKey = "chatbg" }
     }
-    val topBarPicker = rememberFilePickerLauncher(PickerType.Image, PickerMode.Single) { f ->
-        f?.let { scope.launch { cropBytes = it.readBytes(); cropKey = "topbar" } }
+    val topBarPicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { cropBytes = it; cropKey = "topbar" }
     }
-    val myBubblePicker = rememberFilePickerLauncher(PickerType.Image, PickerMode.Single) { f ->
-        f?.let { scope.launch { cropBytes = it.readBytes(); cropKey = "mybubble" } }
+    val myBubblePicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { cropBytes = it; cropKey = "mybubble" }
     }
-    val theirBubblePicker = rememberFilePickerLauncher(PickerType.Image, PickerMode.Single) { f ->
-        f?.let { scope.launch { cropBytes = it.readBytes(); cropKey = "theirbubble" } }
+    val theirBubblePicker = com.example.memegram.picker.rememberImagePicker(multiple = false) { picked ->
+        picked.firstOrNull()?.let { cropBytes = it; cropKey = "theirbubble" }
     }
 
     val screenWidthDp = LocalScreenWidthDp.current
@@ -195,7 +191,6 @@ fun AppearanceScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
-                // ── Theme toggle ─────────────────────────────────────
                 Text(
                     text = s.themeSection,
                     modifier = Modifier.padding(start = 16.sdp, top = 16.sdp, bottom = 8.sdp),
@@ -239,7 +234,6 @@ fun AppearanceScreen(
 
                 Spacer(Modifier.height(16.sdp))
 
-                // ── Preview ──────────────────────────────────────────
                 Text(
                     text = s.preview,
                     modifier = Modifier.padding(start = 16.sdp, bottom = 8.sdp),
@@ -275,7 +269,6 @@ fun AppearanceScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // ── Bubble previews ──────────────────────────
                         val theirBubbleBmp = remember(theirBubbleImage) { theirBubbleImage?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() } }
                         val myBubbleBmp = remember(myBubbleImage) { myBubbleImage?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() } }
 
@@ -319,34 +312,33 @@ fun AppearanceScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.sdp))
 
-                // ── Color/Photo settings ─────────────────────────────
                 AppearanceSettingItem(
                     title = s.topBarColor,
                     currentColor = topBarColor,
                     hasImage = topBarImage != null,
                     onColorClick = { showColorPickerForKey = "topbar" },
-                    onPhotoClick = { topBarPicker.launch() }
+                    onPhotoClick = { topBarPicker() }
                 )
                 AppearanceSettingItem(
                     title = s.chatBgColor,
                     currentColor = chatBgColor,
                     hasImage = chatBgImage != null,
                     onColorClick = { showColorPickerForKey = "chatbg" },
-                    onPhotoClick = { chatBgPicker.launch() }
+                    onPhotoClick = { chatBgPicker() }
                 )
                 AppearanceSettingItem(
                     title = s.myMessageColor,
                     currentColor = myBubbleColor,
                     hasImage = myBubbleImage != null,
                     onColorClick = { showColorPickerForKey = "mybubble" },
-                    onPhotoClick = { myBubblePicker.launch() }
+                    onPhotoClick = { myBubblePicker() }
                 )
                 AppearanceSettingItem(
                     title = s.otherMessageColor,
                     currentColor = theirBubbleColor,
                     hasImage = theirBubbleImage != null,
                     onColorClick = { showColorPickerForKey = "theirbubble" },
-                    onPhotoClick = { theirBubblePicker.launch() }
+                    onPhotoClick = { theirBubblePicker() }
                 )
 
                 Spacer(Modifier.height(24.sdp))
