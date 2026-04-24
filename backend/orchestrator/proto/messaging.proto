@@ -512,6 +512,7 @@ service MessagingService {
     rpc UpdateGroupAvatar(UpdateGroupAvatarRequest)               returns (UpdateGroupAvatarResponse);
     rpc UpdateGroupName(UpdateGroupNameRequest)                   returns (UpdateGroupNameResponse);
     rpc DeleteConversation(DeleteConversationRequest)             returns (DeleteConversationResponse);
+    rpc PurgeUserMembership(PurgeUserMembershipRequest)           returns (PurgeUserMembershipResponse);
 
     // Messages
     rpc SendMessage(SendMessageRequest)   returns (SendMessageResponse);
@@ -544,4 +545,16 @@ service MessagingService {
 
     // Health
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// ── PurgeUserMembership (internal, account-deletion) ─
+// Marks the user as left-now in EVERY group conversation they currently
+// belong to and hard-deletes them from EVERY direct conversation membership.
+// Direct conversation rows themselves are kept so the peer keeps history.
+message PurgeUserMembershipRequest {
+    string user_id = 1;
+}
+message PurgeUserMembershipResponse {
+    int32 groups_left      = 1;
+    int32 directs_purged   = 2;
 }

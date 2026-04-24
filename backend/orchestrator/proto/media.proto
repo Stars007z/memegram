@@ -6,6 +6,7 @@ service MediaService {
     rpc VerifyObjectExists(VerifyObjectExistsRequest)             returns (VerifyObjectExistsResponse);
     rpc GetDownloadPresignedUrl(GetDownloadPresignedUrlRequest)   returns (GetDownloadPresignedUrlResponse);
     rpc DeleteObject(DeleteObjectRequest)                         returns (DeleteObjectResponse);
+    rpc DeleteObjectByMediaId(DeleteObjectByMediaIdRequest)       returns (DeleteObjectResponse);
     rpc DeleteObjectsBatch(DeleteObjectsBatchRequest)             returns (DeleteObjectsBatchResponse);
     rpc ProcessExpiredObjects(ProcessExpiredObjectsRequest)       returns (ProcessExpiredObjectsResponse);
     rpc HealthCheck(MediaHealthCheckRequest)                      returns (MediaHealthCheckResponse);
@@ -56,6 +57,12 @@ message DeleteObjectRequest {
 }
 message DeleteObjectResponse {
     bool success = 1;
+}
+
+// ── DeleteObjectByMediaId ──────────────────────────
+
+message DeleteObjectByMediaIdRequest {
+    string media_id = 1;
 }
 
 // ── DeleteObjectsBatch ─────────────────────────────

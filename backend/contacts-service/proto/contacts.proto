@@ -16,6 +16,7 @@ service ContactsService {
     // Internal
     rpc IsContact(IsContactRequest) returns (IsContactResponse);
     rpc IsBlocked(IsBlockedRequest) returns (IsBlockedResponse);
+    rpc PurgeUser(PurgeUserRequest) returns (PurgeUserResponse);
 }
 
 message UserBriefProfile {
@@ -124,4 +125,15 @@ message IsBlockedRequest {
 }
 message IsBlockedResponse {
     bool is_blocked = 1;
+}
+
+// ── PurgeUser (internal, account-deletion) ────
+// Removes EVERY contacts and blocked-user row that mentions the given user
+// id, on either side. Idempotent.
+message PurgeUserRequest {
+    string user_id = 1;
+}
+message PurgeUserResponse {
+    int32 contacts_deleted = 1;
+    int32 blocked_deleted  = 2;
 }

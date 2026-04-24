@@ -141,6 +141,12 @@ class MessagingHealthResult:
     version: str
 
 
+@dataclass
+class PurgeUserMembershipResult:
+    groups_left: int = 0
+    directs_purged: int = 0
+
+
 class IMessagingGateway(ABC):
 
     @abstractmethod
@@ -377,6 +383,15 @@ class IMessagingGateway(ABC):
 
     @abstractmethod
     async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int: ...
+
+    @abstractmethod
+    async def purge_user_membership(self, user_id: str) -> PurgeUserMembershipResult:
+        """Account-deletion fanout: detach `user_id` from every conversation.
+
+        Groups: mark membership as left (no MLS commit). Directs: hard-delete
+        the membership row (peer keeps history). Idempotent.
+        """
+        ...
 
     @abstractmethod
     async def health_check(self) -> MessagingHealthResult: ...

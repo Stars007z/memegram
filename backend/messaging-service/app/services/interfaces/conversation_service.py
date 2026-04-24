@@ -138,3 +138,11 @@ class IConversationService(ABC):
         purge it locally.
         """
         ...
+
+    @abstractmethod
+    async def purge_user_membership(self, user_id: uuid.UUID) -> tuple[int, int]:
+        """Account-deletion fanout: detach a user from every conversation.
+
+        Returns (groups_left, directs_purged). Idempotent.
+        """
+        ...

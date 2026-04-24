@@ -2,7 +2,15 @@ import asyncio
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_contacts_gateway, get_current_session, get_item_storage_gateway, get_user_gateway
+from app.api.dependencies import (
+    get_auth_gateway,
+    get_contacts_gateway,
+    get_current_session,
+    get_item_storage_gateway,
+    get_media_gateway,
+    get_messaging_gateway,
+    get_user_gateway,
+)
 from app.api.v1.user.schemas import (
     DeleteUserResponseSchema,
     MediaDownloadInfoSchema,
@@ -14,8 +22,11 @@ from app.api.v1.user.schemas import (
     UserProfileResponseSchema,
     UserSettingsResponseSchema,
 )
+from app.core.interfaces.auth_gateway import IAuthGateway
 from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.interfaces.item_storage_gateway import IItemStorageGateway
+from app.core.interfaces.media_gateway import IMediaGateway
+from app.core.interfaces.messaging_gateway import IMessagingGateway
 from app.core.interfaces.user_gateway import IUserGateway, UpdateUserRequest, UpdateUserSettingsRequest
 from app.core.session_context import SessionContext
 from app.logging_config import get_logger
@@ -133,10 +144,51 @@ async def update_me(
 @router.delete("/me", response_model=DeleteUserResponseSchema)
 async def delete_me(
     session: SessionContext = Depends(get_current_session),
-    gateway: IUserGateway = Depends(get_user_gateway),
+    user_gw: IUserGateway = Depends(get_user_gateway),
+    contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
+    messaging_gw: IMessagingGateway = Depends(get_messaging_gateway),
+    auth_gw: IAuthGateway = Depends(get_auth_gateway),
+    media_gw: IMediaGateway = Depends(get_media_gateway),
 ):
-    success = await gateway.delete_user(user_id=session.user_id)
-    return DeleteUserResponseSchema(success=success)
+    """Account deletion fanout.
+
+    Order matters: user-service hard-deletes the user row FIRST and returns
+    the list of media object IDs that were attached to the profile/settings.
+    Only after that succeeds do we run the best-effort cleanup fanout
+    (contacts, messaging memberships, device revocation, media objects).
+    Sub-call failures are logged but never abort the request — the user row
+    is already gone from user-service which is the authoritative source.
+    """
+    user_id = session.user_id
+    delete_result = await user_gw.delete_user(user_id=user_id)
+    if not delete_result.success:
+        return DeleteUserResponseSchema(success=False, deleted_at=None)
+
+    media_ids = delete_result.media_ids or []
+    fanout_tasks = [
+        contacts_gw.purge_user(user_id=user_id),
+        messaging_gw.purge_user_membership(user_id=user_id),
+        auth_gw.bulk_revoke_user_devices(user_id=user_id),
+    ]
+    fanout_tasks.extend(media_gw.delete_object_by_media_id(media_id=mid) for mid in media_ids)
+
+    results = await asyncio.gather(*fanout_tasks, return_exceptions=True)
+
+    step_labels = ["contacts_purge", "messaging_purge", "auth_revoke"] + [f"media_delete[{mid}]" for mid in media_ids]
+    for label, result in zip(step_labels, results):
+        if isinstance(result, Exception):
+            step_key = label.split("[", 1)[0]
+            logger.warning(
+                f"user.delete.fanout.{step_key}_failed",
+                user_id=user_id,
+                step=label,
+                error=str(result),
+            )
+
+    return DeleteUserResponseSchema(
+        success=True,
+        deleted_at=delete_result.deleted_at or None,
+    )
 
 
 @router.get("/me/settings", response_model=UserSettingsResponseSchema)

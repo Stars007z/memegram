@@ -97,9 +97,20 @@ class ApiService(
         }.body()
 
     suspend fun deleteMe() {
+        deleteAccount()
+    }
+
+    suspend fun deleteAccount(): DeleteAccountResponse {
         val response = client.delete("$baseUrl/api/v1/user/me") { bearerAuth(token()) }
-        if (response.status.value >= 500)
-            throw Exception("deleteMe: ${response.status.value} ${response.bodyAsText()}")
+        if (!response.status.isSuccess()) {
+            throw Exception("deleteAccount: ${response.status.value} ${response.bodyAsText()}")
+        }
+        val parsed = runCatching { response.body<DeleteAccountResponse>() }.getOrNull()
+            ?: DeleteAccountResponse(success = true, deletedAt = null)
+        if (!parsed.success) {
+            throw Exception("deleteAccount: server reported success=false")
+        }
+        return parsed
     }
 
     suspend fun getUserById(userId: String): UserProfileResponse =

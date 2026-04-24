@@ -129,6 +129,20 @@ class MediaObjectServiceImpl(IMediaObjectService):
         await self._repo.mark_deleted(media_id)
         return True
 
+    async def delete_object_by_media_id(
+        self,
+        media_id: uuid.UUID,
+    ) -> bool:
+        obj = await self._repo.get_by_id(media_id)
+        if obj is None:
+            return False
+        if obj.status == "deleted":
+            return False
+
+        await self._s3.delete_object(bucket=obj.s3_bucket, key=obj.s3_key)
+        await self._repo.mark_deleted(media_id)
+        return True
+
     async def delete_objects_batch(
         self,
         objects: list[tuple[uuid.UUID, str]],

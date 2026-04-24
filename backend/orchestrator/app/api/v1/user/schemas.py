@@ -27,6 +27,7 @@ class UpdateUserRequestSchema(BaseModel):
 
 class DeleteUserResponseSchema(BaseModel):
     success: bool
+    deleted_at: Optional[int] = None
 
 
 class UserSettingsResponseSchema(BaseModel):

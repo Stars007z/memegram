@@ -398,3 +398,9 @@ data class RegisterPushTokenRequest(
 data class RegisterPushTokenResponse(
     val success: Boolean
 )
+
+@Serializable
+data class DeleteAccountResponse(
+    val success: Boolean,
+    @SerialName("deleted_at") val deletedAt: Long? = null
+)

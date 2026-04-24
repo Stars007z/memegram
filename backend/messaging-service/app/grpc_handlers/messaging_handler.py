@@ -68,6 +68,9 @@ class MessagingHandler(messaging_pb2_grpc.MessagingServiceServicer):
     async def DeleteConversation(self, request, context):
         return await self._conversations.delete_conversation(request, context)
 
+    async def PurgeUserMembership(self, request, context):
+        return await self._conversations.purge_user_membership(request, context)
+
     async def SendMessage(self, request, context):
         return await self._messages.send_message(request, context)
 
