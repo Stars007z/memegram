@@ -58,6 +58,8 @@ SERVICES=(
 )
 
 IMAGE_TAG="v1.0.0"
+# Unique tag per build run — guarantees k8s pulls a fresh image even if :latest is cached
+BUILD_TAG="build-$(date +%Y%m%d-%H%M%S)-$(git -C "$(cd "$(dirname "$0")" && pwd)" rev-parse --short HEAD 2>/dev/null || echo nogit)"
 REGISTRY_URL="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REGISTRY_NAME}"
 
 # ==================== COLORS ====================
@@ -281,11 +283,14 @@ build_images() {
     fi
 
     for svc in "${SERVICES[@]}"; do
-        log "Building $svc (linux/amd64)..."
+        log "Building $svc (linux/amd64) [tag: $BUILD_TAG]..."
         docker buildx build \
             --platform linux/amd64 \
+            --no-cache \
+            --pull \
             -t "memegram/${svc}:latest" \
             -t "${REGISTRY_URL}/${svc}:${IMAGE_TAG}" \
+            -t "${REGISTRY_URL}/${svc}:${BUILD_TAG}" \
             -t "${REGISTRY_URL}/${svc}:latest" \
             --load \
             "$SCRIPT_DIR/backend/$svc" -q
@@ -300,6 +305,7 @@ push_images() {
     for svc in "${SERVICES[@]}"; do
         log "Pushing $svc..."
         docker push "${REGISTRY_URL}/${svc}:${IMAGE_TAG}" -q
+        docker push "${REGISTRY_URL}/${svc}:${BUILD_TAG}" -q
         docker push "${REGISTRY_URL}/${svc}:latest" -q
     done
     log "All images pushed!"
@@ -482,6 +488,9 @@ full_deploy() {
     build_images
     push_images
     deploy
+    log "Forcing rollout restart so new :latest images are pulled..."
+    kubectl rollout restart deployment -n "$NAMESPACE"
+    kubectl rollout status deployment -n "$NAMESPACE" --timeout=300s 2>/dev/null || true
 }
 
 # ==================== REDEPLOY (just deploy, no rebuild) ====================
