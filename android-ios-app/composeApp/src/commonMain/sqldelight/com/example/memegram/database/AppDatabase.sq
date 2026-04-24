@@ -158,6 +158,16 @@ UPDATE messageEntity
 SET localPreviewBytes = ?
 WHERE serverId = ?;
 
+markOutgoingMessagesRead:
+UPDATE messageEntity
+SET status = 'READ'
+WHERE conversationId = ?
+  AND isOutgoing = 1
+  AND status = 'SENT'
+  AND timestamp <= (
+    SELECT timestamp FROM messageEntity WHERE serverId = ? LIMIT 1
+  );
+
 deleteMessageByServerId:
 DELETE FROM messageEntity WHERE serverId = ?;
 
@@ -348,3 +358,57 @@ DELETE FROM blockedUserEntity WHERE blockedUserId = ?;
 
 clearBlockedUsers:
 DELETE FROM blockedUserEntity;
+
+CREATE TABLE userProfileEntity (
+    userId                    TEXT NOT NULL PRIMARY KEY,
+    username                  TEXT,
+    userPublicKey             TEXT,
+    bio                       TEXT,
+    isDeleted                 INTEGER NOT NULL DEFAULT 0,
+    avatarMediaId             TEXT,
+    profileBackgroundMediaId  TEXT,
+    lastActive                INTEGER,
+    isPeerBlocked             INTEGER NOT NULL DEFAULT 0,
+    isBlockedByPeer           INTEGER NOT NULL DEFAULT 0,
+    cachedAt                  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX userProfileEntity_username_idx ON userProfileEntity(username);
+CREATE INDEX userProfileEntity_publicKey_idx ON userProfileEntity(userPublicKey);
+
+selectUserProfileById:
+SELECT * FROM userProfileEntity WHERE userId = ?;
+
+selectUserProfileByPublicKey:
+SELECT * FROM userProfileEntity WHERE userPublicKey = ? LIMIT 1;
+
+selectUserProfilesByIds:
+SELECT * FROM userProfileEntity WHERE userId IN ?;
+
+upsertUserProfile:
+INSERT INTO userProfileEntity(
+    userId, username, userPublicKey, bio, isDeleted,
+    avatarMediaId, profileBackgroundMediaId, lastActive,
+    isPeerBlocked, isBlockedByPeer, cachedAt
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(userId) DO UPDATE SET
+    username                 = excluded.username,
+    userPublicKey            = excluded.userPublicKey,
+    bio                      = excluded.bio,
+    isDeleted                = excluded.isDeleted,
+    avatarMediaId            = excluded.avatarMediaId,
+    profileBackgroundMediaId = excluded.profileBackgroundMediaId,
+    lastActive               = excluded.lastActive,
+    isPeerBlocked            = excluded.isPeerBlocked,
+    isBlockedByPeer          = excluded.isBlockedByPeer,
+    cachedAt                 = excluded.cachedAt;
+
+deleteUserProfile:
+DELETE FROM userProfileEntity WHERE userId = ?;
+
+deleteAllUserProfilesExcept:
+DELETE FROM userProfileEntity WHERE userId != ?;
+
+clearUserProfiles:
+DELETE FROM userProfileEntity;

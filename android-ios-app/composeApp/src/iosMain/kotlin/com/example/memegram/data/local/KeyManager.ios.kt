@@ -18,10 +18,6 @@ class IOSKeyManager : KeyManager {
     private val KEY_PUBLIC = "identity_public_key"
     private val SERVICE = "com.example.memegram.keys"
 
-    /**
-     * Builds a CFDictionary by adding entries one-by-one to a CFMutableDictionary.
-     * Caller is responsible for releasing the returned ref.
-     */
     private fun buildQuery(entries: List<Pair<CFStringRef?, CFTypeRef?>>): CFMutableDictionaryRef {
         val dict = CFDictionaryCreateMutable(
             null, entries.size.convert(),

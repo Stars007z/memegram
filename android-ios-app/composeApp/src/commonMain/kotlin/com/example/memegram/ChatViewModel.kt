@@ -40,7 +40,8 @@ class ChatViewModel(
     private val settings: Settings,
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
-    private val blockedUsersCache: BlockedUsersCache
+    private val blockedUsersCache: BlockedUsersCache,
+    private val profileRepository: com.example.memegram.data.repository.ProfileRepository
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -222,7 +223,7 @@ class ChatViewModel(
                         if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
                             launch {
                                 try {
-                                    val profile = api.getUserById(member.userId)
+                                    val profile = profileRepository.getOrFetch(member.userId) ?: return@launch
                                     _memberProfiles.update { it + (member.userId to profile) }
                                 } catch (_: Exception) {}
                             }
@@ -234,7 +235,7 @@ class ChatViewModel(
                     peer?.userId?.let { peerId ->
                         launch {
                             try {
-                                val profile = api.getUserById(peerId)
+                                val profile = profileRepository.getOrFetch(peerId) ?: return@launch
                                 _peerAvatarMediaId.value = profile.avatarMediaId
                             } catch (_: Exception) {}
                         }
@@ -426,6 +427,14 @@ class ChatViewModel(
                 chatRepository.deleteMessageByServerId(msgId)
             }
 
+            "message_read" -> {
+                val readerId = data.userId ?: return
+                val lastReadId = data.lastReadMessageId ?: return
+                if (readerId == myId) return
+                chatRepository.markOutgoingMessagesRead(convId, lastReadId)
+                loadMessages(convId)
+            }
+
             "epoch_changed" -> syncMlsPending(convId)
 
             "member_left" -> {
@@ -442,8 +451,10 @@ class ChatViewModel(
                 var kickerProfile = kickedByUserId?.let { _memberProfiles.value[it] }
                 if (kickerProfile == null && kickedByUserId != null) {
                     kickerProfile = try {
-                        val fetched = api.getUserById(kickedByUserId)
-                        _memberProfiles.update { it + (kickedByUserId to fetched) }
+                        val fetched = profileRepository.getOrFetch(kickedByUserId)
+                        if (fetched != null) {
+                            _memberProfiles.update { it + (kickedByUserId to fetched) }
+                        }
                         fetched
                     } catch (_: Exception) { null }
                 }
@@ -482,8 +493,8 @@ class ChatViewModel(
             val myId = myUserId ?: return
             if (!_isGroupChat.value && peerUserId != null) {
                 try {
-                    val profile = api.getUserById(peerUserId!!)
-                    if (profile.avatarMediaId != _peerAvatarMediaId.value) {
+                    val profile = profileRepository.getOrFetch(peerUserId!!, forceRefresh = true)
+                    if (profile != null && profile.avatarMediaId != _peerAvatarMediaId.value) {
                         _peerAvatarMediaId.value = profile.avatarMediaId
                     }
                 } catch (_: Exception) {}
@@ -616,7 +627,11 @@ class ChatViewModel(
                             }
 
                             if (shouldTranslate) {
-                                val result = translationService.translate(parsed.content, detected, targetLang)
+                                val result = com.example.memegram.ml.MlModelGate.withModel(
+                                    com.example.memegram.ml.MlModelGate.Priority.AUTO
+                                ) {
+                                    translationService.translate(parsed.content, detected, targetLang)
+                                }
                                 println("MemegramDebug [AutoTranslate]: result='${result.translatedText.take(40)}' srcLang=${result.detectedSourceLang}")
                                 if (result.translatedText != parsed.content) {
                                     chatRepository.updateMessageTranslation(
@@ -1265,7 +1280,11 @@ class ChatViewModel(
                 val targetLang = translationSettings.getEffectiveTargetLang(appLang)
                 val textToTranslate = if (message.isTranslated) message.originalText ?: message.text else message.text
                 println("MemegramDebug [Translate]: text='${textToTranslate.take(50)}' src=$forcedSourceLang tgt=$targetLang")
-                val result = translationService.translate(textToTranslate, forcedSourceLang, targetLang)
+                val result = com.example.memegram.ml.MlModelGate.withModel(
+                    com.example.memegram.ml.MlModelGate.Priority.USER
+                ) {
+                    translationService.translate(textToTranslate, forcedSourceLang, targetLang)
+                }
                 println("MemegramDebug [Translate]: result='${result.translatedText.take(50)}' detectedLang=${result.detectedSourceLang}")
                 if (result.translatedText != textToTranslate) {
                     chatRepository.updateMessageTranslation(
@@ -1303,6 +1322,28 @@ class ChatViewModel(
             } catch (e: Exception) {
                 _error.value = S.current.deleteError(e.message ?: "")
             }
+        }
+    }
+    
+    fun deleteFailedMessage(message: Message) {
+        if (message.status != MessageStatus.FAILED) return
+        viewModelScope.launch {
+            val key = message.serverId.takeIf { it.isNotBlank() } ?: "temp_${message.id}"
+            chatRepository.deleteMessageByServerId(key)
+        }
+    }
+
+    fun resendMessage(message: Message) {
+        val convId = currentConversationId ?: return
+        if (message.status != MessageStatus.FAILED) return
+        if (message.type != "text") {
+            _error.value = S.current.resendUnsupported
+            return
+        }
+        viewModelScope.launch {
+            val oldKey = message.serverId.takeIf { it.isNotBlank() } ?: "temp_${message.id}"
+            chatRepository.deleteMessageByServerId(oldKey)
+            sendTextMessageInternal(convId, message.text)
         }
     }
 

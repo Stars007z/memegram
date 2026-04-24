@@ -170,6 +170,35 @@ fun StorageScreen(
                 }
 
                 item {
+                    val profilesSize by viewModel.profilesCacheSize.collectAsState()
+                    Spacer(Modifier.height(12.sdp))
+                    OutlinedButton(
+                        onClick = { viewModel.clearProfilesCache() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp)
+                            .height(48.sdp),
+                        shape = RoundedCornerShape(12.sdp),
+                        enabled = profilesSize > 0
+                    ) {
+                        Icon(Icons.Default.PersonOutline, null, modifier = Modifier.size(18.sdp))
+                        Spacer(Modifier.width(8.sdp))
+                        Text(
+                            if (profilesSize > 0)
+                                s.clearProfilesCacheSize(formatSizeBytes(profilesSize))
+                            else s.clearProfilesCache,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        s.profilesCacheInfo,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.sdp, vertical = 8.sdp)
+                    )
+                }
+
+                item {
                     Text(
                         s.storageCloudInfo,
                         style = MaterialTheme.typography.bodySmall,
@@ -285,7 +314,11 @@ private fun StorageDonutChart(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
-    val (valueStr, unitStr) = remember(totalSize) { formatSizeComponents(totalSize) }
+    val selected = remember(categories) { categories.filter { it.isSelected && it.sizeBytes > 0 } }
+    val selectedTotal = remember(selected) { selected.sumOf { it.sizeBytes } }
+    val displayedSize = if (selected.isEmpty()) totalSize else selectedTotal
+
+    val (valueStr, unitStr) = remember(displayedSize) { formatSizeComponents(displayedSize) }
 
     val strokeWidthDp = 26.sdp
     val chartSize = 210.sdp
@@ -298,11 +331,10 @@ private fun StorageDonutChart(
             val radius = diameter / 2
             val cx = size.width / 2
             val cy = size.height / 2
-            val gapDegrees = 3f
+            val gapDegrees = if (selected.size > 1) 3f else 0f
+            val minSweep = 6f
 
-            val nonZero = categories.filter { it.sizeBytes > 0 }
-
-            if (nonZero.isEmpty()) {
+            if (selected.isEmpty()) {
                 drawArc(
                     color = Color.Gray.copy(alpha = 0.3f),
                     startAngle = 0f,
@@ -313,21 +345,33 @@ private fun StorageDonutChart(
                     size = Size(diameter, diameter)
                 )
             } else {
-                var startAngle = -90f
-                nonZero.forEach { cat ->
-                    val sweep = (cat.percentage / 100f) * 360f
-                    if (sweep > gapDegrees) {
-                        drawArc(
-                            color = cat.color,
-                            startAngle = startAngle + gapDegrees / 2,
-                            sweepAngle = sweep - gapDegrees,
-                            useCenter = false,
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                            topLeft = Offset(cx - radius, cy - radius),
-                            size = Size(diameter, diameter)
-                        )
+                val totalGap = gapDegrees * selected.size
+                val available = 360f - totalGap
+                val rawSweeps = selected.map { (it.sizeBytes.toFloat() / selectedTotal.toFloat()) * available }
+                val adjusted = rawSweeps.map { it.coerceAtLeast(minSweep) }.toMutableList()
+                val overflow = adjusted.sum() - available
+                if (overflow > 0f) {
+                    val reducible = adjusted.mapIndexed { i, v -> i to (v - minSweep) }.filter { it.second > 0f }
+                    val reducibleSum = reducible.sumOf { it.second.toDouble() }.toFloat()
+                    if (reducibleSum > 0f) {
+                        reducible.forEach { (i, extra) ->
+                            adjusted[i] = adjusted[i] - overflow * (extra / reducibleSum)
+                        }
                     }
-                    startAngle += sweep
+                }
+                var startAngle = -90f
+                selected.forEachIndexed { idx, cat ->
+                    val sweep = adjusted[idx]
+                    drawArc(
+                        color = cat.color,
+                        startAngle = startAngle + gapDegrees / 2,
+                        sweepAngle = (sweep - gapDegrees).coerceAtLeast(0.5f),
+                        useCenter = false,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        topLeft = Offset(cx - radius, cy - radius),
+                        size = Size(diameter, diameter)
+                    )
+                    startAngle += sweep + gapDegrees
                 }
             }
         }

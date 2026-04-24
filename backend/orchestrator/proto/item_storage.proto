@@ -16,7 +16,7 @@ service ItemStorageService {
 
 message InitiateUploadRequest {
   string owner_user_id = 1;
-  string item_type     = 2;  // avatar, profile_background, chat_background, notification_sound, ringtone
+  string item_type     = 2;  // avatar, profile_background, chat_background, top_bar, my_bubble, their_bubble, group_avatar
   string mime_type     = 3;
   int64  size_bytes    = 4;
 }

@@ -10,7 +10,11 @@ import com.example.memegram.MemegramApp
 import com.example.memegram.R
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.NotificationsRepository
+import com.example.memegram.localization.AppStrings
+import com.example.memegram.localization.EnStrings
+import com.example.memegram.localization.RuStrings
 import com.example.memegram.mls.MlsManager
+import com.example.memegram.notifications.NotificationPrefs
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.koin.core.context.GlobalContext
+import java.util.Locale
 
 
 class MemegramFirebaseMessagingService : FirebaseMessagingService() {
@@ -71,6 +76,23 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
+    private fun isChatMuted(conversationId: String): Boolean {
+        val muteUntilMs = runCatching {
+            val repo = GlobalContext.get().get<ChatRepository>()
+            runBlocking { repo.getChatById(conversationId)?.muteUntil ?: 0L }
+        }.getOrDefault(0L)
+        return muteUntilMs > System.currentTimeMillis()
+    }
+
+    private fun notificationPrefs(): NotificationPrefs? = runCatching {
+        GlobalContext.get().get<NotificationPrefs>()
+    }.getOrNull()
+
+    private fun appStrings(): AppStrings {
+        val isRu = Locale.getDefault().language.equals("ru", ignoreCase = true)
+        return if (isRu) RuStrings else EnStrings
+    }
+
     private fun showMessageNotification(
         data: Map<String, String>,
         conversationId: String,
@@ -81,32 +103,35 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        val muteUntilMs = runCatching {
-            val repo = GlobalContext.get().get<ChatRepository>()
-            runBlocking { repo.getChatById(conversationId)?.muteUntil ?: 0L }
-        }.getOrDefault(0L)
-        val nowMs = System.currentTimeMillis()
-        if (muteUntilMs > nowMs) {
-            println("MemegramDebug [FCM] muted until $muteUntilMs, skip")
+        if (isChatMuted(conversationId)) {
+            println("MemegramDebug [FCM] muted, skip message")
             return
         }
 
+        val prefs = notificationPrefs()
+        val previewEnabled = prefs?.previewEnabledNow() ?: NotificationPrefs.DEFAULT_PREVIEW_ENABLED
+        val vibrationStrength =
+            prefs?.vibrationStrengthNow() ?: NotificationPrefs.DEFAULT_VIBRATION_STRENGTH
+
         val title = data["title"].orEmpty().ifEmpty { data["conversation_name"].orEmpty() }
-        val body = data["body"].orEmpty()
+        val rawBody = data["body"].orEmpty()
+        val body = if (previewEnabled) rawBody else appStrings().genericNotificationBody
         val chatName = data["conversation_name"].orEmpty().ifEmpty { title }
         val avatarMediaId = data["avatar_url"].orEmpty()
 
         val pi = buildOpenChatIntent(conversationId, chatName, avatarMediaId)
 
-        val notif = baseNotificationBuilder(title, body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        val builder = baseNotificationBuilder(title, body, vibrationStrength)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setContentIntent(pi)
             .setGroup("conv_$conversationId")
-            .build()
+
+        if (previewEnabled && rawBody.isNotEmpty()) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(rawBody))
+        }
 
         try {
-            nm.notify(conversationId.hashCode(), notif)
+            nm.notify(conversationId.hashCode(), builder.build())
         } catch (se: SecurityException) {
             println("MemegramDebug [FCM] notify SecurityException: ${se.message}")
         }
@@ -120,6 +145,11 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
         val nm = NotificationManagerCompat.from(this)
         if (!nm.areNotificationsEnabled()) return
 
+        if (isChatMuted(conversationId)) {
+            println("MemegramDebug [FCM] muted, skip system event")
+            return
+        }
+
         val title = data["title"].orEmpty().ifEmpty { data["conversation_name"].orEmpty() }
         val body = data["body"].orEmpty()
         if (title.isEmpty() && body.isEmpty()) return
@@ -127,7 +157,10 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
         val chatName = data["conversation_name"].orEmpty().ifEmpty { title }
         val avatarMediaId = data["avatar_url"].orEmpty()
 
-        val builder = baseNotificationBuilder(title, body)
+        val vibrationStrength =
+            notificationPrefs()?.vibrationStrengthNow() ?: NotificationPrefs.DEFAULT_VIBRATION_STRENGTH
+
+        val builder = baseNotificationBuilder(title, body, vibrationStrength)
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
 
@@ -154,14 +187,27 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun baseNotificationBuilder(title: String, body: String): NotificationCompat.Builder =
-        NotificationCompat.Builder(this, MemegramApp.CHANNEL_MESSAGES)
+    private fun baseNotificationBuilder(
+        title: String,
+        body: String,
+        vibrationStrength: Int,
+    ): NotificationCompat.Builder {
+        val channelId = MemegramApp.channelIdForVibration(vibrationStrength)
+        val builder = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+
+        if (vibrationStrength <= 0) {
+            builder.setVibrate(longArrayOf(0L))
+        } else {
+            builder.setVibrate(MemegramApp.vibrationPatternFor(vibrationStrength))
+        }
+        return builder
+    }
 
     private fun buildOpenChatIntent(
         conversationId: String,

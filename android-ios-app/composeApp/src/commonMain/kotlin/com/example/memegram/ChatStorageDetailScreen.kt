@@ -238,11 +238,12 @@ private fun ChatDetailDonutChart(
             val radius = diameter / 2
             val cx = size.width / 2
             val cy = size.height / 2
-            val gapDegrees = 3f
 
-            val nonZero = categories.filter { it.sizeBytes > 0 }
+            val selected = categories.filter { it.isSelected && it.sizeBytes > 0 }
+            val gapDegrees = if (selected.size > 1) 3f else 0f
+            val minSweep = 6f
 
-            if (nonZero.isEmpty()) {
+            if (selected.isEmpty()) {
                 drawArc(
                     color = Color.Gray.copy(alpha = 0.3f),
                     startAngle = 0f,
@@ -253,21 +254,34 @@ private fun ChatDetailDonutChart(
                     size = Size(diameter, diameter)
                 )
             } else {
-                var startAngle = -90f
-                nonZero.forEach { cat ->
-                    val sweep = (cat.percentage / 100f) * 360f
-                    if (sweep > gapDegrees) {
-                        drawArc(
-                            color = cat.color,
-                            startAngle = startAngle + gapDegrees / 2,
-                            sweepAngle = sweep - gapDegrees,
-                            useCenter = false,
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                            topLeft = Offset(cx - radius, cy - radius),
-                            size = Size(diameter, diameter)
-                        )
+                val selectedTotal = selected.sumOf { it.sizeBytes }.toFloat()
+                val totalGap = gapDegrees * selected.size
+                val available = 360f - totalGap
+                val rawSweeps = selected.map { (it.sizeBytes.toFloat() / selectedTotal) * available }
+                val adjusted = rawSweeps.map { it.coerceAtLeast(minSweep) }.toMutableList()
+                val overflow = adjusted.sum() - available
+                if (overflow > 0f) {
+                    val reducible = adjusted.mapIndexed { i, v -> i to (v - minSweep) }.filter { it.second > 0f }
+                    val reducibleSum = reducible.sumOf { it.second.toDouble() }.toFloat()
+                    if (reducibleSum > 0f) {
+                        reducible.forEach { (i, extra) ->
+                            adjusted[i] = adjusted[i] - overflow * (extra / reducibleSum)
+                        }
                     }
-                    startAngle += sweep
+                }
+                var startAngle = -90f
+                selected.forEachIndexed { idx, cat ->
+                    val sweep = adjusted[idx]
+                    drawArc(
+                        color = cat.color,
+                        startAngle = startAngle + gapDegrees / 2,
+                        sweepAngle = (sweep - gapDegrees).coerceAtLeast(0.5f),
+                        useCenter = false,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        topLeft = Offset(cx - radius, cy - radius),
+                        size = Size(diameter, diameter)
+                    )
+                    startAngle += sweep + gapDegrees
                 }
             }
         }

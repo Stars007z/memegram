@@ -19,6 +19,3 @@ venv/
 # Auto-generated gRPC stubs
 app/generated/*_pb2.py
 app/generated/*_pb2_grpc.py
-app/infrastructure/grpc/generated/*_pb2.py
-app/infrastructure/grpc/generated/*_pb2_grpc.py
-

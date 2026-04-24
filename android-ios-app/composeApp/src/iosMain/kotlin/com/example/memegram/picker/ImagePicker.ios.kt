@@ -6,11 +6,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import com.example.memegram.translation.IosPhotoPickerBridge
 
-/**
- * iOS implementation: forwards to the Swift PhotoPickerBridge
- * (PHPickerViewController). Bytes returned are JPEG, transcoded from HEIC
- * if necessary on the Swift side.
- */
 @Composable
 actual fun rememberImagePicker(
     multiple: Boolean,

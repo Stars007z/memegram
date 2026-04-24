@@ -14,6 +14,7 @@ import com.example.memegram.data.repository.ContactsRepository
 import com.example.memegram.data.repository.ContactsRepositoryImpl
 import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.data.repository.NotificationsRepositoryImpl
+import com.example.memegram.data.repository.ProfileRepository
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
 import com.example.memegram.database.AppDatabase
@@ -22,6 +23,7 @@ import com.example.memegram.auth.SessionRefresher
 import com.example.memegram.lifecycle.AppLifecycleObserver
 import com.example.memegram.lifecycle.createAppLifecycleObserver
 import com.example.memegram.mls.MlsManager
+import com.example.memegram.notifications.NotificationPrefs
 import com.example.memegram.push.PushTokenProvider
 import com.example.memegram.push.createPushTokenProvider
 import com.example.memegram.translation.TranslationService
@@ -53,14 +55,18 @@ val appModule = module {
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
+    single { ProfileRepository(get(), get()) }
     single { BlockedUsersCache(get(), get()) }
     single<TranslationService> {
-        createTranslationService(
+        val service = createTranslationService(
             httpClient = get(),
             modelBaseUrl = "https://models.memegram.win/memegram-models",
         )
+        com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
+        service
     }
     single { TranslationSettings(get()) }
+    single { NotificationPrefs(get()) }
 
     single<PushTokenProvider> { createPushTokenProvider() }
     single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }

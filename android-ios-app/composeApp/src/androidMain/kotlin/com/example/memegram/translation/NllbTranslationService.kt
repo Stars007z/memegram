@@ -7,24 +7,8 @@ import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
 
-/**
- * Translation service using NLLB-200-distilled-600M via ONNX Runtime.
- *
- * Architecture:
- *   - Language detection: ScriptDetector (heuristic) → ML Kit Language ID (fallback)
- *   - Translation: NLLB-200 ONNX model (single model for all 200 languages)
- *   - No English pivoting needed (NLLB translates directly between any pair)
- *
- * Compared to the old BergamotTranslationService (opus-mt):
- *   - ONE model (~300MB) instead of 24 pair-specific models (~1.8GB total)
- *   - Much better quality (especially for colloquial text, typos, slang)
- *   - 200 languages instead of ~12
- *   - Direct X→Y translation without going through English
- */
 class NllbTranslationService(
     private val context: Context,
     httpClient: HttpClient,
@@ -37,8 +21,6 @@ class NllbTranslationService(
 
     private val modelManager = NllbModelManager(context, httpClient, modelBaseUrl)
 
-    private val translateMutex = Mutex()
-
     private val languageIdentifier = LanguageIdentification.getClient(
         LanguageIdentificationOptions.Builder()
             .setConfidenceThreshold(0.2f)
@@ -49,7 +31,7 @@ class NllbTranslationService(
         text: String,
         sourceLang: String?,
         targetLang: String
-    ): TranslationResult = translateMutex.withLock {
+    ): TranslationResult {
         val t0 = System.currentTimeMillis()
         Log.d(TAG, "┌── translate() START ──────────────────────")
         Log.d(TAG, "│ text.length=${text.length}, text='${text.take(80)}'")
@@ -60,7 +42,7 @@ class NllbTranslationService(
 
         if (detectedLang == targetLang) {
             Log.d(TAG, "└── SKIP: same language ($detectedLang == $targetLang)")
-            return@withLock TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
+            return TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
         }
 
         val srcFlores = NllbLanguageCodes.toFlores(detectedLang)
@@ -68,7 +50,7 @@ class NllbTranslationService(
 
         if (srcFlores == null || tgtFlores == null) {
             Log.w(TAG, "└── SKIP: unsupported pair $detectedLang→$targetLang (src=$srcFlores, tgt=$tgtFlores)")
-            return@withLock TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
+            return TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
         }
         Log.d(TAG, "│ FLORES: $srcFlores → $tgtFlores")
 
@@ -78,11 +60,11 @@ class NllbTranslationService(
         val loadMs = System.currentTimeMillis() - tLoad
         if (engine == null) {
             Log.e(TAG, "└── FAIL: getEngine() returned null after ${loadMs}ms (low RAM or model missing)")
-            return@withLock TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
+            return TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
         }
         Log.d(TAG, "│ Model loaded in ${loadMs}ms")
 
-        try {
+        return try {
             Log.d(TAG, "│ Running inference...")
             val tInf = System.currentTimeMillis()
             val translated = engine.translate(text, srcFlores, tgtFlores)
@@ -100,10 +82,6 @@ class NllbTranslationService(
         } catch (e: Throwable) {
             Log.e(TAG, "└── ERROR in inference: ${e::class.simpleName}: ${e.message}", e)
             TranslationResult(translatedText = text, detectedSourceLang = detectedLang)
-        } finally {
-            modelManager.release()
-            System.gc()
-            Log.d(TAG, "   [cleanup] Model released, GC requested (${System.currentTimeMillis() - t0}ms since start)")
         }
     }
 
@@ -136,27 +114,16 @@ class NllbTranslationService(
         languageIdentifier.close()
     }
 
-    /** Check if the NLLB model is downloaded and ready. */
     override fun isModelAvailable(): Boolean = modelManager.isModelAvailable()
 
-    /** Get model size in bytes. */
     override fun getModelSize(): Long = modelManager.getModelSize()
 
-    /** Stream the model from R2 with progress. */
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
 
-    /** Delete model to free disk space. */
     override suspend fun deleteModel() = modelManager.deleteModel()
 
-    /**
-     * Release the loaded ONNX model to free ~400MB of native memory.
-     * Unlike [close], this keeps the language identifier alive and allows
-     * the model to be reloaded on demand via [translate] → getEngine().
-     * Called when the app goes to background.
-     */
-    fun releaseModel() {
+    override suspend fun releaseModel() {
         modelManager.release()
-        System.gc()
-        Log.d(TAG, "releaseModel(): released (background/trim)")
+        Log.d(TAG, "releaseModel(): released (gate hook)")
     }
 }
