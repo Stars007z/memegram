@@ -110,7 +110,8 @@ data class ConversationResponse(
     @SerialName("unread_count") val unreadCount: Int? = null,
     @SerialName("avatar_media_id") val avatarMediaId: String? = null,
     @SerialName("is_peer_blocked") val isPeerBlocked: Boolean = false,
-    @SerialName("is_blocked_by_peer") val isBlockedByPeer: Boolean = false
+    @SerialName("is_blocked_by_peer") val isBlockedByPeer: Boolean = false,
+    @SerialName("peer_last_read_message_id") val peerLastReadMessageId: String? = null,
 )
 
 @Serializable

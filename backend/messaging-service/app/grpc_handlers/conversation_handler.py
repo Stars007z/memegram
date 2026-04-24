@@ -227,6 +227,7 @@ class ConversationHandler:
                     user_id=str(m.user_id),
                     role=m.role,
                     joined_at=int(m.joined_at),
+                    last_read_message_id=str(m.last_read_message_id) if m.last_read_message_id else "",
                 )
                 for m in result.members
             ],

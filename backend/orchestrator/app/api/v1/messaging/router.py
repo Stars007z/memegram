@@ -61,13 +61,24 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/messaging", tags=["messaging"])
 
 
-def _conv_to_schema(r):
+def _conv_to_schema(r, requester_user_id: str | None = None):
     mls = None
     if r.mls_group:
         mls = MlsGroupInfoSchema(
             current_epoch=r.mls_group.current_epoch,
             cipher_suite=r.mls_group.cipher_suite,
         )
+    # For 1:1 chats, surface the peer's last_read_message_id at the top level
+    # so the client can render the "read" double-tick on outgoing messages
+    # even if the live SSE `message_read` event was missed (chat closed,
+    # app backgrounded, etc.). Computed only when a requester is supplied
+    # AND the conversation is direct AND a peer's row carries a non-empty id.
+    peer_last_read: str | None = None
+    if requester_user_id and r.type == "direct":
+        for m in r.members:
+            if m.user_id != requester_user_id and getattr(m, "last_read_message_id", ""):
+                peer_last_read = m.last_read_message_id
+                break
     return ConversationResponseSchema(
         id=r.id,
         type=r.type,
@@ -76,6 +87,7 @@ def _conv_to_schema(r):
         mls_group=mls,
         created_at=r.created_at,
         avatar_media_id=r.avatar_media_id,
+        peer_last_read_message_id=peer_last_read,
     )
 
 
@@ -213,7 +225,7 @@ async def create_direct_conversation(
             for w in body.welcome_messages
         ],
     )
-    return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
+    return await _augment_conv_with_blocks(_conv_to_schema(result, session.user_id), session.user_id, contacts_gw)
 
 
 @router.post("/conversations/group", response_model=ConversationResponseSchema, status_code=201)
@@ -277,7 +289,7 @@ async def get_conversation(
 ):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     result = await gw.get_conversation(session.user_id, conversation_id)
-    return await _augment_conv_with_blocks(_conv_to_schema(result), session.user_id, contacts_gw)
+    return await _augment_conv_with_blocks(_conv_to_schema(result, session.user_id), session.user_id, contacts_gw)
 
 
 @router.post(

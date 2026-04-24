@@ -487,7 +487,7 @@ fun ChatScreen(
                                     columns        = GridCells.Fixed(gridColumns),
                                     modifier       = Modifier
                                         .fillMaxSize()
-                                        .padding(end = 36.sdp),
+                                        .padding(end = 52.sdp),
                                     contentPadding = PaddingValues(
                                         start  = 2.sdp,
                                         top    = 2.sdp,
@@ -515,11 +515,12 @@ fun ChatScreen(
                                 }
 
                                 DateScrubber(
-                                    sections   = gallerySections,
-                                    totalItems = galleryThumbs.size,
-                                    gridState  = gridState,
-                                    columns    = gridColumns,
-                                    modifier   = Modifier
+                                    sections    = gallerySections,
+                                    totalItems  = galleryTotal.coerceAtLeast(galleryThumbs.size),
+                                    loadedItems = galleryThumbs.size,
+                                    gridState   = gridState,
+                                    columns     = gridColumns,
+                                    modifier    = Modifier
                                         .align(Alignment.CenterEnd)
                                         .fillMaxHeight()
                                 )
@@ -674,6 +675,7 @@ fun ChatScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ImageTopAppBarBox(topBarColor) { bgColor ->
@@ -741,7 +743,9 @@ fun ChatScreen(
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 3.sdp,
-                modifier = Modifier.imePadding()
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    .consumeWindowInsets(WindowInsets.navigationBars.union(WindowInsets.ime))
             ) {
                 if (isPeerBlocked && !isGroupChat) {
                     Row(

@@ -615,6 +615,7 @@ class ConversationServiceImpl(IConversationService):
                     user_id=m.user_id,
                     role=m.role,
                     joined_at=m.joined_at.timestamp(),
+                    last_read_message_id=m.last_read_message_id,
                 )
                 for m in members
             ],
