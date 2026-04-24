@@ -45,6 +45,22 @@ fun DateScrubber(
     var dragFraction by remember { mutableStateOf(0f) }
     var dragLabel    by remember { mutableStateOf("") }
 
+    val scrollFraction by remember {
+        derivedStateOf {
+            val firstIdx = gridState.firstVisibleItemIndex
+            if (totalItems <= 0) 0f
+            else (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
+        }
+    }
+    val thumbFraction = if (isDragging) dragFraction else scrollFraction
+
+    val currentLabel by remember {
+        derivedStateOf {
+            val firstIdx = gridState.firstVisibleItemIndex
+            sections.lastOrNull { it.firstItemIndex <= firstIdx }?.label ?: ""
+        }
+    }
+
     BoxWithConstraints(modifier = modifier.width(40.sdp)) {
         val trackH = maxHeight
 
@@ -52,24 +68,27 @@ fun DateScrubber(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(3.sdp)
-                .then(
-                    if (isDragging) Modifier.background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                        RoundedCornerShape(2.sdp)
-                    ) else Modifier
+                .width(if (isDragging) 4.sdp else 2.sdp)
+                .background(
+                    if (isDragging)
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                    RoundedCornerShape(2.sdp)
                 )
         )
 
-        if (isDragging) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 0.sdp, y = trackH * dragFraction - 6.sdp)
-                    .size(12.sdp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
-        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(
+                    x = 0.sdp,
+                    y = (trackH * thumbFraction - if (isDragging) 8.sdp else 5.sdp)
+                        .coerceAtLeast(0.sdp)
+                )
+                .size(if (isDragging) 16.sdp else 10.sdp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape)
+        )
 
         if (isDragging && dragLabel.isNotEmpty()) {
             Text(
@@ -80,11 +99,11 @@ fun DateScrubber(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(
-                        x = (-46).sdp,
-                        y = (trackH * dragFraction - 12.sdp).coerceAtLeast(0.sdp)
+                        x = (-58).sdp,
+                        y = (trackH * dragFraction - 14.sdp).coerceAtLeast(0.sdp)
                     )
-                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.sdp))
-                    .padding(horizontal = 8.sdp, vertical = 4.sdp)
+                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(8.sdp))
+                    .padding(horizontal = 10.sdp, vertical = 5.sdp)
             )
         }
 
