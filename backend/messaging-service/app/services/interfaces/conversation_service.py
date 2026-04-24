@@ -9,6 +9,7 @@ class MemberResult:
     user_id: uuid.UUID
     role: str
     joined_at: float
+    last_read_message_id: Optional[uuid.UUID] = None
 
 
 @dataclass

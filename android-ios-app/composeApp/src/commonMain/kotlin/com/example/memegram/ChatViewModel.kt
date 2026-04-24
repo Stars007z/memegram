@@ -240,6 +240,13 @@ class ChatViewModel(
                             } catch (_: Exception) {}
                         }
                     }
+                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                        launch {
+                            runCatching {
+                                chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                            }
+                        }
+                    }
                 }
             } catch (_: Exception) { }
 

@@ -48,12 +48,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
-        // Drop queued auto-translates and release ONNX sessions (~700MB native).
         IosMlModelGateBridge.shared.onMemoryPressure()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Free model on background; user-initiated requests still complete on next foreground.
         IosMlModelGateBridge.shared.onAppBackgrounded()
     }
 }

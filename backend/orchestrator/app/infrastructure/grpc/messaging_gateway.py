@@ -38,6 +38,7 @@ def _conversation_from_proto(r) -> ConversationResult:
             user_id=m.user_id,
             role=m.role,
             joined_at=m.joined_at,
+            last_read_message_id=m.last_read_message_id,
         )
         for m in r.members
     ]

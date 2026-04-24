@@ -20,6 +20,7 @@ class ConversationMemberResult:
     user_id: str
     role: str
     joined_at: int
+    last_read_message_id: str = ""
 
 
 @dataclass
