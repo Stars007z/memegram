@@ -1,6 +1,10 @@
 package com.example.memegram
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -192,7 +196,34 @@ fun App() {
                     ) { launchSingleTop = true }
                 }
 
-                NavHost(navController = navController, startDestination = SplashRoute) {
+                NavHost(
+                    navController = navController,
+                    startDestination = SplashRoute,
+                    enterTransition = {
+                        slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            tween(280)
+                        ) + fadeIn(tween(280))
+                    },
+                    exitTransition = {
+                        slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            tween(280)
+                        ) + fadeOut(tween(280))
+                    },
+                    popEnterTransition = {
+                        slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            tween(280)
+                        ) + fadeIn(tween(280))
+                    },
+                    popExitTransition = {
+                        slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            tween(280)
+                        ) + fadeOut(tween(280))
+                    },
+                ) {
                     composable<SplashRoute> {
                         val sessionState by sessionRefresher.state.collectAsState()
                         LaunchedEffect(Unit) {

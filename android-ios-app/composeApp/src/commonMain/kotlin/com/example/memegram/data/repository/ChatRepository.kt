@@ -25,6 +25,7 @@ interface ChatRepository {
     suspend fun deleteMessageByServerId(serverId: String)
     suspend fun updateMessageLocalFile(serverId: String, localFilePath: String, previewBytes: ByteArray?)
     suspend fun updateMessageLocalPreview(serverId: String, previewBytes: ByteArray)
+    suspend fun markOutgoingMessagesRead(conversationId: String, lastReadServerId: String)
 
     suspend fun clearAllLocalData()
 

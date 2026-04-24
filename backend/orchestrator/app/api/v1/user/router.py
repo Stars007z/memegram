@@ -164,8 +164,6 @@ async def update_my_settings(
 
 _MEDIA_FIELDS = [
     ("chat_background_media_id", "chat_background"),
-    ("ringtone_media_id", "ringtone"),
-    ("notification_sound_media_id", "notification_sound"),
     ("top_bar_media_id", "top_bar"),
     ("my_bubble_media_id", "my_bubble"),
     ("their_bubble_media_id", "their_bubble"),

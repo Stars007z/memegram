@@ -63,7 +63,14 @@ message ConversationEvent {
         MemberKickedEvent member_kicked  = 10;
         RoleChangedEvent  role_changed   = 11;
         ConversationDeletedEvent conversation_deleted = 12;
+        MessageReadEvent  message_read   = 13;
     }
+}
+
+message MessageReadEvent {
+    string user_id              = 1;
+    string last_read_message_id = 2;
+    int64  read_at              = 3;
 }
 
 message ConversationDeletedEvent {

@@ -14,9 +14,7 @@ import androidx.core.content.ContextCompat
 import com.example.memegram.push.MemegramFirebaseMessagingService
 import com.example.memegram.push.PendingPushNavigation
 import com.example.memegram.push.PushDeepLink
-import com.example.memegram.translation.NllbTranslationService
-import com.example.memegram.translation.TranslationService
-import org.koin.java.KoinJavaComponent
+import com.example.memegram.ml.MlModelGate
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,13 +63,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            try {
-                val service = KoinJavaComponent.get<TranslationService>(TranslationService::class.java)
-                if (service is NllbTranslationService) {
-                    service.releaseModel()
-                }
-            } catch (_: Exception) {
+        when {
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                MlModelGate.onMemoryPressure()
+            }
+            level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
+                MlModelGate.onAppBackgrounded()
             }
         }
     }

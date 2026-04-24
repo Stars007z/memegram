@@ -53,10 +53,11 @@ fun DateScrubber(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(3.sdp)
-                .background(
-                    if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                    else Color.Gray.copy(alpha = 0.3f),
-                    RoundedCornerShape(2.sdp)
+                .then(
+                    if (isDragging) Modifier.background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        RoundedCornerShape(2.sdp)
+                    ) else Modifier
                 )
         )
 

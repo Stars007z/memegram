@@ -31,12 +31,6 @@ class UserSettings(Base):
     my_bubble_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     their_bubble_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
 
-    ringtone_media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
-    ringtone_vibration_strength: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-
-    notification_sound: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
-    notification_vibration_strength: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

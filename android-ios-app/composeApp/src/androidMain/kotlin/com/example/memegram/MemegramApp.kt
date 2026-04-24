@@ -21,36 +21,66 @@ class MemegramApp : Application() {
             }
         }
 
-        createMessagesNotificationChannel()
+        createMessagesNotificationChannels()
     }
 
-    private fun createMessagesNotificationChannel() {
+    private fun createMessagesNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_MESSAGES) != null) return
-
         val isRu = Locale.getDefault().language.equals("ru", ignoreCase = true)
-        val name = if (isRu) "Сообщения" else "Messages"
-        val description = if (isRu) {
+
+        val baseName = if (isRu) "Сообщения" else "Messages"
+        val baseDesc = if (isRu) {
             "Уведомления о новых сообщениях в чатах"
         } else {
             "Notifications about new chat messages"
         }
 
-        val channel = NotificationChannel(
-            CHANNEL_MESSAGES,
-            name,
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            this.description = description
-            enableLights(true)
-            enableVibration(true)
-            setShowBadge(true)
+        for (strength in 0..3) {
+            val channelId = channelIdForVibration(strength)
+            if (nm.getNotificationChannel(channelId) != null) continue
+
+            val suffix = when (strength) {
+                0 -> if (isRu) " · без вибрации" else " · no vibration"
+                1 -> if (isRu) " · слабая" else " · light"
+                2 -> if (isRu) " · обычная" else " · normal"
+                else -> if (isRu) " · сильная" else " · strong"
+            }
+
+            val channel = NotificationChannel(
+                channelId,
+                baseName + suffix,
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                this.description = baseDesc
+                enableLights(true)
+                setShowBadge(true)
+                if (strength == 0) {
+                    enableVibration(false)
+                } else {
+                    enableVibration(true)
+                    vibrationPattern = vibrationPatternFor(strength)
+                }
+            }
+            nm.createNotificationChannel(channel)
         }
-        nm.createNotificationChannel(channel)
     }
 
     companion object {
         const val CHANNEL_MESSAGES = "memegram_messages"
+
+        private const val CHANNEL_MESSAGES_PREFIX = "memegram_messages_v"
+
+        fun channelIdForVibration(strength: Int): String {
+            val s = strength.coerceIn(0, 3)
+            return "$CHANNEL_MESSAGES_PREFIX$s"
+        }
+
+        fun vibrationPatternFor(strength: Int): LongArray = when (strength.coerceIn(0, 3)) {
+            0 -> longArrayOf(0L)
+            1 -> longArrayOf(0L, 50L)
+            2 -> longArrayOf(0L, 150L)
+            else -> longArrayOf(0L, 250L, 150L, 250L)
+        }
     }
 }

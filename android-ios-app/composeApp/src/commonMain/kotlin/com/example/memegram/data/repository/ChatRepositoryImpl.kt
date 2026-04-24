@@ -297,6 +297,15 @@ class ChatRepositoryImpl(
         }
     }
 
+    override suspend fun markOutgoingMessagesRead(
+        conversationId: String,
+        lastReadServerId: String
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.markOutgoingMessagesRead(conversationId, lastReadServerId)
+        }
+    }
+
     override suspend fun clearAllLocalData() {
         withContext(ioDispatcher) {
             chatQueries.transaction {

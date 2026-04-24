@@ -647,7 +647,8 @@ fun ChatsScreen(
                                         viewModel.toggleSelection(chat.conversationId)
                                         showDeleteConfirm = true
                                     },
-                                    isBlocked = chat.conversationId in blockedConvIds
+                                    isBlocked = chat.conversationId in blockedConvIds,
+                                    modifier = Modifier.animateItem()
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 76.sdp),
@@ -686,7 +687,8 @@ fun ChatItem(
     onLongClick: () -> Unit = {},
     onMute: () -> Unit = {},
     onDelete: () -> Unit = {},
-    isBlocked: Boolean = false
+    isBlocked: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val s = LocalStrings.current
     val nowMs = remember { Clock.System.now().toEpochMilliseconds() }
@@ -696,7 +698,7 @@ fun ChatItem(
     else Color.Transparent
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(rowBg)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)

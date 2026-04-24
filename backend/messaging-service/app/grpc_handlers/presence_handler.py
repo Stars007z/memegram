@@ -171,4 +171,14 @@ def _event_to_proto(event: dict) -> messaging_pb2.ConversationEvent | None:
             ),
         )
 
+    if event_type == "message_read":
+        return messaging_pb2.ConversationEvent(
+            conversation_id=conv_id,
+            message_read=messaging_pb2.MessageReadEvent(
+                user_id=event["user_id"],
+                last_read_message_id=event["last_read_message_id"],
+                read_at=int(event["read_at"]),
+            ),
+        )
+
     return None

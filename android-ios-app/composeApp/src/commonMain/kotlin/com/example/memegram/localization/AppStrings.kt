@@ -49,6 +49,8 @@ interface AppStrings {
     val gallery: String
     val file: String
     val all: String
+    val smallerThumbs: String
+    val largerThumbs: String
     val noGalleryAccess: String
     val openGallery: String
     fun attachNPhotos(n: Int): String
@@ -61,13 +63,15 @@ interface AppStrings {
     val deleteChat: String
     val deleteChatMessage: String
     val deleteForAll: String
+    val resendMessage: String
+    val deleteFailedMessage: String
+    val resendUnsupported: String
     val clearHistory: String
     val clearHistoryMessage: String
     val onlyForMe: String
     val forAll: String
     val deleteMessageTitle: String
     val deleteMessageText: String
-    val call: String
     val notifications: String
     val changeWallpaper: String
     val reply: String
@@ -199,21 +203,17 @@ interface AppStrings {
     val disableForHowLong: String
     val hours: String
     val disable: String
-    val vibrationForCalls: String
-    val ringtone: String
     val disabled: String
     val enabled: String
-    val callsSection: String
+    val notificationPreview: String
+    val notificationPreviewDesc: String
     val vibration: String
-
-    val vibrateNone: String
-    val vibrateWeak: String
-    val vibrateMedium: String
-    val vibrateStrong: String
-    val ringtoneDefault: String
-    val ringtoneClassic: String
-    val ringtoneSimple: String
-    val ringtoneNone: String
+    val vibrationOff: String
+    val vibrationLight: String
+    val vibrationNormal: String
+    val vibrationStrong: String
+    val genericNotificationBody: String
+    val noChatsToConfigure: String
 
     val appearanceTitle: String
     val preview: String
@@ -244,6 +244,9 @@ interface AppStrings {
     val storeMessagesDays: String
     val globalLimit: String
     val clearLocalCache: String
+    val clearProfilesCache: String
+    fun clearProfilesCacheSize(size: String): String
+    val profilesCacheInfo: String
     val fifoDescription: String
     val ttlDescription: String
     val lruDescription: String
@@ -358,6 +361,8 @@ interface AppStrings {
     val sat: String
     val sun: String
 
+    fun monthShort(month: Int): String
+
     val groupDefault: String
     val create: String
 
@@ -417,6 +422,8 @@ object RuStrings : AppStrings {
     override val gallery = "Галерея"
     override val file = "Файл"
     override val all = "Все"
+    override val smallerThumbs = "Уменьшить"
+    override val largerThumbs = "Увеличить"
     override val noGalleryAccess = "Нет доступа к галерее"
     override val openGallery = "Открыть галерею"
     override fun attachNPhotos(n: Int) = "Прикрепить $n фото"
@@ -429,13 +436,15 @@ object RuStrings : AppStrings {
     override val deleteChat = "Удалить чат"
     override val deleteChatMessage = "Чат будет удалён для всех участников."
     override val deleteForAll = "Удалить для всех"
+    override val resendMessage = "Отправить повторно"
+    override val deleteFailedMessage = "Удалить"
+    override val resendUnsupported = "Повторная отправка медиа недоступна. Удалите сообщение и отправьте файл заново."
     override val clearHistory = "Очистить историю"
     override val clearHistoryMessage = "Выберите, для кого очистить историю сообщений."
     override val onlyForMe = "Только у меня"
     override val forAll = "У всех"
     override val deleteMessageTitle = "Удалить сообщение?"
     override val deleteMessageText = "Сообщение будет удалено для всех участников."
-    override val call = "Звонок"
     override val notifications = "Уведомления"
     override val changeWallpaper = "Сменить обои"
     override val reply = "Ответ"
@@ -568,21 +577,17 @@ object RuStrings : AppStrings {
     override val disableForHowLong = "Отключить на сколько часов?"
     override val hours = "Часы"
     override val disable = "Отключить"
-    override val vibrationForCalls = "Вибрация для звонков"
-    override val ringtone = "Мелодия звонка"
     override val disabled = "Отключено"
     override val enabled = "Включено"
-    override val callsSection = "ЗВОНКИ"
+    override val notificationPreview = "Показывать текст сообщения"
+    override val notificationPreviewDesc = "Если выключено, в уведомлении не будет видно содержимое"
     override val vibration = "Вибрация"
-
-    override val vibrateNone = "Нет"
-    override val vibrateWeak = "Слабая"
-    override val vibrateMedium = "Средняя"
-    override val vibrateStrong = "Сильная"
-    override val ringtoneDefault = "Default"
-    override val ringtoneClassic = "Классический"
-    override val ringtoneSimple = "Простой"
-    override val ringtoneNone = "Нет"
+    override val vibrationOff = "Выкл."
+    override val vibrationLight = "Слабая"
+    override val vibrationNormal = "Обычная"
+    override val vibrationStrong = "Сильная"
+    override val genericNotificationBody = "Новое сообщение"
+    override val noChatsToConfigure = "Нет чатов"
 
     override val appearanceTitle = "Внешний вид"
     override val preview = "Предпросмотр"
@@ -613,6 +618,9 @@ object RuStrings : AppStrings {
     override val storeMessagesDays = "Хранить сообщения (дней)"
     override val globalLimit = "Глобальный лимит (сообщений)"
     override val clearLocalCache = "Очистить локальный кэш сейчас"
+    override val clearProfilesCache = "Очистить кэш профилей"
+    override fun clearProfilesCacheSize(size: String) = "Очистить кэш профилей ($size)"
+    override val profilesCacheInfo = "Удаляет сохранённые профили и аватары других пользователей. При следующем открытии чата они будут загружены заново."
     override val fifoDescription = "Старые сообщения сверх лимита будут удалены из этого чата"
     override val ttlDescription = "Сообщения старше указанного периода удаляются автоматически"
     override val lruDescription = "Удаляются сообщения из чатов, которые давно не открывались"
@@ -726,6 +734,12 @@ object RuStrings : AppStrings {
     override val sat = "Сб"
     override val sun = "Вс"
 
+    override fun monthShort(month: Int): String = when (month) {
+        1 -> "Янв"; 2 -> "Фев"; 3 -> "Мар"; 4 -> "Апр"
+        5 -> "Май"; 6 -> "Июн"; 7 -> "Июл"; 8 -> "Авг"
+        9 -> "Сен"; 10 -> "Окт"; 11 -> "Ноя"; else -> "Дек"
+    }
+
     override val groupDefault = "Группа"
     override val create = "Создать"
 
@@ -785,6 +799,8 @@ object EnStrings : AppStrings {
     override val gallery = "Gallery"
     override val file = "File"
     override val all = "All"
+    override val smallerThumbs = "Smaller"
+    override val largerThumbs = "Larger"
     override val noGalleryAccess = "No gallery access"
     override val openGallery = "Open gallery"
     override fun attachNPhotos(n: Int) = "Attach $n photo${if (n == 1) "" else "s"}"
@@ -797,13 +813,15 @@ object EnStrings : AppStrings {
     override val deleteChat = "Delete chat"
     override val deleteChatMessage = "The chat will be deleted for all participants."
     override val deleteForAll = "Delete for everyone"
+    override val resendMessage = "Resend"
+    override val deleteFailedMessage = "Delete"
+    override val resendUnsupported = "Resending media is not supported. Delete the message and send the file again."
     override val clearHistory = "Clear history"
     override val clearHistoryMessage = "Choose who to clear message history for."
     override val onlyForMe = "Only for me"
     override val forAll = "For everyone"
     override val deleteMessageTitle = "Delete message?"
     override val deleteMessageText = "The message will be deleted for all participants."
-    override val call = "Call"
     override val notifications = "Notifications"
     override val changeWallpaper = "Change wallpaper"
     override val reply = "Reply"
@@ -936,21 +954,17 @@ object EnStrings : AppStrings {
     override val disableForHowLong = "Disable for how many hours?"
     override val hours = "Hours"
     override val disable = "Disable"
-    override val vibrationForCalls = "Vibration for calls"
-    override val ringtone = "Ringtone"
     override val disabled = "Disabled"
     override val enabled = "Enabled"
-    override val callsSection = "CALLS"
+    override val notificationPreview = "Show message text"
+    override val notificationPreviewDesc = "When off, notifications won't reveal message content"
     override val vibration = "Vibration"
-
-    override val vibrateNone = "None"
-    override val vibrateWeak = "Weak"
-    override val vibrateMedium = "Medium"
-    override val vibrateStrong = "Strong"
-    override val ringtoneDefault = "Default"
-    override val ringtoneClassic = "Classic"
-    override val ringtoneSimple = "Simple"
-    override val ringtoneNone = "None"
+    override val vibrationOff = "Off"
+    override val vibrationLight = "Light"
+    override val vibrationNormal = "Normal"
+    override val vibrationStrong = "Strong"
+    override val genericNotificationBody = "New message"
+    override val noChatsToConfigure = "No chats"
 
     override val appearanceTitle = "Appearance"
     override val preview = "Preview"
@@ -981,6 +995,9 @@ object EnStrings : AppStrings {
     override val storeMessagesDays = "Store messages (days)"
     override val globalLimit = "Global limit (messages)"
     override val clearLocalCache = "Clear local cache now"
+    override val clearProfilesCache = "Clear profile cache"
+    override fun clearProfilesCacheSize(size: String) = "Clear profile cache ($size)"
+    override val profilesCacheInfo = "Removes cached profiles and avatars of other users. They will be re-downloaded the next time you open a chat."
     override val fifoDescription = "Old messages beyond the limit will be removed from this chat"
     override val ttlDescription = "Messages older than the specified period are deleted automatically"
     override val lruDescription = "Messages are deleted from chats that haven't been opened for a long time"
@@ -1093,6 +1110,12 @@ object EnStrings : AppStrings {
     override val fri = "Fri"
     override val sat = "Sat"
     override val sun = "Sun"
+
+    override fun monthShort(month: Int): String = when (month) {
+        1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
+        5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
+        9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; else -> "Dec"
+    }
 
     override val groupDefault = "Group"
     override val create = "Create"

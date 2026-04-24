@@ -784,6 +784,14 @@ class GrpcMessagingGateway(IMessagingGateway):
             cd = event.conversation_deleted
             result["type"] = "conversation_deleted"
             result["data"] = {"deleted_by": cd.deleted_by}
+        elif which == "message_read":
+            mr = event.message_read
+            result["type"] = "message_read"
+            result["data"] = {
+                "user_id": mr.user_id,
+                "last_read_message_id": mr.last_read_message_id,
+                "read_at": mr.read_at,
+            }
         return result
 
     async def notify_device_revoked(self, user_id: str, revoked_device_id: str) -> int:

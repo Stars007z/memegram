@@ -23,7 +23,8 @@ class ChatsViewModel(
     private val api: ApiService,
     private val mlsManager: MlsManager,
     private val chatRepository: ChatRepository,
-    private val blockedUsersCache: BlockedUsersCache
+    private val blockedUsersCache: BlockedUsersCache,
+    private val profileRepository: com.example.memegram.data.repository.ProfileRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -110,7 +111,6 @@ class ChatsViewModel(
 
     private var sseJob: Job? = null
     private var pollingJob: Job? = null
-    private val profileCache = mutableMapOf<String, com.example.memegram.data.models.UserProfileResponse>()
 
     private val peerCache = mutableMapOf<String, String>()
 
@@ -167,8 +167,6 @@ class ChatsViewModel(
         if (!silent) _error.value = null
 
         try {
-            profileCache.clear()
-
             val response = api.getConversations()
             val currentUserId = sessionManager.getUserId()
 
@@ -186,10 +184,11 @@ class ChatsViewModel(
                         }
                         dmPeerUserId = peerId
                         if (peerId != null) {
-                            val profile = profileCache[peerId]
-                                ?: api.getUserById(peerId).also { profileCache[peerId] = it }
-                            chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
-                            peerAvatarMediaId = profile.avatarMediaId
+                            val profile = profileRepository.getOrFetch(peerId)
+                            if (profile != null) {
+                                chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
+                                peerAvatarMediaId = profile.avatarMediaId
+                            }
                         }
                     } catch (_: Exception) {}
                 }
@@ -227,11 +226,14 @@ class ChatsViewModel(
                     val senderId = localLastMessage.senderUserId
                     if (senderId != null) {
                         try {
-                            val senderProfile = profileCache[senderId]
-                                ?: api.getUserById(senderId).also { profileCache[senderId] = it }
-                            senderName = senderProfile.username?.takeIf { it.isNotBlank() }
-                                ?: "User_${senderId.take(4)}"
-                            lastSenderAvatarMediaId = senderProfile.avatarMediaId
+                            val senderProfile = profileRepository.getOrFetch(senderId)
+                            if (senderProfile != null) {
+                                senderName = senderProfile.username?.takeIf { it.isNotBlank() }
+                                    ?: "User_${senderId.take(4)}"
+                                lastSenderAvatarMediaId = senderProfile.avatarMediaId
+                            } else {
+                                senderName = "User_${senderId.take(4)}"
+                            }
                         } catch (_: Exception) {
                             senderName = "User_${senderId.take(4)}"
                         }
@@ -408,11 +410,14 @@ class ChatsViewModel(
                     val senderId = event.data?.senderUserId
                     if (!isMine && senderId != null) {
                         try {
-                            val profile = profileCache[senderId]
-                                ?: api.getUserById(senderId).also { profileCache[senderId] = it }
-                            senderName = profile.username?.takeIf { it.isNotBlank() }
-                                ?: "User_${senderId.take(4)}"
-                            senderAvatarMediaId = profile.avatarMediaId
+                            val profile = profileRepository.getOrFetch(senderId)
+                            if (profile != null) {
+                                senderName = profile.username?.takeIf { it.isNotBlank() }
+                                    ?: "User_${senderId.take(4)}"
+                                senderAvatarMediaId = profile.avatarMediaId
+                            } else {
+                                senderName = "User_${senderId.take(4)}"
+                            }
                         } catch (_: Exception) {
                             senderName = "User_${senderId.take(4)}"
                         }

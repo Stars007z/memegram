@@ -12,6 +12,7 @@ import com.example.memegram.data.models.UpdateGroupNameRequest
 import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
+import com.example.memegram.data.repository.ProfileRepository
 import com.example.memegram.mls.MlsManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,7 +26,8 @@ class GroupProfileViewModel(
     private val api: ApiService,
     private val mlsManager: MlsManager,
     private val chatRepository: ChatRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val profileRepository: ProfileRepository
 ) : ViewModel() {
 
     private val _members = MutableStateFlow<List<GroupMemberUI>>(emptyList())
@@ -68,8 +70,10 @@ class GroupProfileViewModel(
 
                 for (member in conv.members) {
                     try {
-                        val profile = api.getUserById(member.userId)
-                        loadedMembers.add(GroupMemberUI(profile, member.role))
+                        val profile = profileRepository.getOrFetch(member.userId)
+                        if (profile != null) {
+                            loadedMembers.add(GroupMemberUI(profile, member.role))
+                        }
                     } catch (e: Exception) {
                         println("MemegramDebug [GroupProfile]: ❌ Не удалось загрузить юзера ${member.userId}: ${e.message}")
                     }

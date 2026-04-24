@@ -41,10 +41,6 @@ class UserSettingsResponseSchema(BaseModel):
     last_active_visible_to: str
     chat_background_media_id: Optional[str] = None
     top_bar_color: str
-    ringtone_media_id: Optional[str] = None
-    ringtone_vibration_strength: int
-    notification_sound_media_id: Optional[str] = None
-    notification_vibration_strength: int
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
@@ -60,10 +56,6 @@ class UpdateUserSettingsRequestSchema(BaseModel):
     last_active_visible_to: Optional[str] = None
     chat_background_media_id: Optional[str] = None
     top_bar_color: Optional[str] = None
-    ringtone_media_id: Optional[str] = None
-    ringtone_vibration_strength: Optional[int] = None
-    notification_sound: Optional[str] = None
-    notification_vibration_strength: Optional[int] = None
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
@@ -75,8 +67,6 @@ class SyncSettingsRequestSchema(BaseModel):
     download URLs only for items that changed."""
 
     chat_background_media_id: Optional[str] = None
-    ringtone_media_id: Optional[str] = None
-    notification_sound_media_id: Optional[str] = None
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None

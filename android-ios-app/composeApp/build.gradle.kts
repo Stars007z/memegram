@@ -92,8 +92,6 @@ kotlin {
             implementation(libs.ktor.client.darwin)
             implementation(libs.native.driver)
             implementation(libs.cryptography.core)
-            // CryptoKit provider supports AES-GCM on Apple platforms
-            // (Apple/CommonCrypto provider only supports CBC/CTR/ECB).
             implementation(libs.cryptography.provider.cryptokit)
         }
 
@@ -153,6 +151,3 @@ sqldelight {
         }
     }
 }
-
-// NLLB-200 translation model is downloaded at runtime from Cloudflare R2
-// (https://models.memegram.win) — no local push to device required.

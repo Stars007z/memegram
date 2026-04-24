@@ -28,10 +28,6 @@ class UserSettingsResult:
     last_active_visible_to: str = "everybody"
     chat_background_media_id: Optional[str] = None
     top_bar_color: str = ""
-    ringtone_media_id: Optional[str] = None
-    ringtone_vibration_strength: int = 1
-    notification_sound_media_id: Optional[str] = None
-    notification_vibration_strength: int = 1
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
@@ -64,10 +60,6 @@ class UpdateUserSettingsRequest:
     last_active_visible_to: Optional[str] = None
     chat_background_media_id: Optional[str] = None
     top_bar_color: Optional[str] = None
-    ringtone_media_id: Optional[str] = None
-    ringtone_vibration_strength: Optional[int] = None
-    notification_sound: Optional[str] = None
-    notification_vibration_strength: Optional[int] = None
     top_bar_media_id: Optional[str] = None
     my_bubble_media_id: Optional[str] = None
     their_bubble_media_id: Optional[str] = None
