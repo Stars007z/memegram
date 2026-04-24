@@ -247,9 +247,7 @@ class TestDeleteObjectByMediaId:
 
         # Assert
         assert result is True
-        service._s3.delete_object.assert_awaited_once_with(
-            bucket="test-bucket", key="resolved/key"
-        )
+        service._s3.delete_object.assert_awaited_once_with(bucket="test-bucket", key="resolved/key")
         service._repo.mark_deleted.assert_awaited_once_with(media_id)
 
     async def test_unknown_media_id_returns_false(self, service):

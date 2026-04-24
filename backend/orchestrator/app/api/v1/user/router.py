@@ -174,9 +174,7 @@ async def delete_me(
 
     results = await asyncio.gather(*fanout_tasks, return_exceptions=True)
 
-    step_labels = ["contacts_purge", "messaging_purge", "auth_revoke"] + [
-        f"media_delete[{mid}]" for mid in media_ids
-    ]
+    step_labels = ["contacts_purge", "messaging_purge", "auth_revoke"] + [f"media_delete[{mid}]" for mid in media_ids]
     for label, result in zip(step_labels, results):
         if isinstance(result, Exception):
             step_key = label.split("[", 1)[0]

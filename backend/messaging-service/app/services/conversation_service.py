@@ -613,9 +613,7 @@ class ConversationServiceImpl(IConversationService):
                 direct_conv_ids.append(conv.id)
 
         if direct_member_ids:
-            res = await session.execute(
-                delete(ConversationMember).where(ConversationMember.id.in_(direct_member_ids))
-            )
+            res = await session.execute(delete(ConversationMember).where(ConversationMember.id.in_(direct_member_ids)))
             directs_purged = res.rowcount or len(direct_member_ids)
 
         await session.flush()
