@@ -62,7 +62,7 @@
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="memegram_messages" />
+            android:value="memegram_messages_v2" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

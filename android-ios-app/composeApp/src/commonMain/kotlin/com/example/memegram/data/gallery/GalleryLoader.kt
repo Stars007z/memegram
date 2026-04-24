@@ -68,6 +68,14 @@ interface GalleryLoader {
     suspend fun loadAll(): List<GalleryThumb>
     suspend fun loadThumbBytes(id: String): ByteArray?
     suspend fun loadRecent(limit: Int = 48): List<GalleryThumb> = loadAll().take(limit)
+
+    suspend fun loadPage(offset: Int, limit: Int): List<GalleryThumb> {
+        val all = loadAll()
+        if (offset >= all.size) return emptyList()
+        return all.subList(offset, (offset + limit).coerceAtMost(all.size))
+    }
+
+    suspend fun totalCount(): Int = loadAll().size
 }
 
 @Composable

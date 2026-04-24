@@ -1,5 +1,6 @@
 package com.example.memegram.translation
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -11,14 +12,6 @@ import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
 
-/**
- * iOS port of NllbTranslationEngine. Inference is delegated to a Swift
- * bridge ([IosOnnxBridge]) wrapping `onnxruntime-objc`.
- *
- * Memory pattern matches Android: load encoder, run all sentences, close
- * encoder, then load decoder, run all sentences, close decoder. ONNX
- * sessions never overlap in memory.
- */
 class IosNllbTranslationEngine private constructor(
     private val encoderPath: String,
     private val decoderPath: String,
@@ -53,6 +46,7 @@ class IosNllbTranslationEngine private constructor(
             IosNllbTranslationEngine(encoderPath, decoderPath, tokenizer, maxLength)
         }
 
+        @OptIn(ExperimentalForeignApi::class)
         private fun readUtf8File(path: String): String? {
             return NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, error = null) as String?
         }
@@ -126,6 +120,11 @@ class IosNllbTranslationEngine private constructor(
             )
             val out = outputs[0]
             Encoded(out.data, out.shape, tok.attentionMask)
+        }
+
+        if (encoderSession != 0L) {
+            bridge.closeSession(encoderSession)
+            encoderSession = 0L
         }
 
         decoderSession = ensureSession(bridge, decoderPath, decoderSession)
