@@ -56,27 +56,32 @@ final class PhotoPickerBridge: NSObject, PhotoPickerBridgeDelegate {
         return top
     }
 
-    private static func jpegBytes(from result: PHPickerResult, completion: @escaping (Data?) -> Void) {
+    private static func originalBytes(from result: PHPickerResult, completion: @escaping (Data?) -> Void) {
         let provider = result.itemProvider
-        guard provider.canLoadObject(ofClass: UIImage.self) else { completion(nil); return }
-        provider.loadObject(ofClass: UIImage.self) { obj, err in
-            if let err = err { print("[PhotoPickerBridge] load error: \(err)") }
-            guard let image = obj as? UIImage else { completion(nil); return }
-            let resized = downscale(image, maxEdge: 4096)
-            completion(resized.jpegData(compressionQuality: 0.9))
+        let preferredTypes = ["public.heic", "public.jpeg", "public.png", "public.image"]
+        let typeId = preferredTypes.first(where: { provider.hasItemConformingToTypeIdentifier($0) })
+            ?? provider.registeredTypeIdentifiers.first
+
+        if let typeId = typeId {
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, err in
+                if let err = err { print("[PhotoPickerBridge] file load error: \(err)") }
+                if let url = url, let data = try? Data(contentsOf: url) {
+                    completion(data)
+                    return
+                }
+                Self.fallbackJpeg(provider: provider, completion: completion)
+            }
+            return
         }
+        Self.fallbackJpeg(provider: provider, completion: completion)
     }
 
-    private static func downscale(_ image: UIImage, maxEdge: CGFloat) -> UIImage {
-        let w = image.size.width, h = image.size.height
-        let longest = max(w, h)
-        guard longest > maxEdge else { return image }
-        let scale = maxEdge / longest
-        let newSize = CGSize(width: floor(w * scale), height: floor(h * scale))
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
+    private static func fallbackJpeg(provider: NSItemProvider, completion: @escaping (Data?) -> Void) {
+        guard provider.canLoadObject(ofClass: UIImage.self) else { completion(nil); return }
+        provider.loadObject(ofClass: UIImage.self) { obj, err in
+            if let err = err { print("[PhotoPickerBridge] fallback load error: \(err)") }
+            guard let image = obj as? UIImage else { completion(nil); return }
+            completion(image.jpegData(compressionQuality: 0.95))
         }
     }
 }
@@ -97,7 +102,7 @@ extension PhotoPickerBridge: PHPickerViewControllerDelegate {
         var bytes: [Data?] = Array(repeating: nil, count: results.count)
         for (idx, r) in results.enumerated() {
             group.enter()
-            Self.jpegBytes(from: r) { data in
+            Self.originalBytes(from: r) { data in
                 bytes[idx] = data
                 group.leave()
             }

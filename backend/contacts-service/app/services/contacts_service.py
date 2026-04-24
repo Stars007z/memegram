@@ -203,6 +203,36 @@ class ContactsService:
     async def is_blocked(self, user_id: str, blocked_user_id: str) -> bool:
         return await self.blocked_repo.exists(uuid.UUID(user_id), uuid.UUID(blocked_user_id))
 
+    async def purge_user(self, user_id: str) -> tuple[int, int]:
+        """Hard-delete every contact / blocked-user row mentioning user_id.
+
+        Idempotent: returns (contacts_deleted, blocked_deleted).
+        Used by the orchestrator account-deletion fanout.
+        """
+        from sqlalchemy import delete, or_
+
+        uid = uuid.UUID(user_id)
+
+        contacts_res = await self.session.execute(
+            delete(Contact).where(or_(Contact.user_id == uid, Contact.contact_user_id == uid))
+        )
+        blocked_res = await self.session.execute(
+            delete(BlockedUser).where(or_(BlockedUser.user_id == uid, BlockedUser.blocked_user_id == uid))
+        )
+        await self.session.flush()
+
+        contacts_deleted = contacts_res.rowcount or 0
+        blocked_deleted = blocked_res.rowcount or 0
+
+        logger.info(
+            "contacts.purge_user",
+            user_id=user_id,
+            contacts_deleted=contacts_deleted,
+            blocked_deleted=blocked_deleted,
+        )
+
+        return contacts_deleted, blocked_deleted
+
 
 def _contact_to_dict(contact: Contact, profile: Optional[UserBriefProfile]) -> dict:
     return {

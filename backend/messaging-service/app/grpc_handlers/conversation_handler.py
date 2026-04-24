@@ -216,6 +216,25 @@ class ConversationHandler:
                 _set_error_from_value_error(context, e)
                 return messaging_pb2.DeleteConversationResponse()
 
+    async def purge_user_membership(self, request, context):
+        if not request.user_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id is required")
+            return messaging_pb2.PurgeUserMembershipResponse()
+
+        async with self._container.request_scope() as scope:
+            try:
+                groups_left, directs_purged = await scope.conversation_service.purge_user_membership(
+                    user_id=uuid.UUID(request.user_id),
+                )
+                return messaging_pb2.PurgeUserMembershipResponse(
+                    groups_left=groups_left,
+                    directs_purged=directs_purged,
+                )
+            except ValueError as e:
+                _set_error_from_value_error(context, e)
+                return messaging_pb2.PurgeUserMembershipResponse()
+
     @staticmethod
     def _to_response(result) -> messaging_pb2.ConversationResponse:
         return messaging_pb2.ConversationResponse(
@@ -227,6 +246,7 @@ class ConversationHandler:
                     user_id=str(m.user_id),
                     role=m.role,
                     joined_at=int(m.joined_at),
+                    last_read_message_id=str(m.last_read_message_id) if m.last_read_message_id else "",
                 )
                 for m in result.members
             ],

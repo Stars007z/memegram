@@ -68,6 +68,19 @@ class IMediaObjectService(ABC):
     ) -> bool: ...
 
     @abstractmethod
+    async def delete_object_by_media_id(
+        self,
+        media_id: uuid.UUID,
+    ) -> bool:
+        """Delete an object knowing only its media_id.
+
+        Looks up the s3_key from the repo, deletes the S3 object, marks the
+        DB row as deleted. Idempotent: returns False if the object is unknown
+        or already deleted.
+        """
+        ...
+
+    @abstractmethod
     async def delete_objects_batch(
         self,
         objects: list[tuple[uuid.UUID, str]],

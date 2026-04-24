@@ -71,6 +71,20 @@ class AutoDeleteResult:
     user_ids: list[str] = field(default_factory=list)
 
 
+@dataclass
+class DeleteUserResult:
+    """Outcome of `IUserGateway.delete_user`.
+
+    `media_ids` is the list of media object IDs that were attached to the
+    user/profile/settings BEFORE deletion — the orchestrator forwards them
+    to media-service for cleanup as part of the account-deletion fanout.
+    """
+
+    success: bool
+    deleted_at: int = 0
+    media_ids: list[str] = field(default_factory=list)
+
+
 class IUserGateway(ABC):
     @abstractmethod
     async def create_user(self, user_id: str, username: str) -> CreateUserResult: ...
@@ -85,7 +99,7 @@ class IUserGateway(ABC):
     async def update_user(self, request: UpdateUserRequest) -> UserProfileResult: ...
 
     @abstractmethod
-    async def delete_user(self, user_id: str) -> bool: ...
+    async def delete_user(self, user_id: str) -> DeleteUserResult: ...
 
     @abstractmethod
     async def get_user_settings(self, user_id: str) -> UserSettingsResult: ...

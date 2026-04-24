@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.memegram.data.gallery.GallerySection
@@ -34,80 +35,109 @@ import com.example.memegram.utils.ssp
 fun DateScrubber(
     sections: List<GallerySection>,
     totalItems: Int,
+    loadedItems: Int,
     gridState: LazyGridState,
     columns: Int = 3,
     modifier: Modifier = Modifier
 ) {
-    if (sections.size < 2 || totalItems == 0) return
+    if (totalItems <= 0) return
 
     val scope        = rememberCoroutineScope()
     var isDragging   by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableStateOf(0f) }
     var dragLabel    by remember { mutableStateOf("") }
 
-    BoxWithConstraints(modifier = modifier.width(40.sdp)) {
+    val scrollFraction by remember(totalItems) {
+        derivedStateOf {
+            val firstIdx = gridState.firstVisibleItemIndex
+            if (totalItems <= 0) 0f
+            else (firstIdx.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
+        }
+    }
+    val thumbFraction = if (isDragging) dragFraction else scrollFraction
+
+    val currentLabel by remember {
+        derivedStateOf {
+            val firstIdx = gridState.firstVisibleItemIndex
+            sections.lastOrNull { it.firstItemIndex <= firstIdx }?.label ?: ""
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier.width(56.sdp)) {
         val trackH = maxHeight
 
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(3.sdp)
-                .then(
-                    if (isDragging) Modifier.background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                        RoundedCornerShape(2.sdp)
-                    ) else Modifier
+                .width(if (isDragging) 5.sdp else 3.sdp)
+                .background(
+                    if (isDragging)
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    else
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                    RoundedCornerShape(3.sdp)
                 )
         )
 
-        if (isDragging) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 0.sdp, y = trackH * dragFraction - 6.sdp)
-                    .size(12.sdp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
-        }
+        val thumbSize = if (isDragging) 22.sdp else 16.sdp
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(
+                    x = 0.sdp,
+                    y = (trackH * thumbFraction - thumbSize / 2).coerceAtLeast(0.sdp)
+                )
+                .size(thumbSize)
+                .background(MaterialTheme.colorScheme.primary, CircleShape)
+        )
 
         if (isDragging && dragLabel.isNotEmpty()) {
-            Text(
-                text     = dragLabel,
-                color    = Color.White,
-                fontSize = 12.ssp,
-                maxLines = 1,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.TopStart)
                     .offset(
-                        x = (-46).sdp,
-                        y = (trackH * dragFraction - 12.sdp).coerceAtLeast(0.sdp)
+                        x = (-40).sdp,
+                        y = (trackH * dragFraction - 16.sdp).coerceAtLeast(0.sdp)
                     )
-                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(6.sdp))
-                    .padding(horizontal = 8.sdp, vertical = 4.sdp)
-            )
+                    .wrapContentSize(align = Alignment.CenterEnd, unbounded = true)
+                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(10.sdp))
+                    .padding(horizontal = 12.sdp, vertical = 6.sdp)
+            ) {
+                Text(
+                    text     = dragLabel,
+                    color    = Color.White,
+                    fontSize = 13.ssp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible
+                )
+            }
         }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(sections, totalItems) {
+                .pointerInput(sections, totalItems, loadedItems) {
+                    fun handle(yPx: Float) {
+                        val fraction = (yPx / size.height).coerceIn(0f, 1f)
+                        dragFraction = fraction
+                        val targetItem = (fraction * totalItems).toInt().coerceIn(0, (totalItems - 1).coerceAtLeast(0))
+                        dragLabel = sections.lastOrNull { it.firstItemIndex <= targetItem }?.label
+                            ?: sections.firstOrNull()?.label
+                            ?: ""
+                        val loaded = loadedItems.coerceAtLeast(1)
+                        val scrollTarget = targetItem.coerceAtMost(loaded - 1)
+                        scope.launch { gridState.scrollToItem((scrollTarget / columns) * columns) }
+                    }
                     detectDragGestures(
                         onDragStart = { offset ->
-                            isDragging   = true
-                            val fraction = (offset.y / size.height).coerceIn(0f, 1f)
-                            dragFraction = fraction
-                            val targetItem = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
-                            dragLabel = sections.lastOrNull { it.firstItemIndex <= targetItem }?.label ?: ""
-                            scope.launch { gridState.scrollToItem((targetItem / columns) * columns) }
+                            isDragging = true
+                            handle(offset.y)
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            val fraction = (change.position.y / size.height).coerceIn(0f, 1f)
-                            dragFraction = fraction
-                            val targetItem = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
-                            dragLabel = sections.lastOrNull { it.firstItemIndex <= targetItem }?.label ?: ""
-                            scope.launch { gridState.scrollToItem((targetItem / columns) * columns) }
+                            handle(change.position.y)
                         },
                         onDragEnd    = { isDragging = false },
                         onDragCancel = { isDragging = false }

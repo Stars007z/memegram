@@ -1,6 +1,9 @@
 package com.example.memegram.translation
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
@@ -11,14 +14,6 @@ import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
 
-/**
- * iOS port of NllbTranslationEngine. Inference is delegated to a Swift
- * bridge ([IosOnnxBridge]) wrapping `onnxruntime-objc`.
- *
- * Memory pattern matches Android: load encoder, run all sentences, close
- * encoder, then load decoder, run all sentences, close decoder. ONNX
- * sessions never overlap in memory.
- */
 class IosNllbTranslationEngine private constructor(
     private val encoderPath: String,
     private val decoderPath: String,
@@ -53,6 +48,7 @@ class IosNllbTranslationEngine private constructor(
             IosNllbTranslationEngine(encoderPath, decoderPath, tokenizer, maxLength)
         }
 
+        @OptIn(ExperimentalForeignApi::class)
         private fun readUtf8File(path: String): String? {
             return NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, error = null) as String?
         }
@@ -63,6 +59,8 @@ class IosNllbTranslationEngine private constructor(
 
     private var encoderSession: Long = 0L
     private var decoderSession: Long = 0L
+
+    private val translateMutex = Mutex()
 
     fun close() {
         val bridge = IosOnnxBridge.delegate ?: return
@@ -90,7 +88,8 @@ class IosNllbTranslationEngine private constructor(
         text: String,
         srcLangFlores: String,
         tgtLangFlores: String,
-    ): String = withContext(Dispatchers.Default) {
+    ): String = translateMutex.withLock {
+        withContext(Dispatchers.Default) {
         val sentences = if (text.length > 300) splitSentences(text) else listOf(text)
 
         data class Tokenized(
@@ -111,30 +110,45 @@ class IosNllbTranslationEngine private constructor(
 
         data class Encoded(val hidden: FloatArray, val shape: LongArray, val mask: LongArray)
 
-        encoderSession = ensureSession(bridge, encoderPath, encoderSession)
-        val encoded: List<Encoded> = tokenized.map { tok ->
-            val seqLen = tok.inputIds.size.toLong()
-            val outputs = bridge.run(
-                handle = encoderSession,
-                int64Names = arrayOf("input_ids", "attention_mask"),
-                int64Data = arrayOf(tok.inputIds, tok.attentionMask),
-                int64Shapes = arrayOf(longArrayOf(1, seqLen), longArrayOf(1, seqLen)),
-                floatNames = emptyArray(),
-                floatData = emptyArray(),
-                floatShapes = emptyArray(),
-                outputNames = arrayOf("last_hidden_state"),
-            )
-            val out = outputs[0]
-            Encoded(out.data, out.shape, tok.attentionMask)
+        val encoded: List<Encoded> = try {
+            encoderSession = ensureSession(bridge, encoderPath, encoderSession)
+            tokenized.map { tok ->
+                val seqLen = tok.inputIds.size.toLong()
+                val outputs = bridge.run(
+                    handle = encoderSession,
+                    int64Names = arrayOf("input_ids", "attention_mask"),
+                    int64Data = arrayOf(tok.inputIds, tok.attentionMask),
+                    int64Shapes = arrayOf(longArrayOf(1, seqLen), longArrayOf(1, seqLen)),
+                    floatNames = emptyArray(),
+                    floatData = emptyArray(),
+                    floatShapes = emptyArray(),
+                    outputNames = arrayOf("last_hidden_state"),
+                )
+                val out = outputs[0]
+                Encoded(out.data, out.shape, tok.attentionMask)
+            }
+        } finally {
+            if (encoderSession != 0L) {
+                bridge.closeSession(encoderSession)
+                encoderSession = 0L
+            }
         }
 
-        decoderSession = ensureSession(bridge, decoderPath, decoderSession)
-        val results: List<String> = tokenized.zip(encoded).map { (tok, enc) ->
-            val ids = decodeAutoregressive(bridge, decoderSession, tok.decoderStartIds, enc.hidden, enc.shape, enc.mask)
-            tokenizer.decode(ids)
+        val results: List<String> = try {
+            decoderSession = ensureSession(bridge, decoderPath, decoderSession)
+            tokenized.zip(encoded).map { (tok, enc) ->
+                val ids = decodeAutoregressive(bridge, decoderSession, tok.decoderStartIds, enc.hidden, enc.shape, enc.mask)
+                tokenizer.decode(ids)
+            }
+        } finally {
+            if (decoderSession != 0L) {
+                bridge.closeSession(decoderSession)
+                decoderSession = 0L
+            }
         }
 
         results.joinToString(" ")
+        }
     }
 
     private fun decodeAutoregressive(

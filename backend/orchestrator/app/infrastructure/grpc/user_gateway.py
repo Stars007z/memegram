@@ -4,6 +4,7 @@ from app.config import Settings
 from app.core.interfaces.user_gateway import (
     AutoDeleteResult,
     CreateUserResult,
+    DeleteUserResult,
     IUserGateway,
     UpdateUserRequest,
     UpdateUserSettingsRequest,
@@ -141,7 +142,7 @@ class GrpcUserGateway(IUserGateway):
             raise grpc_error_to_exception(e, _SERVICE)
         return _profile_from_response(response.profile)
 
-    async def delete_user(self, user_id: str) -> bool:
+    async def delete_user(self, user_id: str) -> DeleteUserResult:
         try:
             response = await self._stub().DeleteUser(
                 user_pb2.DeleteUserRequest(user_id=user_id),
@@ -149,7 +150,15 @@ class GrpcUserGateway(IUserGateway):
             )
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
-        return response.success
+        # `media_ids` and `deleted_at` were added in the user-service slice;
+        # fall back to safe defaults for forward/backward compatibility.
+        media_ids = list(getattr(response, "media_ids", []) or [])
+        deleted_at = int(getattr(response, "deleted_at", 0) or 0)
+        return DeleteUserResult(
+            success=response.success,
+            deleted_at=deleted_at,
+            media_ids=media_ids,
+        )
 
     async def get_user_settings(self, user_id: str) -> UserSettingsResult:
         try:

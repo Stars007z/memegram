@@ -234,6 +234,48 @@ class TestDeleteObject:
 
 
 # ---------------------------------------------------------------------------
+# delete_object_by_media_id
+# ---------------------------------------------------------------------------
+class TestDeleteObjectByMediaId:
+    async def test_happy_path_resolves_s3_key_from_repo(self, service):
+        # Arrange
+        media_id = uuid.uuid4()
+        service._repo.get_by_id.return_value = _obj(s3_key="resolved/key")
+
+        # Act
+        result = await service.delete_object_by_media_id(media_id)
+
+        # Assert
+        assert result is True
+        service._s3.delete_object.assert_awaited_once_with(bucket="test-bucket", key="resolved/key")
+        service._repo.mark_deleted.assert_awaited_once_with(media_id)
+
+    async def test_unknown_media_id_returns_false(self, service):
+        # Arrange
+        service._repo.get_by_id.return_value = None
+
+        # Act
+        result = await service.delete_object_by_media_id(uuid.uuid4())
+
+        # Assert
+        assert result is False
+        service._s3.delete_object.assert_not_called()
+        service._repo.mark_deleted.assert_not_called()
+
+    async def test_already_deleted_is_idempotent(self, service):
+        # Arrange
+        service._repo.get_by_id.return_value = _obj(status="deleted")
+
+        # Act
+        result = await service.delete_object_by_media_id(uuid.uuid4())
+
+        # Assert
+        assert result is False
+        service._s3.delete_object.assert_not_called()
+        service._repo.mark_deleted.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # delete_objects_batch
 # ---------------------------------------------------------------------------
 class TestDeleteObjectsBatch:

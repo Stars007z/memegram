@@ -101,6 +101,19 @@ class MediaServiceHandler(media_pb2_grpc.MediaServiceServicer):
 
         return media_pb2.DeleteObjectResponse(success=success)
 
+    async def DeleteObjectByMediaId(self, request, context):
+        if not request.media_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("media_id is required")
+            return media_pb2.DeleteObjectResponse()
+
+        async with self._container.request_scope() as scope:
+            success = await scope.media_object_service.delete_object_by_media_id(
+                media_id=uuid.UUID(request.media_id),
+            )
+
+        return media_pb2.DeleteObjectResponse(success=success)
+
     async def DeleteObjectsBatch(self, request, context):
         if len(request.objects) > 1000:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)

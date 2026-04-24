@@ -9,6 +9,7 @@ class MemberResult:
     user_id: uuid.UUID
     role: str
     joined_at: float
+    last_read_message_id: Optional[uuid.UUID] = None
 
 
 @dataclass
@@ -135,5 +136,13 @@ class IConversationService(ABC):
           should use leave_conversation instead.
         Publishes a `conversation_deleted` event so all online clients can
         purge it locally.
+        """
+        ...
+
+    @abstractmethod
+    async def purge_user_membership(self, user_id: uuid.UUID) -> tuple[int, int]:
+        """Account-deletion fanout: detach a user from every conversation.
+
+        Returns (groups_left, directs_purged). Idempotent.
         """
         ...

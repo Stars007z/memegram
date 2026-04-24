@@ -51,6 +51,7 @@ def _make_service(
     session.add = MagicMock()
     session.flush = AsyncMock()
     session.execute = AsyncMock()
+    session.delete = AsyncMock()
 
     contacts = MagicMock()
     contacts.is_blocked_either_way = AsyncMock(return_value=contacts_is_blocked)
@@ -422,10 +423,15 @@ class TestDeleteUser:
         ts = await service.delete_user(user_id)
 
         # Assert
-        assert isinstance(ts, datetime)
-        assert user.is_deleted is True
-        assert user.deleted_at == ts
-        assert user.username.startswith("bob_deleted_")
+        assert isinstance(ts, tuple)
+        assert len(ts) == 2
+        deleted_at, media_ids = ts
+        assert isinstance(deleted_at, datetime)
+        assert isinstance(media_ids, list)
+        # Hard delete: the user row is removed via session.delete(...). Mutation
+        # of `is_deleted`/username happens at DB level (cascade); we just assert
+        # the ORM `delete()` was awaited with the resolved user.
+        service.session.delete.assert_awaited_once_with(user)
         service.session.flush.assert_awaited()
 
     async def test_not_found_raises(self, service):
@@ -469,8 +475,10 @@ class TestCheckAndProcessAutoDelete:
         # Assert
         assert count == 2
         assert ids == [str(u1.id), str(u2.id)]
-        assert u1.is_deleted is True
-        assert u2.is_deleted is True
+        # Hard delete: verify ORM session.delete was awaited for both candidates.
+        deleted_args = [c.args[0] for c in service.session.delete.await_args_list]
+        assert u1 in deleted_args
+        assert u2 in deleted_args
 
     async def test_no_candidates_returns_zero(self, service):
         # Arrange

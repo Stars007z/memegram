@@ -796,6 +796,85 @@ class TestDeleteConversation:
 
 
 # ---------------------------------------------------------------------------
+# purge_user_membership
+# ---------------------------------------------------------------------------
+class TestPurgeUserMembership:
+    async def test_groups_marked_left_directs_deleted_and_events_published(
+        self,
+        service,
+        conversation_repo,
+        stream_mock,
+    ):
+        # Arrange
+        user_id = uuid.uuid4()
+        group_conv_a = _make_conv(type="group")
+        group_conv_b = _make_conv(type="group")
+        direct_conv = _make_conv(type="direct")
+        group_member_a = _make_member(user_id=user_id, role="member")
+        group_member_a.id = uuid.uuid4()
+        group_member_b = _make_member(user_id=user_id, role="owner")
+        group_member_b.id = uuid.uuid4()
+        direct_member = _make_member(user_id=user_id, role="member")
+        direct_member.id = uuid.uuid4()
+
+        select_result = MagicMock()
+        select_result.all.return_value = [
+            (group_member_a, group_conv_a),
+            (group_member_b, group_conv_b),
+            (direct_member, direct_conv),
+        ]
+        delete_result = SimpleNamespace(rowcount=1)
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            # First call -> SELECT, second -> DELETE.
+            if execute_side_effect.calls == 0:
+                execute_side_effect.calls += 1
+                return select_result
+            execute_side_effect.calls += 1
+            return delete_result
+
+        execute_side_effect.calls = 0
+        conversation_repo.session.execute.side_effect = execute_side_effect
+
+        # Act
+        groups_left, directs_purged = await service.purge_user_membership(user_id)
+
+        # Assert
+        assert groups_left == 2
+        assert directs_purged == 1
+        assert group_member_a.left_at is not None
+        assert group_member_b.left_at is not None
+        assert direct_member.left_at is None  # deleted, not marked
+        # 1 SELECT + 1 DELETE = 2 executes
+        assert conversation_repo.session.execute.await_count == 2
+        conversation_repo.session.flush.assert_awaited_once()
+        # 2 group member_left + 1 direct conversation_deleted = 3 events
+        assert stream_mock.publish_event.await_count == 3
+
+    async def test_idempotent_when_no_memberships(
+        self,
+        service,
+        conversation_repo,
+        stream_mock,
+    ):
+        # Arrange
+        select_result = MagicMock()
+        select_result.all.return_value = []
+        conversation_repo.session.execute.return_value = select_result
+
+        # Act
+        groups_left, directs_purged = await service.purge_user_membership(uuid.uuid4())
+
+        # Assert
+        assert groups_left == 0
+        assert directs_purged == 0
+        # Only the SELECT is executed, no DELETE.
+        assert conversation_repo.session.execute.await_count == 1
+        conversation_repo.session.flush.assert_awaited_once()
+        stream_mock.publish_event.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
 # _encode_cursor / _decode_cursor (статические)
 # ---------------------------------------------------------------------------
 class TestCursor:

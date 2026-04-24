@@ -240,6 +240,13 @@ class ChatViewModel(
                             } catch (_: Exception) {}
                         }
                     }
+                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                        launch {
+                            runCatching {
+                                chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                            }
+                        }
+                    }
                 }
             } catch (_: Exception) { }
 
@@ -313,7 +320,7 @@ class ChatViewModel(
                         text         = parsed.content,
                         isOutgoing   = isSentByMe,
                         timestamp    = msg.createdAt * 1000L,
-                        status       = MessageStatus.SENT,
+                        status       = if (isSentByMe && existing?.status == MessageStatus.READ) MessageStatus.READ else MessageStatus.SENT,
                         type         = if (parsed.type != "text") parsed.type else (existing?.type ?: "text"),
                         mediaId      = parsed.mediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
                         senderUserId = msg.effectiveSenderId,
@@ -432,7 +439,6 @@ class ChatViewModel(
                 val lastReadId = data.lastReadMessageId ?: return
                 if (readerId == myId) return
                 chatRepository.markOutgoingMessagesRead(convId, lastReadId)
-                loadMessages(convId)
             }
 
             "epoch_changed" -> syncMlsPending(convId)

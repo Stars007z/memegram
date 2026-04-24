@@ -21,6 +21,7 @@ from app.core.interfaces.messaging_gateway import (
     MessageEntryResult,
     MessagingHealthResult,
     MlsGroupInfoResult,
+    PurgeUserMembershipResult,
     SendMessageResult,
     UserDeviceKeyPackageResult,
     WelcomeEntryResult,
@@ -38,6 +39,7 @@ def _conversation_from_proto(r) -> ConversationResult:
             user_id=m.user_id,
             role=m.role,
             joined_at=m.joined_at,
+            last_read_message_id=m.last_read_message_id,
         )
         for m in r.members
     ]
@@ -806,6 +808,19 @@ class GrpcMessagingGateway(IMessagingGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return resp.notified_conversations_count
+
+    async def purge_user_membership(self, user_id: str) -> PurgeUserMembershipResult:
+        try:
+            resp = await self._stub().PurgeUserMembership(
+                messaging_pb2.PurgeUserMembershipRequest(user_id=user_id),
+                timeout=self._timeout,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return PurgeUserMembershipResult(
+            groups_left=resp.groups_left,
+            directs_purged=resp.directs_purged,
+        )
 
     async def health_check(self) -> MessagingHealthResult:
         try:

@@ -40,6 +40,29 @@ actual fun rememberGalleryLoader(): GalleryLoader {
         object : GalleryLoader {
             override val isPermissionGranted: Boolean = granted
 
+            private var cachedFetch: platform.Photos.PHFetchResult? = null
+            private val fetchLock = kotlinx.coroutines.sync.Mutex()
+
+            private suspend fun ensureFetch(): platform.Photos.PHFetchResult? {
+                if (!granted) return null
+                fetchLock.lock()
+                try {
+                    cachedFetch?.let { return it }
+                    val opts = PHFetchOptions().apply {
+                        sortDescriptors = listOf(
+                            platform.Foundation.NSSortDescriptor.sortDescriptorWithKey(
+                                "creationDate", ascending = false
+                            )
+                        )
+                    }
+                    val fr = PHAsset.fetchAssetsWithMediaType(PHAssetMediaTypeImage, opts)
+                    cachedFetch = fr
+                    return fr
+                } finally {
+                    fetchLock.unlock()
+                }
+            }
+
             override fun requestPermission() {
                 if (granted) return
                 PHPhotoLibrary.requestAuthorization { newStatus ->
@@ -48,15 +71,7 @@ actual fun rememberGalleryLoader(): GalleryLoader {
             }
 
             override suspend fun loadAll(): List<GalleryThumb> = withContext(Dispatchers.Default) {
-                if (!granted) return@withContext emptyList()
-                val opts = PHFetchOptions().apply {
-                    sortDescriptors = listOf(
-                        platform.Foundation.NSSortDescriptor.sortDescriptorWithKey(
-                            "creationDate", ascending = false
-                        )
-                    )
-                }
-                val fetchResult = PHAsset.fetchAssetsWithMediaType(PHAssetMediaTypeImage, opts)
+                val fetchResult = ensureFetch() ?: return@withContext emptyList()
                 val out = ArrayList<GalleryThumb>(fetchResult.count.toInt())
                 for (i in 0 until fetchResult.count.toInt()) {
                     val asset = fetchResult.objectAtIndex(i.toULong()) as? PHAsset ?: continue
@@ -74,6 +89,33 @@ actual fun rememberGalleryLoader(): GalleryLoader {
                     )
                 }
                 out
+            }
+
+            override suspend fun loadPage(offset: Int, limit: Int): List<GalleryThumb> = withContext(Dispatchers.Default) {
+                val fetchResult = ensureFetch() ?: return@withContext emptyList()
+                val total = fetchResult.count.toInt()
+                if (offset >= total) return@withContext emptyList()
+                val end = (offset + limit).coerceAtMost(total)
+                val out = ArrayList<GalleryThumb>(end - offset)
+                for (i in offset until end) {
+                    val asset = fetchResult.objectAtIndex(i.toULong()) as? PHAsset ?: continue
+                    val date: NSDate? = asset.creationDate
+                    val secs  = if (date != null) {
+                        val ref = date.timeIntervalSinceDate(NSDate.dateWithTimeIntervalSince1970(0.0))
+                        ref.toLong()
+                    } else 0L
+                    out += GalleryThumb(
+                        id        = asset.localIdentifier,
+                        bytes     = EMPTY_BYTES,
+                        name      = asset.localIdentifier,
+                        dateAdded = secs
+                    )
+                }
+                out
+            }
+
+            override suspend fun totalCount(): Int = withContext(Dispatchers.Default) {
+                ensureFetch()?.count?.toInt() ?: 0
             }
 
             override suspend fun loadThumbBytes(id: String): ByteArray? {

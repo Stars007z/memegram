@@ -17,6 +17,8 @@ import com.example.memegram.data.repository.NotificationsRepositoryImpl
 import com.example.memegram.data.repository.ProfileRepository
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.data.repository.UserRepositoryImpl
+import com.example.memegram.data.wipe.ClientDataWiper
+import com.example.memegram.data.wipe.createClientDataWiper
 import com.example.memegram.database.AppDatabase
 import com.example.memegram.audio.GlobalAudioPlayer
 import com.example.memegram.auth.SessionRefresher
@@ -42,7 +44,7 @@ val appModule = module {
     single<KeyManager> { createPlatformKeyManager(get()) }
     single { ApiService(get(), get(), baseUrl = "https://memegram.win") }
     single { ThemePreferences(get()) }
-    single<UserRepository> { UserRepositoryImpl(get()) }
+    single<UserRepository> { UserRepositoryImpl(get(), get(), get()) }
     single<ContactsRepository> { ContactsRepositoryImpl(get()) }
     single<MlsManager> {
         MlsManager(
@@ -72,6 +74,13 @@ val appModule = module {
     single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }
     single<AppLifecycleObserver> { createAppLifecycleObserver() }
     single { SessionRefresher(get(), get(), get(), get(), get()) }
+    single<ClientDataWiper> {
+        createClientDataWiper(
+            plainSettings = get(),
+            secureSettings = get(named("secure")),
+            mlsManager = get(),
+        )
+    }
 
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatsViewModel)

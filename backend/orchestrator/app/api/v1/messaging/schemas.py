@@ -91,6 +91,14 @@ class ConversationResponseSchema(BaseModel):
 
     is_peer_blocked: bool = False
 
+    # For 1:1 (direct) chats only: the other participant's last_read_message_id.
+    # Lets the sender's UI render the "read" double-tick on outgoing messages
+    # whose timestamp <= the message identified by this ID, even when the SSE
+    # `message_read` event was missed (chat closed / app backgrounded).
+    # Empty / None for group chats and for direct chats where the peer has
+    # never read anything.
+    peer_last_read_message_id: Optional[str] = None
+
 
 class ConversationSummarySchema(BaseModel):
     id: str

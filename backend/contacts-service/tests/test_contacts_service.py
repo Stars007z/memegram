@@ -278,3 +278,31 @@ class TestIsContactIsBlocked:
     async def test_is_blocked_delegates(self, service):
         service.blocked_repo.exists.return_value = False
         assert await service.is_blocked(str(uuid.uuid4()), str(uuid.uuid4())) is False
+
+
+# ---------------------------------------------------------------------------
+# purge_user
+# ---------------------------------------------------------------------------
+class TestPurgeUser:
+    async def test_deletes_contacts_and_blocks(self, service):
+        # session.execute is called twice; return mocks with rowcount.
+        contacts_res = SimpleNamespace(rowcount=3)
+        blocked_res = SimpleNamespace(rowcount=2)
+        service.session.execute = AsyncMock(side_effect=[contacts_res, blocked_res])
+        service.session.flush = AsyncMock()
+
+        contacts_deleted, blocked_deleted = await service.purge_user(str(uuid.uuid4()))
+
+        assert contacts_deleted == 3
+        assert blocked_deleted == 2
+        assert service.session.execute.await_count == 2
+        service.session.flush.assert_awaited_once()
+
+    async def test_idempotent_zero_rows(self, service):
+        zero = SimpleNamespace(rowcount=0)
+        service.session.execute = AsyncMock(side_effect=[zero, zero])
+        service.session.flush = AsyncMock()
+
+        contacts_deleted, blocked_deleted = await service.purge_user(str(uuid.uuid4()))
+
+        assert (contacts_deleted, blocked_deleted) == (0, 0)

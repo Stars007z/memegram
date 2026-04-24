@@ -183,6 +183,15 @@ fun ChatScreen(
         }
     }
 
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(imeBottom) {
+        if (chatItems.isEmpty()) return@LaunchedEffect
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
+        if (lastVisible >= chatItems.size - 3) {
+            listState.animateScrollToItem(chatItems.lastIndex)
+        }
+    }
+
     var attachments by remember { mutableStateOf<List<AttachItem>>(emptyList()) }
     var showAttachSheet by remember { mutableStateOf(false) }
     var pendingGallery by remember { mutableStateOf<Set<GalleryThumb>>(emptySet()) }
@@ -198,11 +207,51 @@ fun ChatScreen(
     var gridColumns by remember(defaultGridColumns) { mutableIntStateOf(defaultGridColumns) }
     var pinchAccumulatedScale by remember { mutableFloatStateOf(1f) }
 
+    var galleryTotal by remember { mutableIntStateOf(0) }
+    var galleryReachedEnd by remember { mutableStateOf(false) }
+    val galleryPageSize = 60
+
+    LaunchedEffect(showAttachSheet) {
+        if (!showAttachSheet) {
+            galleryThumbs = emptyList()
+            galleryTotal = 0
+            galleryReachedEnd = false
+        }
+    }
+
     LaunchedEffect(showAttachSheet, galleryLoader.isPermissionGranted) {
         if (showAttachSheet && galleryLoader.isPermissionGranted && galleryThumbs.isEmpty() && !galleryLoading) {
             galleryLoading = true
-            galleryThumbs  = galleryLoader.loadAll()
+            galleryTotal = runCatching { galleryLoader.totalCount() }.getOrDefault(0)
+            val firstPage = runCatching { galleryLoader.loadPage(0, galleryPageSize) }.getOrDefault(emptyList())
+            galleryThumbs = firstPage
+            galleryReachedEnd = firstPage.size < galleryPageSize || firstPage.size >= galleryTotal
             galleryLoading = false
+        }
+    }
+
+    LaunchedEffect(gridState, showAttachSheet) {
+        snapshotFlow {
+            val info = gridState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            last to info.totalItemsCount
+        }.collect { (lastVisible, total) ->
+            if (!showAttachSheet) return@collect
+            if (galleryLoading || galleryReachedEnd) return@collect
+            if (total <= 0) return@collect
+            if (lastVisible >= total - 12) {
+                galleryLoading = true
+                val next = runCatching { galleryLoader.loadPage(galleryThumbs.size, galleryPageSize) }
+                    .getOrDefault(emptyList())
+                if (next.isEmpty()) {
+                    galleryReachedEnd = true
+                } else {
+                    galleryThumbs = galleryThumbs + next
+                    if (next.size < galleryPageSize) galleryReachedEnd = true
+                    if (galleryThumbs.size >= galleryTotal && galleryTotal > 0) galleryReachedEnd = true
+                }
+                galleryLoading = false
+            }
         }
     }
 
@@ -438,7 +487,7 @@ fun ChatScreen(
                                     columns        = GridCells.Fixed(gridColumns),
                                     modifier       = Modifier
                                         .fillMaxSize()
-                                        .padding(end = 36.sdp),
+                                        .padding(end = 52.sdp),
                                     contentPadding = PaddingValues(
                                         start  = 2.sdp,
                                         top    = 2.sdp,
@@ -466,11 +515,12 @@ fun ChatScreen(
                                 }
 
                                 DateScrubber(
-                                    sections   = gallerySections,
-                                    totalItems = galleryThumbs.size,
-                                    gridState  = gridState,
-                                    columns    = gridColumns,
-                                    modifier   = Modifier
+                                    sections    = gallerySections,
+                                    totalItems  = galleryTotal.coerceAtLeast(galleryThumbs.size),
+                                    loadedItems = galleryThumbs.size,
+                                    gridState   = gridState,
+                                    columns     = gridColumns,
+                                    modifier    = Modifier
                                         .align(Alignment.CenterEnd)
                                         .fillMaxHeight()
                                 )
@@ -625,6 +675,7 @@ fun ChatScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ImageTopAppBarBox(topBarColor) { bgColor ->
@@ -692,7 +743,9 @@ fun ChatScreen(
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 3.sdp,
-                modifier = Modifier.imePadding()
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    .consumeWindowInsets(WindowInsets.navigationBars.union(WindowInsets.ime))
             ) {
                 if (isPeerBlocked && !isGroupChat) {
                     Row(
@@ -1000,7 +1053,7 @@ fun ChatScreen(
             LazyColumn(
                 state          = listState,
                 modifier       = Modifier.fillMaxSize().padding(horizontal = 12.sdp),
-                contentPadding = PaddingValues(vertical = 12.sdp),
+                contentPadding = PaddingValues(top = 12.sdp, bottom = 16.sdp),
                 verticalArrangement = Arrangement.spacedBy(8.sdp, Alignment.Bottom)
             ) {
                 items(chatItems.size, key = { chatItems[it].stableKey }) { index ->
