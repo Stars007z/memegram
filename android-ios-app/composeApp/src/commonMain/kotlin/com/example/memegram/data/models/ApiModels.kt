@@ -77,10 +77,6 @@ data class UserSettingsResponse(
     @SerialName("last_active_visible_to") val lastActiveVisibleTo: String,
     @SerialName("chat_background_media_id") val chatBackgroundMediaId: String? = null,
     @SerialName("top_bar_color") val topBarColor: String? = null,
-    @SerialName("ringtone_media_id") val ringtoneMediaId: String? = null,
-    @SerialName("ringtone_vibration_strength") val ringtoneVibrationStrength: Int? = null,
-    @SerialName("notification_sound_media_id") val notificationSoundMediaId: String? = null,
-    @SerialName("notification_vibration_strength") val notificationVibrationStrength: Int? = null,
     @SerialName("top_bar_media_id") val topBarMediaId: String? = null,
     @SerialName("my_bubble_media_id") val myBubbleMediaId: String? = null,
     @SerialName("their_bubble_media_id") val theirBubbleMediaId: String? = null
@@ -97,10 +93,6 @@ data class UpdateSettingsRequest(
     @SerialName("last_active_visible_to") val lastActiveVisibleTo: String? = null,
     @SerialName("account_auto_delete_after_days") val accountAutoDeleteAfterDays: Int? = null,
     @SerialName("chat_background_media_id") val chatBackgroundMediaId: String? = null,
-    @SerialName("ringtone_media_id") val ringtoneMediaId: String? = null,
-    @SerialName("notification_sound") val notificationSound: String? = null,
-    @SerialName("notification_vibration_strength") val notificationVibrationStrength: Int? = null,
-    @SerialName("ringtone_vibration_strength") val ringtoneVibrationStrength: Int? = null,
     @SerialName("top_bar_media_id") val topBarMediaId: String? = null,
     @SerialName("my_bubble_media_id") val myBubbleMediaId: String? = null,
     @SerialName("their_bubble_media_id") val theirBubbleMediaId: String? = null
@@ -163,7 +155,9 @@ data class SseEventData(
     @SerialName("kicked_by") val kickedBy: String? = null,
     @SerialName("new_role") val newRole: String? = null,
     @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
-    @SerialName("deleted_by") val deletedBy: String? = null
+    @SerialName("deleted_by") val deletedBy: String? = null,
+    @SerialName("last_read_message_id") val lastReadMessageId: String? = null,
+    @SerialName("read_at") val readAt: Long = 0L
 )
 
 @Serializable

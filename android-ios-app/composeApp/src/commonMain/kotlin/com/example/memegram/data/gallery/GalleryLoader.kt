@@ -1,6 +1,7 @@
 package com.example.memegram.data.gallery
 
 import androidx.compose.runtime.Composable
+import com.example.memegram.localization.S
 import io.github.vinceglb.filekit.core.PlatformFile
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
@@ -21,21 +22,16 @@ data class GallerySection(val label: String, val firstItemIndex: Int)
 fun buildGallerySections(thumbs: List<GalleryThumb>): List<GallerySection> {
     val result = mutableListOf<GallerySection>()
     var lastLabel = ""
+    val s = S.current
     thumbs.forEachIndexed { index, thumb ->
         if (thumb.dateAdded > 0L) {
             val dt    = kotlin.time.Instant.fromEpochSeconds(thumb.dateAdded)
                 .toLocalDateTime(TimeZone.currentSystemDefault())
-            val label = "${monthShort(dt.month.number)} ${dt.year}"
+            val label = "${s.monthShort(dt.month.number)} ${dt.year}"
             if (label != lastLabel) { result += GallerySection(label, index); lastLabel = label }
         }
     }
     return result
-}
-
-private fun monthShort(m: Int) = when (m) {
-    1 -> "Янв"; 2 -> "Фев"; 3 -> "Мар"; 4 -> "Апр"
-    5 -> "Май"; 6 -> "Июн"; 7 -> "Июл"; 8 -> "Авг"
-    9 -> "Сен"; 10 -> "Окт"; 11 -> "Ноя"; else -> "Дек"
 }
 
 sealed class AttachItem {
@@ -47,12 +43,6 @@ sealed class AttachItem {
     ) : AttachItem() { override val name get() = file.name }
     data class FromGallery(val thumb: GalleryThumb) : AttachItem() { override val name get() = thumb.name }
 
-    /**
-     * In-memory image bytes produced by the native iOS PHPicker (already
-     * transcoded to JPEG) or any other source that yields ready bytes.
-     * Used by [com.example.memegram.picker.rememberImagePicker] so that
-     * iOS doesn't need a `PlatformFile`.
-     */
     data class FromBytes(
         val bytes: ByteArray,
         override val name: String,

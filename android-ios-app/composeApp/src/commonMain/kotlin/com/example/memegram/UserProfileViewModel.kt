@@ -6,6 +6,7 @@ import com.example.memegram.data.models.BlockUserRequest
 import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ContactsRepository
+import com.example.memegram.data.repository.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,9 @@ import kotlinx.coroutines.launch
 class UserProfileViewModel(
     private val api: ApiService,
     private val contactsRepository: ContactsRepository,
-    private val blockedUsersCache: BlockedUsersCache
+    private val blockedUsersCache: BlockedUsersCache,
+    private val profileRepository: ProfileRepository,
+    private val avatarCache: AvatarCache
 ) : ViewModel() {
 
     private val _userProfile = MutableStateFlow<UserProfileResponse?>(null)
@@ -51,16 +54,23 @@ class UserProfileViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val profile = api.getUserById(userId)
-                _userProfile.value = profile
-                profile.avatarMediaId?.let { fetchImage(it, "avatar") }
-                profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                profileRepository.getCached(userId)?.let { cached ->
+                    _userProfile.value = cached
+                    cached.avatarMediaId?.let { fetchImage(it, "avatar") }
+                    cached.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                }
+                val profile = profileRepository.getOrFetch(userId, forceRefresh = true)
+                if (profile != null) {
+                    _userProfile.value = profile
+                    profile.avatarMediaId?.let { fetchImage(it, "avatar") }
+                    profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                }
                 try {
                     val contacts = contactsRepository.getContacts(limit = 200, offset = 0).getOrNull()
                     _isContact.value = contacts?.any { it.contactUserId == userId } == true
                 } catch (_: Exception) {}
             } catch (e: Exception) {
-                _actionMessage.value = "Error loading profile"
+                if (_userProfile.value == null) _actionMessage.value = "Error loading profile"
             } finally {
                 _isLoading.value = false
             }
@@ -69,8 +79,7 @@ class UserProfileViewModel(
 
     private suspend fun fetchImage(mediaId: String, type: String) {
         try {
-            val downloadInfo = api.getItemDownloadUrl(mediaId)
-            val bytes = api.downloadBytesFromUrl(downloadInfo.downloadUrl)
+            val bytes = avatarCache.load(mediaId) ?: return
             when (type) {
                 "avatar" -> _avatarBytes.value = bytes
                 "cover" -> _coverBytes.value = bytes

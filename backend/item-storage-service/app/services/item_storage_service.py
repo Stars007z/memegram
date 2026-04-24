@@ -42,16 +42,6 @@ ITEM_TYPE_CONFIG: dict[str, dict] = {
         "max_size": 5 * 1024 * 1024,
         "access_policy": "owner_only",
     },
-    "notification_sound": {
-        "allowed_mimes": {"audio/ogg", "audio/mpeg", "audio/aac"},
-        "max_size": 1 * 1024 * 1024,
-        "access_policy": "owner_only",
-    },
-    "ringtone": {
-        "allowed_mimes": {"audio/ogg", "audio/mpeg", "audio/aac"},
-        "max_size": 5 * 1024 * 1024,
-        "access_policy": "owner_only",
-    },
     "group_avatar": {
         "allowed_mimes": {"image/jpeg", "image/png", "image/webp"},
         "max_size": 5 * 1024 * 1024,

@@ -543,8 +543,6 @@ class TestUpdateUserSettings:
         # Arrange
         settings = SimpleNamespace(
             chat_background_media_id=None,
-            ringtone_media_id=None,
-            notification_sound=None,
             top_bar_media_id=None,
             my_bubble_media_id=None,
             their_bubble_media_id=None,
@@ -557,12 +555,12 @@ class TestUpdateUserSettings:
         result = await service.update_user_settings(
             str(uuid.uuid4()),
             chat_background_media_id=bg,
-            ringtone_media_id="",
+            top_bar_media_id="",
         )
 
         # Assert
         assert result.chat_background_media_id == uuid.UUID(bg)
-        assert result.ringtone_media_id is None
+        assert result.top_bar_media_id is None
 
     async def test_not_found_raises(self, service):
         # Arrange

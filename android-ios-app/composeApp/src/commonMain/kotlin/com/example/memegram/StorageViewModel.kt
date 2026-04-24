@@ -3,7 +3,10 @@ package com.example.memegram
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.files.avatarsCacheSizeBytes
 import com.example.memegram.data.repository.ChatRepository
+import com.example.memegram.data.repository.ProfileRepository
 import com.example.memegram.localization.S
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,7 +125,10 @@ object CacheSizeLimit {
 
 class StorageViewModel(
     private val chatRepository: ChatRepository,
-    private val settings: Settings
+    private val settings: Settings,
+    private val profileRepository: ProfileRepository,
+    private val sessionManager: SessionManager,
+    private val avatarCache: AvatarCache,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
@@ -226,12 +232,16 @@ class StorageViewModel(
     private val _lfuLimit = MutableStateFlow(settings.getLong("lfu_global_limit", 5000L))
     val lfuLimit: StateFlow<Long> = _lfuLimit.asStateFlow()
 
+    private val _profilesCacheSize = MutableStateFlow(0L)
+    val profilesCacheSize: StateFlow<Long> = _profilesCacheSize.asStateFlow()
+
 
     fun loadStorageOverview() {
         viewModelScope.launch {
             _isLoading.value = true
 
             runAutoRemoveCleanup()
+            refreshProfilesCacheSize()
 
             val typeStats = chatRepository.getStorageByType()
             val total = typeStats.sumOf { it.totalSize }
@@ -339,6 +349,19 @@ class StorageViewModel(
             chatRepository.clearAllLocalData()
             loadStorageOverview()
         }
+    }
+
+    fun clearProfilesCache() {
+        viewModelScope.launch {
+            val selfId = sessionManager.getUserId() ?: return@launch
+            profileRepository.clearOtherProfiles(selfId)
+            avatarCache.clear()
+            refreshProfilesCacheSize()
+        }
+    }
+
+    private suspend fun refreshProfilesCacheSize() {
+        _profilesCacheSize.value = runCatching { avatarsCacheSizeBytes() }.getOrDefault(0L)
     }
 
 

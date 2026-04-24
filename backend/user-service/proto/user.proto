@@ -49,10 +49,8 @@ message UserSettings {
   string last_active_visible_to        = 9;  // everybody / contacts / nobody
   string chat_background_media_id      = 10; // UUID, optional
   string top_bar_color                 = 11;
-  string ringtone_media_id             = 12; // UUID, optional
-  int32  ringtone_vibration_strength   = 13;
-  string notification_sound            = 14; // UUID, optional
-  int32  notification_vibration_strength = 15;
+  reserved 12, 13, 14, 15;             // removed: ringtone_media_id, ringtone_vibration_strength, notification_sound, notification_vibration_strength
+  reserved "ringtone_media_id", "ringtone_vibration_strength", "notification_sound", "notification_vibration_strength";
   string top_bar_media_id              = 16; // UUID, optional
   string my_bubble_media_id            = 17; // UUID, optional
   string their_bubble_media_id         = 18; // UUID, optional
@@ -117,10 +115,8 @@ message UpdateUserSettingsRequest {
   optional string last_active_visible_to          = 8;
   optional string chat_background_media_id        = 9;
   optional string top_bar_color                   = 10;
-  optional string ringtone_media_id               = 11;
-  optional int32  ringtone_vibration_strength     = 12;
-  optional string notification_sound              = 13;
-  optional int32  notification_vibration_strength = 14;
+  reserved 11, 12, 13, 14;                        // removed: ringtone_media_id, ringtone_vibration_strength, notification_sound, notification_vibration_strength
+  reserved "ringtone_media_id", "ringtone_vibration_strength", "notification_sound", "notification_vibration_strength";
   optional string top_bar_media_id                = 15;
   optional string my_bubble_media_id              = 16;
   optional string their_bubble_media_id           = 17;

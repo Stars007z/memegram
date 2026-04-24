@@ -2,54 +2,45 @@ package com.example.memegram.translation
 
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
-/**
- * iOS port of NllbTranslationService. Uses [IosNllbModelManager] for
- * download/storage and [IosOnnxBridge] for inference. Language ID falls
- * back to Apple's NLLanguageRecognizer via [IosLanguageIdBridge] when
- * [ScriptDetector] cannot decide.
- */
 class IosNllbTranslationService(
     httpClient: HttpClient,
     modelBaseUrl: String,
 ) : TranslationService {
 
     private val modelManager = IosNllbModelManager(httpClient, modelBaseUrl)
-    private val translateMutex = Mutex()
 
     override suspend fun translate(
         text: String,
         sourceLang: String?,
         targetLang: String,
-    ): TranslationResult = translateMutex.withLock {
+    ): TranslationResult {
         val detectedLang = sourceLang ?: identifyLanguage(text) ?: "und"
         println("[NLLB-iOS] translate: text='${text.take(40)}' src=$sourceLang detected=$detectedLang tgt=$targetLang")
 
         if (detectedLang == targetLang) {
-            return@withLock TranslationResult(text, detectedLang)
+            return TranslationResult(text, detectedLang)
         }
 
         val srcFlores = NllbLanguageCodes.toFlores(detectedLang)
         val tgtFlores = NllbLanguageCodes.toFlores(targetLang)
         if (srcFlores == null || tgtFlores == null) {
             println("[NLLB-iOS] translate: FLORES code missing — srcFlores=$srcFlores tgtFlores=$tgtFlores (detected=$detectedLang tgt=$targetLang) — returning original")
-            return@withLock TranslationResult(text, detectedLang)
+            return TranslationResult(text, detectedLang)
         }
 
         if (!IosOnnxBridge.isAvailable()) {
             println("[NLLB-iOS] OnnxBridge not registered — translation skipped")
-            return@withLock TranslationResult(text, detectedLang)
+            return TranslationResult(text, detectedLang)
         }
 
         val engine = modelManager.getEngine()
         if (engine == null) {
             println("[NLLB-iOS] translate: engine is null (model not on disk or not enough RAM) — returning original")
-            return@withLock TranslationResult(text, detectedLang)
+            return TranslationResult(text, detectedLang)
         }
 
-        try {
+        return try {
             println("[NLLB-iOS] translate: starting inference srcFlores=$srcFlores tgtFlores=$tgtFlores")
             val translated = engine.translate(text, srcFlores, tgtFlores)
             println("[NLLB-iOS] translate: inference done, output='${translated.take(40)}'")
@@ -98,4 +89,9 @@ class IosNllbTranslationService(
     override fun getModelSize(): Long = modelManager.getModelSize()
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
     override suspend fun deleteModel() = modelManager.deleteModel()
+
+    override suspend fun releaseModel() {
+        modelManager.release()
+        println("[NLLB-iOS] releaseModel(): released (gate hook)")
+    }
 }

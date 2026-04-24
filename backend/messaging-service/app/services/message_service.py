@@ -243,6 +243,16 @@ class MessageServiceImpl(IMessageService):
 
         key = f"unread:{user_id}:{conversation_id}"
         await self._redis.delete(key)
+
+        await self._stream.publish_event(
+            conversation_id,
+            {
+                "event_type": "message_read",
+                "user_id": str(user_id),
+                "last_read_message_id": str(last_read_message_id),
+                "read_at": datetime.utcnow().timestamp(),
+            },
+        )
         return 0
 
     async def _increment_unread_for_others(

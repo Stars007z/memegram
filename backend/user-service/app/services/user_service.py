@@ -229,18 +229,12 @@ class UserService:
             "last_active_visible_to",
             "chat_background_media_id",
             "top_bar_color",
-            "ringtone_media_id",
-            "ringtone_vibration_strength",
-            "notification_sound",
-            "notification_vibration_strength",
             "top_bar_media_id",
             "my_bubble_media_id",
             "their_bubble_media_id",
         }
         uuid_fields = {
             "chat_background_media_id",
-            "ringtone_media_id",
-            "notification_sound",
             "top_bar_media_id",
             "my_bubble_media_id",
             "their_bubble_media_id",

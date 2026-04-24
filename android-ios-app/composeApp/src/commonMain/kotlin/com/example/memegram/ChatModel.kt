@@ -40,7 +40,7 @@ data class Message(
     val localFilePath: String? = null
 )
 
-enum class MessageStatus { SENDING, SENT, FAILED }
+enum class MessageStatus { SENDING, SENT, READ, FAILED }
 
 // ── Storage analytics models ─────────────────────────────────────────
 

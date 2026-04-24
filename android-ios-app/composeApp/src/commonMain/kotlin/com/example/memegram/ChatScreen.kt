@@ -664,7 +664,6 @@ fun ChatScreen(
                             }
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 DropdownMenuItem(text = { Text(s.search) },           leadingIcon = { Icon(Icons.Default.Search, null) },           onClick = { showMenu = false; isSearchMode = true })
-                                DropdownMenuItem(text = { Text(s.call) },             leadingIcon = { Icon(Icons.Default.Call, null) },              onClick = { showMenu = false })
                                 DropdownMenuItem(text = { Text(s.notifications) },    leadingIcon = { Icon(Icons.Default.NotificationsOff, null) },  onClick = { showMenu = false; showMuteDialog = true })
                                 DropdownMenuItem(text = { Text(s.changeWallpaper) },  leadingIcon = { Icon(Icons.Default.Wallpaper, null) },         onClick = { showMenu = false })
                                 if (!isGroupChat) {
@@ -1636,11 +1635,22 @@ fun MessageBubble(
     ) {
         if (isOut && timeText.isNotEmpty()) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
+                maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp))
+            if (message.status == MessageStatus.SENT || message.status == MessageStatus.READ) {
+                Text(
+                    text = if (message.status == MessageStatus.READ) "✓✓" else "✓",
+                    color = timeColor,
+                    fontSize = 11.ssp,
+                    maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(end = 6.sdp, bottom = 4.sdp)
+                )
+            }
         }
 
         Box(
             modifier = Modifier
+                .weight(1f, fill = false)
                 .widthIn(max = 280.sdp)
                 .clip(RoundedCornerShape(
                     topStart    = 16.sdp, topEnd = 16.sdp,
@@ -1832,7 +1842,7 @@ fun MessageBubble(
                                     color = textColor,
                                     strokeWidth = 2.sdp
                                 )
-                                !hasLocal && message.status == MessageStatus.SENT -> Icon(
+                                !hasLocal && (message.status == MessageStatus.SENT || message.status == MessageStatus.READ) -> Icon(
                                     Icons.Default.Download,
                                     contentDescription = s.downloadFile,
                                     tint = textColor
@@ -1937,7 +1947,7 @@ fun MessageBubble(
                     }
                 }
 
-                if (isOut && message.status != MessageStatus.SENT) {
+                if (isOut && message.status != MessageStatus.SENT && message.status != MessageStatus.READ) {
                     val iconMod = if (isImageMsg)
                         Modifier.padding(end = 8.sdp, bottom = 4.sdp).align(Alignment.End)
                     else Modifier.align(Alignment.End)
@@ -1966,6 +1976,7 @@ fun MessageBubble(
 
         if (!isOut && timeText.isNotEmpty()) {
             Text(timeText, color = timeColor, fontSize = 11.ssp,
+                maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp))
         }
     }
@@ -2126,12 +2137,25 @@ fun AlbumBubble(
         if (isOutgoing && timeText.isNotEmpty()) {
             Text(
                 timeText, color = timeColor, fontSize = 11.ssp,
+                maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp)
             )
+            val allRead = albumMessages.all { it.status == MessageStatus.READ }
+            val allDelivered = albumMessages.all { it.status == MessageStatus.SENT || it.status == MessageStatus.READ }
+            if (allDelivered) {
+                Text(
+                    text = if (allRead) "✓✓" else "✓",
+                    color = timeColor,
+                    fontSize = 11.ssp,
+                    maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(end = 6.sdp, bottom = 4.sdp)
+                )
+            }
         }
 
         Box(
             modifier = Modifier
+                .weight(1f, fill = false)
                 .widthIn(max = 280.sdp)
                 .clip(
                     RoundedCornerShape(
@@ -2211,7 +2235,7 @@ fun AlbumBubble(
                 }
 
                 if (isOutgoing) {
-                    val anyNotSent = albumMessages.any { it.status != MessageStatus.SENT }
+                    val anyNotSent = albumMessages.any { it.status != MessageStatus.SENT && it.status != MessageStatus.READ }
                     if (anyNotSent) {
                         val anySending = albumMessages.any { it.status == MessageStatus.SENDING }
                         Text(
@@ -2243,6 +2267,7 @@ fun AlbumBubble(
         if (!isOutgoing && timeText.isNotEmpty()) {
             Text(
                 timeText, color = timeColor, fontSize = 11.ssp,
+                maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(start = 4.sdp, bottom = 4.sdp)
             )
         }
@@ -2302,7 +2327,7 @@ private fun AlbumFileRow(
                     color = textColor,
                     strokeWidth = 2.sdp
                 )
-                !hasLocal && message.status == MessageStatus.SENT -> Icon(
+                !hasLocal && (message.status == MessageStatus.SENT || message.status == MessageStatus.READ) -> Icon(
                     Icons.Default.Download,
                     contentDescription = s.downloadFile,
                     tint = textColor
