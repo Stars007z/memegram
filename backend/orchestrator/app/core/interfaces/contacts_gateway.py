@@ -76,6 +76,12 @@ class ContactsHealthResult:
     version: str = "1.0.0"
 
 
+@dataclass
+class PurgeUserResult:
+    contacts_deleted: int = 0
+    blocked_deleted: int = 0
+
+
 class IContactsGateway(ABC):
     @abstractmethod
     async def add_contact(self, user_id: str, user_public_key: str) -> AddContactResult: ...
@@ -105,3 +111,9 @@ class IContactsGateway(ABC):
 
     @abstractmethod
     async def health_check(self) -> ContactsHealthResult: ...
+
+    @abstractmethod
+    async def purge_user(self, user_id: str) -> PurgeUserResult:
+        """Account-deletion fanout: remove `user_id` from every contact list
+        and unblock relation in either direction. Idempotent."""
+        ...

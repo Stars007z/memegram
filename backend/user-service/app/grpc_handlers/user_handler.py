@@ -207,8 +207,12 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
         async with self.get_session() as session:
             service = UserService(session)
             try:
-                deleted_at = await service.delete_user(request.user_id)
-                return user_pb2.DeleteUserResponse(success=True, deleted_at=int(deleted_at.timestamp()))
+                deleted_at, media_ids = await service.delete_user(request.user_id)
+                return user_pb2.DeleteUserResponse(
+                    success=True,
+                    deleted_at=int(deleted_at.timestamp()),
+                    media_ids=media_ids,
+                )
             except ValueError as e:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(str(e))

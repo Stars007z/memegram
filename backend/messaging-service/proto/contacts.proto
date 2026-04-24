@@ -2,10 +2,123 @@ syntax = "proto3";
 package contacts;
 
 service ContactsService {
-    rpc IsBlocked(IsBlockedRequest) returns (IsBlockedResponse);
+    // Contacts
+    rpc AddContact(AddContactRequest) returns (AddContactResponse);
+    rpc RemoveContact(RemoveContactRequest) returns (RemoveContactResponse);
+    rpc GetContacts(GetContactsRequest) returns (GetContactsResponse);
+    rpc UpdateContact(UpdateContactRequest) returns (UpdateContactResponse);
+
+    // Blocked users
+    rpc BlockUser(BlockUserRequest) returns (BlockUserResponse);
+    rpc UnblockUser(UnblockUserRequest) returns (UnblockUserResponse);
+    rpc GetBlockedUsers(GetBlockedUsersRequest) returns (GetBlockedUsersResponse);
+
+    // Internal
     rpc IsContact(IsContactRequest) returns (IsContactResponse);
+    rpc IsBlocked(IsBlockedRequest) returns (IsBlockedResponse);
+    rpc PurgeUser(PurgeUserRequest) returns (PurgeUserResponse);
 }
 
+message UserBriefProfile {
+    string user_id       = 1;
+    string username      = 2;
+    string user_public_key = 3;
+    string bio           = 4;
+    string avatar_media_id = 5;
+}
+
+message ContactEntry {
+    string           contact_user_id = 1;
+    bool             is_favorite     = 2;
+    int64            created_at      = 3;
+    UserBriefProfile profile         = 4;
+}
+
+message BlockedEntry {
+    string           blocked_user_id = 1;
+    int64            blocked_at      = 2;
+    UserBriefProfile profile         = 3;
+}
+
+// ── AddContact ────────────────────────────────
+message AddContactRequest {
+    string user_id         = 1;
+    string user_public_key = 2;
+}
+message AddContactResponse {
+    ContactEntry contact = 1;
+}
+
+// ── RemoveContact ─────────────────────────────
+message RemoveContactRequest {
+    string user_id         = 1;
+    string contact_user_id = 2;
+}
+message RemoveContactResponse {
+    bool success = 1;
+}
+
+// ── GetContacts ───────────────────────────────
+message GetContactsRequest {
+    string user_id = 1;
+    int32  limit   = 2;
+    int32  offset  = 3;
+}
+message GetContactsResponse {
+    repeated ContactEntry contacts    = 1;
+    int32                 total_count = 2;
+}
+
+// ── UpdateContact ─────────────────────────────
+message UpdateContactRequest {
+    string          user_id         = 1;
+    string          contact_user_id = 2;
+    optional bool   is_favorite     = 3;
+}
+message UpdateContactResponse {
+    ContactEntry contact = 1;
+}
+
+// ── BlockUser ─────────────────────────────────
+message BlockUserRequest {
+    string user_id         = 1;
+    string blocked_user_id = 2;
+}
+message BlockUserResponse {
+    bool  success    = 1;
+    int64 created_at = 2;
+}
+
+// ── UnblockUser ───────────────────────────────
+message UnblockUserRequest {
+    string user_id         = 1;
+    string blocked_user_id = 2;
+}
+message UnblockUserResponse {
+    bool success = 1;
+}
+
+// ── GetBlockedUsers ───────────────────────────
+message GetBlockedUsersRequest {
+    string user_id = 1;
+    int32  limit   = 2;
+    int32  offset  = 3;
+}
+message GetBlockedUsersResponse {
+    repeated BlockedEntry blocked_users = 1;
+    int32                 total_count   = 2;
+}
+
+// ── IsContact (internal) ──────────────────────
+message IsContactRequest {
+    string user_id         = 1;
+    string contact_user_id = 2;
+}
+message IsContactResponse {
+    bool is_contact = 1;
+}
+
+// ── IsBlocked (internal) ──────────────────────
 message IsBlockedRequest {
     string user_id         = 1;
     string blocked_user_id = 2;
@@ -14,10 +127,13 @@ message IsBlockedResponse {
     bool is_blocked = 1;
 }
 
-message IsContactRequest {
-    string user_id         = 1;
-    string contact_user_id = 2;
+// ── PurgeUser (internal, account-deletion) ────
+// Removes EVERY contacts and blocked-user row that mentions the given user
+// id, on either side. Idempotent.
+message PurgeUserRequest {
+    string user_id = 1;
 }
-message IsContactResponse {
-    bool is_contact = 1;
+message PurgeUserResponse {
+    int32 contacts_deleted = 1;
+    int32 blocked_deleted  = 2;
 }

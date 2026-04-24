@@ -443,6 +443,18 @@ class GrpcAuthGateway(IAuthGateway):
             revoked_device_ids=list(r.revoked_device_ids),
         )
 
+    async def bulk_revoke_user_devices(self, user_id: str) -> BulkRevokeDevicesResult:
+        devices = await self.get_devices(user_id=user_id)
+        target_ids = [d.id for d in devices if getattr(d, "is_active", True)]
+        if not target_ids:
+            return BulkRevokeDevicesResult(success=True, revoked_count=0, revoked_device_ids=[])
+        return await self.bulk_revoke_devices(
+            user_id=user_id,
+            requesting_device_id="",
+            target_device_ids=target_ids,
+            reason="account_deleted",
+        )
+
     async def get_device_stats(self, user_id: str) -> DeviceStatsResult:
         try:
             r = await self._stub().GetDeviceStats(

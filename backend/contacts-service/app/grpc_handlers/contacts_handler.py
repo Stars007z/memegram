@@ -240,3 +240,21 @@ class ContactsHandler(contacts_pb2_grpc.ContactsServiceServicer):
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Internal error: {e}")
                 return contacts_pb2.IsBlockedResponse(is_blocked=False)
+
+    async def PurgeUser(self, request, context):
+        if not request.user_id:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("user_id is required")
+            return contacts_pb2.PurgeUserResponse()
+
+        async with self.get_session() as session:
+            try:
+                contacts_deleted, blocked_deleted = await self._svc(session).purge_user(request.user_id)
+                return contacts_pb2.PurgeUserResponse(
+                    contacts_deleted=contacts_deleted,
+                    blocked_deleted=blocked_deleted,
+                )
+            except Exception as e:
+                context.set_code(grpc.StatusCode.INTERNAL)
+                context.set_details(f"Internal error: {e}")
+                return contacts_pb2.PurgeUserResponse()

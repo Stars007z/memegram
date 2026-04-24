@@ -299,4 +299,12 @@ class IAuthGateway(ABC):
     ) -> BulkRevokeDevicesResult: ...
 
     @abstractmethod
+    async def bulk_revoke_user_devices(self, user_id: str) -> BulkRevokeDevicesResult:
+        """Account-deletion fanout helper: enumerate every active device for
+        `user_id` via GetDevices, then BulkRevoke them all. Returns an empty
+        success result when the user has no active devices. `requesting_device_id`
+        is intentionally empty since the caller's session is being torn down."""
+        ...
+
+    @abstractmethod
     async def get_device_stats(self, user_id: str) -> DeviceStatsResult: ...

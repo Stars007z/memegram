@@ -13,6 +13,7 @@ from app.core.interfaces.contacts_gateway import (
     GetContactsResult,
     IContactsGateway,
     IsBlockedResult,
+    PurgeUserResult,
     RemoveContactResult,
     UnblockUserResult,
     UpdateContactResult,
@@ -201,3 +202,16 @@ class GrpcContactsGateway(IContactsGateway):
             return ContactsHealthResult(status="degraded", version="1.0.0")
         except Exception:
             return ContactsHealthResult(status="degraded", version="1.0.0")
+
+    async def purge_user(self, user_id: str) -> PurgeUserResult:
+        try:
+            resp = await self._stub().PurgeUser(
+                contacts_pb2.PurgeUserRequest(user_id=user_id),
+                timeout=self._settings.CONTACTS_GRPC_TIMEOUT,
+            )
+            return PurgeUserResult(
+                contacts_deleted=resp.contacts_deleted,
+                blocked_deleted=resp.blocked_deleted,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)

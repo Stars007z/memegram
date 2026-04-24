@@ -158,21 +158,51 @@ class UserService:
 
         return user
 
-    async def delete_user(self, user_id: str) -> datetime:
-        result = await self.session.execute(select(User).where(User.id == uuid.UUID(user_id), User.is_deleted == False))
+    async def delete_user(self, user_id: str) -> tuple[datetime, list[str]]:
+        """Hard-delete a user and return (deleted_at, media_ids).
+
+        Collects every media id referenced by the user row and the user's
+        settings BEFORE removing the rows so the orchestrator can fan-out
+        deletion to media-service. UserSettings is removed via ORM cascade.
+        """
+        from sqlalchemy.orm import selectinload
+
+        result = await self.session.execute(
+            select(User).options(selectinload(User.settings)).where(User.id == uuid.UUID(user_id))
+        )
         user = result.scalar_one_or_none()
         if not user:
             raise ValueError("User not found")
 
+        media_ids: list[str] = []
+        for attr in ("avatar_media_id", "profile_background_media_id"):
+            v = getattr(user, attr, None)
+            if v:
+                media_ids.append(str(v))
+
+        settings = getattr(user, "settings", None)
+        if settings is not None:
+            for attr in (
+                "chat_background_media_id",
+                "top_bar_media_id",
+                "my_bubble_media_id",
+                "their_bubble_media_id",
+            ):
+                v = getattr(settings, attr, None)
+                if v:
+                    media_ids.append(str(v))
+
         ts = _now()
-        user.is_deleted = True
-        user.deleted_at = ts
-        user.username = f"{user.username}_deleted_{int(ts.timestamp())}"
+        await self.session.delete(user)
         await self.session.flush()
 
-        logger.info("user.deleted", user_id=user_id)
+        logger.info(
+            "user.deleted",
+            user_id=user_id,
+            media_count=len(media_ids),
+        )
 
-        return ts
+        return ts, media_ids
 
     async def check_and_process_auto_delete(self) -> tuple[int, list[str]]:
         from sqlalchemy.sql import func
@@ -194,7 +224,7 @@ class UserService:
         users_to_delete = result.scalars().all()
         deleted_ids = []
         for user in users_to_delete:
-            await self.delete_user(str(user.id))
+            await self.delete_user(str(user.id))  # media_ids ignored in auto-delete path
             deleted_ids.append(str(user.id))
 
         if deleted_ids:

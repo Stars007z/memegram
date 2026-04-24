@@ -567,6 +567,103 @@ class ConversationServiceImpl(IConversationService):
 
         return True
 
+    async def purge_user_membership(self, user_id: uuid.UUID) -> tuple[int, int]:
+        """Account-deletion fanout: remove user from every conversation.
+
+        For groups: mark the membership as left (left_at = now) WITHOUT
+        producing an MLS commit. Other members may keep messaging using stale
+        keys — that's acceptable for a deleted account.
+        For direct conversations: hard-delete the membership row only; the
+        conversation itself is kept so the peer keeps history.
+
+        Idempotent: re-running yields (0, 0).
+        Returns (groups_left, directs_purged).
+        """
+        from sqlalchemy import delete, select
+
+        from app.models.conversation import Conversation
+        from app.models.conversation_member import ConversationMember
+
+        session = self._conversations.session
+
+        rows = await session.execute(
+            select(ConversationMember, Conversation)
+            .join(Conversation, Conversation.id == ConversationMember.conversation_id)
+            .where(
+                ConversationMember.user_id == user_id,
+                ConversationMember.left_at.is_(None),
+            )
+        )
+
+        groups_left = 0
+        directs_purged = 0
+        now = datetime.utcnow()
+
+        direct_member_ids: list[uuid.UUID] = []
+        group_conv_ids: list[uuid.UUID] = []
+        direct_conv_ids: list[uuid.UUID] = []
+        for member, conv in rows.all():
+            ctype = getattr(conv, "type", None)
+            if ctype == "group":
+                member.left_at = now
+                groups_left += 1
+                group_conv_ids.append(conv.id)
+            else:
+                direct_member_ids.append(member.id)
+                direct_conv_ids.append(conv.id)
+
+        if direct_member_ids:
+            res = await session.execute(
+                delete(ConversationMember).where(ConversationMember.id.in_(direct_member_ids))
+            )
+            directs_purged = res.rowcount or len(direct_member_ids)
+
+        await session.flush()
+
+        # Best-effort fanout so peers update their UIs in real time.
+        for cid in group_conv_ids:
+            try:
+                await self._stream.publish_event(
+                    cid,
+                    {
+                        "event_type": "member_left",
+                        "user_id": str(user_id),
+                        "reason": "account_deleted",
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - best-effort
+                logger.warning(
+                    "messaging.purge_user_membership.publish_failed",
+                    conversation_id=str(cid),
+                    error=str(exc),
+                )
+        for cid in direct_conv_ids:
+            try:
+                await self._stream.publish_event(
+                    cid,
+                    {
+                        "event_type": "conversation_deleted",
+                        "deleted_by": str(user_id),
+                        "conversation_type": "direct",
+                        "reason": "account_deleted",
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - best-effort
+                logger.warning(
+                    "messaging.purge_user_membership.publish_failed",
+                    conversation_id=str(cid),
+                    error=str(exc),
+                )
+
+        logger.info(
+            "messaging.purge_user_membership",
+            user_id=str(user_id),
+            groups_left=groups_left,
+            directs_purged=directs_purged,
+        )
+
+        return groups_left, directs_purged
+
     async def _check_blocks_both_ways(
         self,
         user_a: uuid.UUID,

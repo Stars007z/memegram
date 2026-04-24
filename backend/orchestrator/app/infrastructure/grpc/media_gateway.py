@@ -32,3 +32,13 @@ class GrpcMediaGateway(IMediaGateway):
             s3_status=resp.s3_status,
             version=resp.version,
         )
+
+    async def delete_object_by_media_id(self, media_id: str) -> bool:
+        try:
+            resp = await self._stub().DeleteObjectByMediaId(
+                media_pb2.DeleteObjectByMediaIdRequest(media_id=media_id),
+                timeout=self._settings.MEDIA_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success
