@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, Depends, Query, Response
 from starlette.responses import StreamingResponse
 
-from app.api.dependencies import get_contacts_gateway, get_current_session, get_messaging_gateway
+from app.api.dependencies import get_contacts_gateway, get_current_session, get_messaging_gateway, get_user_gateway
 from app.api.v1.messaging.schemas import (
     AckWelcomeResponseSchema,
     CommitEntrySchema,
@@ -53,7 +53,9 @@ from app.api.v1.messaging.schemas import (
 )
 from app.core.interfaces.contacts_gateway import IContactsGateway
 from app.core.interfaces.messaging_gateway import DeviceWelcome, IMessagingGateway, MemberWithWelcomes
+from app.core.interfaces.user_gateway import IUserGateway
 from app.core.session_context import SessionContext
+from app.exceptions import NotFoundError, PermissionDeniedError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -215,7 +217,14 @@ async def create_direct_conversation(
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
     contacts_gw: IContactsGateway = Depends(get_contacts_gateway),
+    user_gw: IUserGateway = Depends(get_user_gateway),
 ):
+    exists, is_deleted = await user_gw.user_exists(body.recipient_user_id)
+    if not exists:
+        raise NotFoundError("User not found")
+    if is_deleted:
+        raise PermissionDeniedError("Recipient account is deleted")
+
     result = await gw.create_direct_conversation(
         initiator_user_id=session.user_id,
         initiator_device_id=session.device_id,
@@ -411,7 +420,17 @@ async def send_message(
     body: SendMessageRequestSchema,
     session: SessionContext = Depends(get_current_session),
     gw: IMessagingGateway = Depends(get_messaging_gateway),
+    user_gw: IUserGateway = Depends(get_user_gateway),
 ):
+    conv = await gw.get_conversation(session.user_id, conversation_id)
+    if conv.type == "direct":
+        peer_id = next((m.user_id for m in conv.members if m.user_id != session.user_id), None)
+        if peer_id is None:
+            raise PermissionDeniedError("Recipient is not available")
+        exists, is_deleted = await user_gw.user_exists(peer_id)
+        if not exists or is_deleted:
+            raise PermissionDeniedError("Recipient account is deleted")
+
     result = await gw.send_message(
         sender_user_id=session.user_id,
         sender_device_id=session.device_id,

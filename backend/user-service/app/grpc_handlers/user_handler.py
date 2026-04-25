@@ -8,12 +8,15 @@ from app.services.user_service import UserService
 def _build_minimal_profile(user) -> user_pb2.UserProfile:
     return user_pb2.UserProfile(
         id=str(user.id),
-        username=user.username,
+        username="Deleted Account" if user.is_deleted else user.username,
         is_deleted=user.is_deleted,
     )
 
 
 def _build_full_profile(user, settings, is_owner: bool) -> user_pb2.UserProfile:
+    if user.is_deleted:
+        return _build_minimal_profile(user)
+
     proto = user_pb2.UserProfile(
         id=str(user.id),
         username=user.username,
@@ -304,7 +307,7 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
                 brieflist = [
                     user_pb2.UserBriefProfile(
                         id=str(u.id),
-                        username=u.username,
+                        username="Deleted Account" if u.is_deleted else u.username,
                         avatar_media_id=str(u.avatar_media_id) if u.avatar_media_id else "",
                         is_deleted=u.is_deleted,
                     )

@@ -46,23 +46,13 @@ class AuthService:
 
         device_type = "admin" if invite.is_admin else "primary"
 
-        # Hardware device ids (ANDROID_ID / identifierForVendor) are stable
-        # across re-installs and account re-creation. If we find an existing
-        # row with this client_device_id, it must belong to a previous account
-        # of the same physical device and must already be revoked (orchestrator
-        # bulk-revokes all devices on account deletion). Drop the orphan row
-        # so the unique index does not block this fresh registration.
         existing = await self.device_repo.get_by_client_device_id(device_id)
         if existing is not None:
             if existing.is_active:
-                # Active row with same client_device_id but a different user
-                # means previous account-deletion fanout silently failed to
-                # revoke it. Refusing here avoids account hijacking.
                 raise ValueError("client_device_id already registered to an active account")
-            await self.device_repo.delete(existing)
-            await self.session.flush()
+            await self._release_inactive_device(existing)
             logger.info(
-                "auth.register.orphan_device_replaced",
+                "auth.register.inactive_device_released",
                 old_device_id=str(existing.id),
                 old_user_id=str(existing.user_id),
                 client_device_id=device_id,
@@ -116,6 +106,20 @@ class AuthService:
             "refresh_token": refresh_token,
             "expires_at": int(expires_at.timestamp()),
         }
+
+    async def _release_inactive_device(self, device) -> None:
+        await self.device_repo.update(
+            device,
+            {
+                "is_active": False,
+                "client_device_id": None,
+                "identity_key_pub": b"",
+                "init_key_pub": b"",
+                "credential_data": b"",
+                "deleted_at": device.deleted_at or datetime.utcnow(),
+            },
+        )
+        await self.session.flush()
 
     async def login_init(self, device_id: str) -> dict:
 

@@ -2,6 +2,8 @@ package com.example.memegram.translation
 
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class IosNllbTranslationService(
     httpClient: HttpClient,
@@ -9,12 +11,13 @@ class IosNllbTranslationService(
 ) : TranslationService {
 
     private val modelManager = IosNllbModelManager(httpClient, modelBaseUrl)
+    private val translateMutex = Mutex()
 
     override suspend fun translate(
         text: String,
         sourceLang: String?,
         targetLang: String,
-    ): TranslationResult {
+    ): TranslationResult = translateMutex.withLock {
         val detectedLang = sourceLang ?: identifyLanguage(text) ?: "und"
         println("[NLLB-iOS] translate: text='${text.take(40)}' src=$sourceLang detected=$detectedLang tgt=$targetLang")
 

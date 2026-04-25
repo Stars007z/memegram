@@ -797,6 +797,10 @@ class ChatViewModel(
             _error.value = S.current.userBlockedSendError
             return
         }
+        if (!_isGroupChat.value && _isPeerDeleted.value) {
+            _error.value = S.current.userDeletedAccountBanner
+            return
+        }
         _inputText.value = ""
 
         viewModelScope.launch {
@@ -1101,6 +1105,10 @@ class ChatViewModel(
     fun sendVoiceMessageInternal(convId: String, recordResult: AudioRecordResult) {
         if (isPeerBlocked.value) {
             _error.value = S.current.userBlockedSendError
+            return
+        }
+        if (!_isGroupChat.value && _isPeerDeleted.value) {
+            _error.value = S.current.userDeletedAccountBanner
             return
         }
         println("MemegramDebug [Voice]: Старт sendVoiceMessageInternal для $convId")

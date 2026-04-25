@@ -13,7 +13,7 @@ class DeviceRepository(BaseRepository[Device]):
         super().__init__(Device, session)
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> list[Device]:
-        query = select(Device).where(Device.user_id == user_id)
+        query = select(Device).where(Device.user_id == user_id, Device.deleted_at.is_(None))
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
@@ -24,8 +24,10 @@ class DeviceRepository(BaseRepository[Device]):
         except (ValueError, AttributeError):
             return None
 
-    async def get_by_client_device_id(self, client_device_id: str) -> Device | None:
+    async def get_by_client_device_id(self, client_device_id: str | None) -> Device | None:
         """Lookup by client-provided device identifier (client_device_id)."""
+        if not client_device_id:
+            return None
         return await self.get_by_field("client_device_id", client_device_id)
 
     async def get_active_by_user_id(self, user_id: uuid.UUID) -> list[Device]:
