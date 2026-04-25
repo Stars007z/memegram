@@ -28,6 +28,7 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -50,7 +51,7 @@ fun GroupProfileScreen(
     viewModel: GroupProfileViewModel,
     contactsViewModel: ContactsViewModel
 ) {
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val s = LocalStrings.current
     val members by viewModel.filteredMembers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()

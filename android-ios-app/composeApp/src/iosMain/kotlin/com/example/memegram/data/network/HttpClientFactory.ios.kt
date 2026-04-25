@@ -8,4 +8,12 @@ actual fun httpClientEngine(): HttpClientEngineFactory<*> = Darwin
 
 actual fun createHttpClient(): HttpClient = HttpClient(Darwin) {
     installCommonNetworking()
+
+    engine {
+        configureSession {
+            setHTTPShouldUsePipelining(true)
+            setTimeoutIntervalForRequest(60.0)
+            setTimeoutIntervalForResource(60.0 * 60.0 * 24.0)
+        }
+    }
 }

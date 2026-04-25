@@ -24,6 +24,7 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +34,7 @@ fun BlackListScreen(
     viewModel: BlackListViewModel
 ) {
     val s = LocalStrings.current
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val blockedUsers by viewModel.blockedUsers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()

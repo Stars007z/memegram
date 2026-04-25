@@ -8,6 +8,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -19,6 +20,8 @@ val LocalScreenWidthDp = compositionLocalOf { 360f }
 val LocalScreenHeightDp = compositionLocalOf { 640f }
 
 val LocalTopBarImage = staticCompositionLocalOf<ImageBitmap?> { null }
+
+val LocalTopBarTextColorOverride = staticCompositionLocalOf<Color?> { null }
 
 private const val REFERENCE_WIDTH = 360f
 
@@ -63,4 +66,10 @@ fun ImageTopAppBarBox(
         }
         content(effectiveColor)
     }
+}
+
+@Composable
+fun resolveTopBarTextColor(topBarColor: Color): Color {
+    val override = LocalTopBarTextColorOverride.current
+    return override ?: if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 }

@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalEncodingApi::class)
@@ -21,43 +20,53 @@ class AppearanceViewModel(
     private val themePreferences: ThemePreferences,
     private val userRepository: UserRepository,
     private val api: ApiService,
-    private val settings: Settings
+    private val settings: Settings,
+    private val appearance: AppearanceRepository,
 ) : ViewModel() {
 
-    private val _chatBgColor = MutableStateFlow(
-        themePreferences.getColor("chatbg", ThemePreferences.DefaultChatBg)
-    )
-    val chatBgColor: StateFlow<Color> = _chatBgColor.asStateFlow()
+    val chatBgColor: StateFlow<Color> = appearance.chatBgColor
+    val myBubbleColor: StateFlow<Color> = appearance.myBubbleColor
+    val theirBubbleColor: StateFlow<Color> = appearance.theirBubbleColor
 
-    private val _myBubbleColor = MutableStateFlow(
-        themePreferences.getColor("mybubble", ThemePreferences.DefaultMyBubble)
-    )
-    val myBubbleColor: StateFlow<Color> = _myBubbleColor.asStateFlow()
+    val chatBgImage: StateFlow<ByteArray?> = appearance.chatBgImage
+    val topBarImage: StateFlow<ByteArray?> = appearance.topBarImage
+    val myBubbleImage: StateFlow<ByteArray?> = appearance.myBubbleImage
+    val theirBubbleImage: StateFlow<ByteArray?> = appearance.theirBubbleImage
 
-    private val _theirBubbleColor = MutableStateFlow(
-        themePreferences.getColor("theirbubble", ThemePreferences.DefaultTheirBubble)
-    )
-    val theirBubbleColor: StateFlow<Color> = _theirBubbleColor.asStateFlow()
+    val transparentBubbles: StateFlow<Boolean> = appearance.transparentBubbles
+    val bubbleTransparency: StateFlow<Float> = appearance.bubbleTransparency
+    val myBubbleTextColor: StateFlow<Color?> = appearance.myBubbleTextColor
+    val theirBubbleTextColor: StateFlow<Color?> = appearance.theirBubbleTextColor
+    val topBarTextColor: StateFlow<Color?> = appearance.topBarTextColor
+    val chatBgTextColor: StateFlow<Color?> = appearance.chatBgTextColor
 
-    private val _chatBgImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_chatbg_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val chatBgImage: StateFlow<ByteArray?> = _chatBgImage.asStateFlow()
+    fun setTransparentBubbles(enabled: Boolean) {
+        appearance.setTransparentBubbles(enabled)
+    }
 
-    private val _topBarImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_topbar_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val topBarImage: StateFlow<ByteArray?> = _topBarImage.asStateFlow()
+    fun setBubbleTransparency(value: Float) {
+        appearance.setBubbleTransparency(value)
+    }
 
-    private val _myBubbleImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_mybubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val myBubbleImage: StateFlow<ByteArray?> = _myBubbleImage.asStateFlow()
+    fun updateTextColor(surfaceKey: String, color: Color) {
+        appearance.setTextColor(surfaceKey, color)
+    }
 
-    private val _theirBubbleImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_theirbubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val theirBubbleImage: StateFlow<ByteArray?> = _theirBubbleImage.asStateFlow()
+    fun resetTextColor(surfaceKey: String) {
+        appearance.clearTextColor(surfaceKey)
+    }
+
+    fun clearImage(key: String) {
+        appearance.clearImage(key)
+        val field = when (key) {
+            "chatbg" -> "chat_background_media_id"
+            "topbar" -> "top_bar_media_id"
+            "mybubble" -> "my_bubble_media_id"
+            "theirbubble" -> "their_bubble_media_id"
+            else -> return
+        }
+        syncClearMediaToServer(field)
+    }
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -68,7 +77,7 @@ class AppearanceViewModel(
                 s.topBarColor?.let { hex ->
                     runCatching {
                         val colorInt = hex.removePrefix("#").toLong(16).toInt()
-                        themePreferences.saveColor("topbar", Color(colorInt or 0xFF000000.toInt()))
+                        appearance.setColor("topbar", Color(colorInt or 0xFF000000.toInt()))
                     }
                 }
             }
@@ -76,26 +85,23 @@ class AppearanceViewModel(
     }
 
     fun updateColor(key: String, color: Color) {
-        themePreferences.saveColor(key, color)
+        appearance.setColor(key, color)
         when (key) {
             "chatbg" -> {
-                _chatBgColor.value = color
-                clearImageLocal("chatbg")
+                appearance.clearImage("chatbg")
                 syncClearMediaToServer("chat_background_media_id")
             }
             "mybubble" -> {
-                _myBubbleColor.value = color
-                clearImageLocal("mybubble")
+                appearance.clearImage("mybubble")
                 syncClearMediaToServer("my_bubble_media_id")
             }
             "theirbubble" -> {
-                _theirBubbleColor.value = color
-                clearImageLocal("theirbubble")
+                appearance.clearImage("theirbubble")
                 syncClearMediaToServer("their_bubble_media_id")
             }
             "topbar" -> {
                 syncTopBarToServer(color)
-                clearImageLocal("topbar")
+                appearance.clearImage("topbar")
                 syncClearMediaToServer("top_bar_media_id")
             }
         }
@@ -110,20 +116,13 @@ class AppearanceViewModel(
             else -> return
         }
 
-        val localKey = "appearance_${key}_image"
-        settings.putString(localKey, Base64.encode(bytes))
-        when (key) {
-            "chatbg" -> _chatBgImage.value = bytes
-            "topbar" -> _topBarImage.value = bytes
-            "mybubble" -> _myBubbleImage.value = bytes
-            "theirbubble" -> _theirBubbleImage.value = bytes
-        }
+        appearance.setImage(key, bytes)
 
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 val mediaId = uploadImageToItemStorage(bytes, itemType, "image/jpeg")
-                settings.putString("${localKey}_media_id", mediaId)
+                settings.putString("appearance_${key}_image_media_id", mediaId)
 
                 val request = when (key) {
                     "chatbg" -> UpdateSettingsRequest(chatBackgroundMediaId = mediaId)
@@ -138,18 +137,6 @@ class AppearanceViewModel(
             } finally {
                 _isLoading.value = false
             }
-        }
-    }
-
-    private fun clearImageLocal(key: String) {
-        val localKey = "appearance_${key}_image"
-        settings.remove(localKey)
-        settings.remove("${localKey}_media_id")
-        when (key) {
-            "chatbg" -> _chatBgImage.value = null
-            "topbar" -> _topBarImage.value = null
-            "mybubble" -> _myBubbleImage.value = null
-            "theirbubble" -> _theirBubbleImage.value = null
         }
     }
 

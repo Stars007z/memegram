@@ -41,7 +41,8 @@ class ChatViewModel(
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
     private val blockedUsersCache: BlockedUsersCache,
-    private val profileRepository: com.example.memegram.data.repository.ProfileRepository
+    private val profileRepository: com.example.memegram.data.repository.ProfileRepository,
+    private val appearance: AppearanceRepository,
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -59,35 +60,19 @@ class ChatViewModel(
     private val _inputText        = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
-    private val _chatBgColor      = MutableStateFlow(
-        themePreferences.getColor("chatbg", ThemePreferences.DefaultChatBg)
-    )
-    val chatBgColor: StateFlow<Color> = _chatBgColor.asStateFlow()
-
-    private val _myBubbleColor    = MutableStateFlow(
-        themePreferences.getColor("mybubble", ThemePreferences.DefaultMyBubble)
-    )
-    val myBubbleColor: StateFlow<Color> = _myBubbleColor.asStateFlow()
-
-    private val _theirBubbleColor = MutableStateFlow(
-        themePreferences.getColor("theirbubble", ThemePreferences.DefaultTheirBubble)
-    )
-    val theirBubbleColor: StateFlow<Color> = _theirBubbleColor.asStateFlow()
-
-    private val _chatBgImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_chatbg_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val chatBgImage: StateFlow<ByteArray?> = _chatBgImage.asStateFlow()
-
-    private val _myBubbleImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_mybubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val myBubbleImage: StateFlow<ByteArray?> = _myBubbleImage.asStateFlow()
-
-    private val _theirBubbleImage = MutableStateFlow<ByteArray?>(
-        settings.getStringOrNull("appearance_theirbubble_image")?.let { runCatching { Base64.decode(it) }.getOrNull() }
-    )
-    val theirBubbleImage: StateFlow<ByteArray?> = _theirBubbleImage.asStateFlow()
+    val chatBgColor: StateFlow<Color> = appearance.chatBgColor
+    val myBubbleColor: StateFlow<Color> = appearance.myBubbleColor
+    val theirBubbleColor: StateFlow<Color> = appearance.theirBubbleColor
+    val chatBgImage: StateFlow<ByteArray?> = appearance.chatBgImage
+    val myBubbleImage: StateFlow<ByteArray?> = appearance.myBubbleImage
+    val theirBubbleImage: StateFlow<ByteArray?> = appearance.theirBubbleImage
+    val transparentBubbles: StateFlow<Boolean> = appearance.transparentBubbles
+    val bubbleTransparency: StateFlow<Float> = appearance.bubbleTransparency
+    val myBubbleTextColor: StateFlow<Color?> = appearance.myBubbleTextColor
+    val theirBubbleTextColor: StateFlow<Color?> = appearance.theirBubbleTextColor
+    val topBarTextColorOverride: StateFlow<Color?> = appearance.topBarTextColor
+    val chatBgTextColor: StateFlow<Color?> = appearance.chatBgTextColor
+    val appearanceGeneration: StateFlow<Long> = appearance.imageGeneration
 
     private val _isLoading        = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -109,6 +94,12 @@ class ChatViewModel(
 
     private val _peerAvatarMediaId = MutableStateFlow<String?>(null)
     val peerAvatarMediaId: StateFlow<String?> = _peerAvatarMediaId.asStateFlow()
+
+    private val _isPeerDeleted = MutableStateFlow(false)
+    val isPeerDeleted: StateFlow<Boolean> = _isPeerDeleted.asStateFlow()
+
+    private val _peerDisplayName = MutableStateFlow<String?>(null)
+    val peerDisplayName: StateFlow<String?> = _peerDisplayName.asStateFlow()
 
     fun setInitialPeerAvatar(mediaId: String) {
         if (_peerAvatarMediaId.value == null) {
@@ -148,18 +139,15 @@ class ChatViewModel(
     private val _downloadingFiles = MutableStateFlow<Set<String>>(emptySet())
     val downloadingFiles: StateFlow<Set<String>> = _downloadingFiles.asStateFlow()
 
+    private val _translatingIds = MutableStateFlow<Set<String>>(emptySet())
+    val translatingIds: StateFlow<Set<String>> = _translatingIds.asStateFlow()
+
     companion object {
         const val MAX_UPLOAD_SIZE_BYTES: Long = 100L * 1024L * 1024L
         const val AUTO_DOWNLOAD_FILE_LIMIT_BYTES: Long = 5L * 1024L * 1024L
         const val INLINE_BLOB_LIMIT_BYTES: Int = 2 * 1024 * 1024
     }
 
-    /**
-     * Конвертирует серверный `created_at` (Unix-секунды UTC) в миллисекунды,
-     * как мы храним локально. Если сервер вернул 0 (старый ответ без поля) —
-     * оставляем локальный fallback. Серверное время — источник истины
-     * для timestamp'а сообщений.
-     */
     private fun serverTimestampMs(createdAtSeconds: Long, fallback: Long): Long =
         if (createdAtSeconds > 0L) createdAtSeconds * 1000L else fallback
 
@@ -205,7 +193,17 @@ class ChatViewModel(
                     }
                     .sortedBy { it.timestamp }
                     .toList()
-            }.collect { _messages.value = it }
+            }.collect { msgs ->
+                val warm = mutableMapOf<String, ByteArray>()
+                val current = _mediaCache.value
+                msgs.forEach { m ->
+                    val mid = m.mediaId ?: return@forEach
+                    val bytes = m.localPreviewBytes ?: return@forEach
+                    if (mid !in current && mid !in warm) warm[mid] = bytes
+                }
+                if (warm.isNotEmpty()) _mediaCache.value = current + warm
+                _messages.value = msgs
+            }
         }
 
         viewModelScope.launch {
@@ -237,6 +235,8 @@ class ChatViewModel(
                             try {
                                 val profile = profileRepository.getOrFetch(peerId) ?: return@launch
                                 _peerAvatarMediaId.value = profile.avatarMediaId
+                                _isPeerDeleted.value = profile.isDeleted
+                                _peerDisplayName.value = profile.username
                             } catch (_: Exception) {}
                         }
                     }
@@ -445,6 +445,28 @@ class ChatViewModel(
 
             "member_left" -> {
                 val userId = data.userId ?: return
+                val reason = data.reason
+                val isDirect = !_isGroupChat.value
+
+                if (reason == "account_deleted" && isDirect && userId == peerUserId) {
+                    viewModelScope.launch {
+                        try {
+                            val refreshed = profileRepository.refresh(userId)
+                                ?: profileRepository.getOrFetch(userId, forceRefresh = true)
+                            if (refreshed != null) {
+                                _isPeerDeleted.value = refreshed.isDeleted
+                                _peerDisplayName.value = refreshed.username
+                                _peerAvatarMediaId.value = refreshed.avatarMediaId
+                            } else {
+                                _isPeerDeleted.value = true
+                            }
+                        } catch (_: Exception) {
+                            _isPeerDeleted.value = true
+                        }
+                    }
+                    return
+                }
+
                 val profile = _memberProfiles.value[userId]
                 val name = profile?.username ?: S.current.member
                 insertSystemMessage(convId, S.current.leftGroup(name))
@@ -502,6 +524,14 @@ class ChatViewModel(
                     val profile = profileRepository.getOrFetch(peerUserId!!, forceRefresh = true)
                     if (profile != null && profile.avatarMediaId != _peerAvatarMediaId.value) {
                         _peerAvatarMediaId.value = profile.avatarMediaId
+                    }
+                } catch (_: Exception) {}
+                try {
+                    val conv = api.getConversation(conversationId)
+                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                        runCatching {
+                            chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                        }
                     }
                 } catch (_: Exception) {}
             } else if (_isGroupChat.value) {
@@ -622,6 +652,18 @@ class ChatViewModel(
                 val appLang = settings.getString("app_language", "en")
                 if (translationSettings.autoTranslateEnabled.value) {
                     viewModelScope.launch {
+                        var added = false
+                        _translatingIds.update { current ->
+                            if (msgId in current) current
+                            else {
+                                added = true
+                                current + msgId
+                            }
+                        }
+                        if (!added) {
+                            println("MemegramDebug [AutoTranslate]: skip, already translating $msgId")
+                            return@launch
+                        }
                         try {
                             val detected = translationService.identifyLanguage(parsed.content)
                             val targetLang = translationSettings.getEffectiveTargetLang(appLang)
@@ -647,6 +689,8 @@ class ChatViewModel(
                             }
                         } catch (e: Exception) {
                             println("MemegramDebug [AutoTranslate]: Error translating msgId=$msgId: ${e.message}")
+                        } finally {
+                            _translatingIds.update { it - msgId }
                         }
                     }
                 }
@@ -1250,7 +1294,7 @@ class ChatViewModel(
                 val decryptedBytes = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
                 _mediaCache.value += (mediaId to decryptedBytes)
                 val msg = _messages.value.firstOrNull { it.mediaId == mediaId }
-                if (msg != null && msg.type == "image" && msg.serverId.isNotBlank()) {
+                if (msg != null && (msg.type == "image" || msg.type == "voice") && msg.serverId.isNotBlank()) {
                     chatRepository.updateMessageLocalPreview(msg.serverId, decryptedBytes)
                 }
             } catch (_: Exception) { }
@@ -1280,6 +1324,20 @@ class ChatViewModel(
     fun clearReply() { _replyingTo.value = null }
 
     fun translateMessage(message: Message, forcedSourceLang: String? = null) {
+        val serverId = message.serverId
+        if (serverId.isBlank()) return
+        var added = false
+        _translatingIds.update { current ->
+            if (serverId in current) current
+            else {
+                added = true
+                current + serverId
+            }
+        }
+        if (!added) {
+            println("MemegramDebug [Translate]: skip duplicate request for $serverId")
+            return
+        }
         viewModelScope.launch {
             try {
                 val appLang = settings.getString("app_language", "en")
@@ -1302,6 +1360,8 @@ class ChatViewModel(
             } catch (e: Exception) {
                 println("MemegramDebug [Translate]: Error: ${e.message}")
                 _error.value = S.current.translationNotAvailable
+            } finally {
+                _translatingIds.update { it - serverId }
             }
         }
     }

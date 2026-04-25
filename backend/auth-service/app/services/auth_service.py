@@ -46,6 +46,30 @@ class AuthService:
 
         device_type = "admin" if invite.is_admin else "primary"
 
+        # Hardware device ids (ANDROID_ID / identifierForVendor) are stable
+        # across re-installs and account re-creation. If we find an existing
+        # row with this client_device_id, it must belong to a previous account
+        # of the same physical device and must already be revoked (orchestrator
+        # bulk-revokes all devices on account deletion). Drop the orphan row
+        # so the unique index does not block this fresh registration.
+        existing = await self.device_repo.get_by_client_device_id(device_id)
+        if existing is not None:
+            if existing.is_active:
+                # Active row with same client_device_id but a different user
+                # means previous account-deletion fanout silently failed to
+                # revoke it. Refusing here avoids account hijacking.
+                raise ValueError(
+                    "client_device_id already registered to an active account"
+                )
+            await self.device_repo.delete(existing)
+            await self.session.flush()
+            logger.info(
+                "auth.register.orphan_device_replaced",
+                old_device_id=str(existing.id),
+                old_user_id=str(existing.user_id),
+                client_device_id=device_id,
+            )
+
         await self.device_repo.create(
             {
                 "id": device_uuid,

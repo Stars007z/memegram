@@ -12,10 +12,13 @@ logger = get_logger(__name__)
 
 # Event types that should also be persisted to the notifications stream so the
 # notifications-service can deliver pushes to offline / background clients.
+# NOTE: keep this in sync with the dispatch table in notifications-service
+# (event_consumer.EventConsumer._process_entry). Adding an event here without
+# a handler there will only generate `event_consumer.unknown_event_type` log
+# noise and consume a stream slot.
 _NOTIFICATION_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "new_message",
-        "message_edited",
         "member_added",
         "member_kicked",
         "conversation_deleted",

@@ -35,17 +35,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -62,11 +73,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.memegram.push.currentPlatform
 import com.example.memegram.audio.GlobalAudioPlayer
 import com.example.memegram.audio.VoicePlaybackBar
 import com.example.memegram.data.gallery.AttachItem
 import com.example.memegram.data.gallery.GalleryThumb
 import com.example.memegram.data.gallery.buildGallerySections
+import com.example.memegram.data.gallery.loadThumbBitmap
 import com.example.memegram.data.gallery.rememberGalleryLoader
 import com.example.memegram.utils.saveImageToGallery
 import com.example.memegram.localization.LocalStrings
@@ -91,6 +104,15 @@ import kotlin.math.roundToInt
 private const val CHAT_BUBBLE_MAX_IMAGE_DIM = 1280
 private const val ALBUM_CELL_MAX_IMAGE_DIM = 720
 
+private val chatBottomBarInsets: WindowInsets
+    @Composable
+    get() = if (currentPlatform() == "android") {
+        WindowInsets.navigationBars.union(WindowInsets.ime)
+    } else {
+        WindowInsets.ime
+    }
+
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -114,9 +136,17 @@ fun ChatScreen(
     val chatBgImage    by viewModel.chatBgImage.collectAsState()
     val myBubbleImage  by viewModel.myBubbleImage.collectAsState()
     val theirBubbleImage by viewModel.theirBubbleImage.collectAsState()
+    val transparentBubbles by viewModel.transparentBubbles.collectAsState()
+    val bubbleTransparency by viewModel.bubbleTransparency.collectAsState()
+    val myBubbleTextOverride by viewModel.myBubbleTextColor.collectAsState()
+    val theirBubbleTextOverride by viewModel.theirBubbleTextColor.collectAsState()
+    val topBarTextOverride by viewModel.topBarTextColorOverride.collectAsState()
+    val chatBgTextOverride by viewModel.chatBgTextColor.collectAsState()
     val mediaCache by viewModel.mediaCache.collectAsState()
     val downloadingFiles by viewModel.downloadingFiles.collectAsState()
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val translatingIds by viewModel.translatingIds.collectAsState()
+    val topBarTextColor = topBarTextOverride
+        ?: if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
     val globalAudioPlayer = koinInject<GlobalAudioPlayer>()
     val audioPlaybackState by globalAudioPlayer.state.collectAsState()
@@ -124,6 +154,7 @@ fun ChatScreen(
     val listState = rememberLazyListState()
 
     val chatItems by remember { derivedStateOf { groupMessages(messages) } }
+    val replyContext by viewModel.replyContext.collectAsState()
 
     val lastVisibleIncomingServerId by remember {
         derivedStateOf {
@@ -146,9 +177,22 @@ fun ChatScreen(
     var scrollRestored by remember { mutableStateOf(false) }
     val initialUnreadCount by viewModel.initialUnreadCount.collectAsState()
 
-    LaunchedEffect(chatItems.size) {
+    val lastItemReplyReady by remember {
+        derivedStateOf {
+            val lastItem = chatItems.lastOrNull() ?: return@derivedStateOf true
+            lastItem.allMessages.all { msg ->
+                val sid = msg.serverId
+                if (sid.isBlank()) return@all true
+                val replyTargetSid = replyContext[sid] ?: return@all true
+                messages.any { it.serverId == replyTargetSid }
+            }
+        }
+    }
+
+    LaunchedEffect(chatItems.size, lastItemReplyReady) {
         if (chatItems.isEmpty()) return@LaunchedEffect
         if (!scrollRestored) {
+            if (!lastItemReplyReady) return@LaunchedEffect
             val convId = viewModel.currentConversationId
             val saved = convId?.let { ChatScrollCache.restore(it) }
             if (saved != null) {
@@ -199,7 +243,12 @@ fun ChatScreen(
     var galleryThumbs by remember { mutableStateOf<List<GalleryThumb>>(emptyList()) }
     var galleryLoading by remember { mutableStateOf(false) }
     val gridState      = rememberLazyGridState()
-    val gallerySections = remember(galleryThumbs) { buildGallerySections(galleryThumbs) }
+    val gallerySections by produceState<List<com.example.memegram.data.gallery.GallerySection>>(
+        initialValue = emptyList(),
+        galleryThumbs
+    ) {
+        value = withContext(Dispatchers.Default) { buildGallerySections(galleryThumbs) }
+    }
     val screenWidthDp = LocalScreenWidthDp.current
     val defaultGridColumns = remember(screenWidthDp) {
         (screenWidthDp / 120f).roundToInt().coerceIn(2, 6)
@@ -216,6 +265,7 @@ fun ChatScreen(
             galleryThumbs = emptyList()
             galleryTotal = 0
             galleryReachedEnd = false
+            com.example.memegram.data.gallery.GalleryThumbCache.clear()
         }
     }
 
@@ -311,11 +361,12 @@ fun ChatScreen(
     val peerAvatarMediaId by viewModel.peerAvatarMediaId.collectAsState()
     val isPeerBlocked by viewModel.isPeerBlocked.collectAsState()
     val isBlockedByPeer by viewModel.isBlockedByPeer.collectAsState()
+    val isPeerDeleted by viewModel.isPeerDeleted.collectAsState()
+    val peerDisplayName by viewModel.peerDisplayName.collectAsState()
     val isMlsBroken by viewModel.isMlsBroken.collectAsState()
     var showBlockConfirm by remember { mutableStateOf(false) }
 
     val replyingTo by viewModel.replyingTo.collectAsState()
-    val replyContext by viewModel.replyContext.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
@@ -323,6 +374,18 @@ fun ChatScreen(
     var highlightedMessageId by remember { mutableStateOf<Int?>(null) }
     val inputFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val dismissKeyboardOnScrollConnection = remember(keyboardController, focusManager) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag && available.y != 0f) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus(force = true)
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     LaunchedEffect(scrollToMessageId, chatItems) {
         val target = scrollToMessageId ?: return@LaunchedEffect
@@ -695,16 +758,19 @@ fun ChatScreen(
                     ) {
                         Box(modifier = Modifier.clickable { showFullScreenAvatar = true }) {
                             AvatarImage(
-                                mediaId = peerAvatarMediaId,
+                                mediaId = if (isPeerDeleted && !isGroupChat) null else peerAvatarMediaId,
                                 size = 36.sdp,
-                                fallbackLetter = chatName.take(1).uppercase(),
+                                fallbackLetter = (if (isPeerDeleted && !isGroupChat) "?" else chatName.take(1).uppercase()),
                                 backgroundColor = topBarTextColor.copy(alpha = 0.2f),
                                 textColor = topBarTextColor,
                                 textStyle = TextStyle(fontSize = 16.ssp)
                             )
                         }
                         Spacer(Modifier.width(10.sdp))
-                        Text(chatName, color = topBarTextColor)
+                        Text(
+                            if (isPeerDeleted && !isGroupChat) s.deletedAccountTitle else chatName,
+                            color = topBarTextColor
+                        )
                     }
                 },
                 actions = {
@@ -744,15 +810,36 @@ fun ChatScreen(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 3.sdp,
                 modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                    .consumeWindowInsets(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    .windowInsetsPadding(chatBottomBarInsets)
+                    .consumeWindowInsets(chatBottomBarInsets)
             ) {
-                if (isPeerBlocked && !isGroupChat) {
+                if (isPeerDeleted && !isGroupChat) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.sdp, vertical = 12.sdp)
-                            .navigationBarsPadding(),
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Block,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.sdp)
+                        )
+                        Spacer(Modifier.width(8.sdp))
+                        Text(
+                            s.userDeletedAccountBanner,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else if (isPeerBlocked && !isGroupChat) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.sdp, vertical = 12.sdp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -775,8 +862,7 @@ fun ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.sdp, vertical = 14.sdp)
-                            .navigationBarsPadding(),
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -798,8 +884,7 @@ fun ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.sdp, vertical = 14.sdp)
-                            .navigationBarsPadding(),
+                            .padding(horizontal = 16.sdp, vertical = 14.sdp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -876,8 +961,7 @@ fun ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.sdp, vertical = 6.sdp)
-                            .navigationBarsPadding(),
+                            .padding(horizontal = 4.sdp, vertical = 6.sdp),
                         verticalAlignment = Alignment.Bottom
                     ) {
                         if (recordState != ChatViewModel.RecordState.IDLE) {
@@ -1052,7 +1136,11 @@ fun ChatScreen(
             }
             LazyColumn(
                 state          = listState,
-                modifier       = Modifier.fillMaxSize().padding(horizontal = 12.sdp),
+                modifier       = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(dismissKeyboardOnScrollConnection)
+                    .padding(horizontal = 12.sdp)
+                    .graphicsLayer { alpha = if (scrollRestored) 1f else 0f },
                 contentPadding = PaddingValues(top = 12.sdp, bottom = 16.sdp),
                 verticalArrangement = Arrangement.spacedBy(8.sdp, Alignment.Bottom)
             ) {
@@ -1080,7 +1168,7 @@ fun ChatScreen(
                                     Text(
                                         text = message.text,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = chatBgTextOverride ?: MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier
                                             .background(
                                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -1166,7 +1254,12 @@ fun ChatScreen(
                                                     downloadingFiles = downloadingFiles,
                                                     onFileTap        = { viewModel.onFileBubbleTap(it) },
                                                     onPhotoClick     = onPhotoClick,
-                                                    isHighlighted    = (message.id == highlightedMessageId)
+                                                    isHighlighted    = (message.id == highlightedMessageId),
+                                                    isTranslating    = message.serverId.isNotBlank() && message.serverId in translatingIds,
+                                                    transparentBubbles = transparentBubbles,
+                                                    bubbleTransparency = bubbleTransparency,
+                                                    myBubbleTextColor = myBubbleTextOverride,
+                                                    theirBubbleTextColor = theirBubbleTextOverride,
                                                 )
                                             }
                                         }
@@ -1217,7 +1310,12 @@ fun ChatScreen(
                                                 downloadingFiles = downloadingFiles,
                                                 onFileTap        = { viewModel.onFileBubbleTap(it) },
                                                 onPhotoClick     = onPhotoClick,
-                                                isHighlighted    = (message.id == highlightedMessageId)
+                                                isHighlighted    = (message.id == highlightedMessageId),
+                                                isTranslating    = message.serverId.isNotBlank() && message.serverId in translatingIds,
+                                                transparentBubbles = transparentBubbles,
+                                                bubbleTransparency = bubbleTransparency,
+                                                myBubbleTextColor = myBubbleTextOverride,
+                                                theirBubbleTextColor = theirBubbleTextOverride,
                                             )
                                         }
                                     }
@@ -1279,11 +1377,27 @@ fun ChatScreen(
                                                 }
                                             )
                                         } else {
+                                            val isTranslatingNow =
+                                                message.serverId.isNotBlank() && message.serverId in translatingIds
                                             DropdownMenuItem(
-                                                text = { Text(s.translate) },
-                                                leadingIcon = { Icon(Icons.Default.Translate, null) },
+                                                enabled = !isTranslatingNow,
+                                                text = {
+                                                    Text(if (isTranslatingNow) s.translating else s.translate)
+                                                },
+                                                leadingIcon = {
+                                                    if (isTranslatingNow) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(16.sdp),
+                                                            strokeWidth = 2.sdp
+                                                        )
+                                                    } else {
+                                                        Icon(Icons.Default.Translate, null)
+                                                    }
+                                                },
                                                 onClick = {
-                                                    viewModel.translateMessage(message)
+                                                    if (!isTranslatingNow) {
+                                                        viewModel.translateMessage(message)
+                                                    }
                                                     contextMenuMessage = null
                                                 }
                                             )
@@ -1299,14 +1413,35 @@ fun ChatScreen(
                                         }
                                     )
 
-                                    DropdownMenuItem(
-                                        text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
-                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                        onClick = {
-                                            messagesToDelete = listOf(message)
-                                            contextMenuMessage = null
+                                    if (message.status == MessageStatus.FAILED && message.isOutgoing) {
+                                        if (message.type == "text") {
+                                            DropdownMenuItem(
+                                                text = { Text(s.resendMessage) },
+                                                leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                                                onClick = {
+                                                    viewModel.resendMessage(message)
+                                                    contextMenuMessage = null
+                                                }
+                                            )
                                         }
-                                    )
+                                        DropdownMenuItem(
+                                            text = { Text(s.deleteFailedMessage, color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = {
+                                                viewModel.deleteFailedMessage(message)
+                                                contextMenuMessage = null
+                                            }
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = {
+                                                messagesToDelete = listOf(message)
+                                                contextMenuMessage = null
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1381,7 +1516,11 @@ fun ChatScreen(
                                                     searchQuery = searchQuery,
                                                     isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId },
                                                     onPhotoClick = onPhotoClick,
-                                                    isHighlighted = albumMessages.any { it.id == highlightedMessageId }
+                                                    isHighlighted = albumMessages.any { it.id == highlightedMessageId },
+                                                    transparentBubbles = transparentBubbles,
+                                                    bubbleTransparency = bubbleTransparency,
+                                                    myBubbleTextColor = myBubbleTextOverride,
+                                                    theirBubbleTextColor = theirBubbleTextOverride,
                                                 )
                                             }
                                         }
@@ -1421,7 +1560,11 @@ fun ChatScreen(
                                                 searchQuery = searchQuery,
                                                 isCurrentMatch = albumMessages.any { it.id == currentMatchMsgId },
                                                 onPhotoClick = onPhotoClick,
-                                                isHighlighted = albumMessages.any { it.id == highlightedMessageId }
+                                                isHighlighted = albumMessages.any { it.id == highlightedMessageId },
+                                                transparentBubbles = transparentBubbles,
+                                                bubbleTransparency = bubbleTransparency,
+                                                myBubbleTextColor = myBubbleTextOverride,
+                                                theirBubbleTextColor = theirBubbleTextOverride,
                                             )
                                         }
                                     }
@@ -1475,14 +1618,27 @@ fun ChatScreen(
                                         }
                                     )
 
-                                    DropdownMenuItem(
-                                        text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
-                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                        onClick = {
-                                            messagesToDelete = albumMessages
-                                            showAlbumContextMenu = false
-                                        }
-                                    )
+                                    val anyFailed = albumMessages.any { it.status == MessageStatus.FAILED }
+                                    if (anyFailed) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.deleteFailedMessage, color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = {
+                                                albumMessages.filter { it.status == MessageStatus.FAILED }
+                                                    .forEach { viewModel.deleteFailedMessage(it) }
+                                                showAlbumContextMenu = false
+                                            }
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text(s.deleteForAll, color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = {
+                                                messagesToDelete = albumMessages
+                                                showAlbumContextMenu = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1502,36 +1658,45 @@ fun GalleryGridItem(
     selNumber: Int,
     onClick: () -> Unit
 ) {
-    val bytes: ByteArray? by produceState<ByteArray?>(
-        initialValue = if (thumb.bytes.isNotEmpty()) thumb.bytes else null,
-        thumb.id
-    ) {
-        if (value == null) {
-            value = withContext(Dispatchers.Default) {
-                runCatching { galleryLoader.loadThumbBytes(thumb.id) }.getOrNull()
-            }
+    var bitmap by remember(thumb.id) {
+        mutableStateOf<ImageBitmap?>(
+            com.example.memegram.data.gallery.GalleryThumbCache.get(thumb.id)
+        )
+    }
+
+    LaunchedEffect(thumb.id) {
+        if (bitmap != null) return@LaunchedEffect
+        val cached = com.example.memegram.data.gallery.GalleryThumbCache.get(thumb.id)
+        if (cached != null) {
+            bitmap = cached
+            return@LaunchedEffect
+        }
+        val loaded = com.example.memegram.data.gallery.withGalleryDecodePermit {
+            galleryLoader.loadThumbBitmap(thumb.id, targetSizePx = 256)
+        }
+        if (loaded != null) {
+            com.example.memegram.data.gallery.GalleryThumbCache.put(thumb.id, loaded)
+            bitmap = loaded
         }
     }
-    val bitmap = rememberAsyncImageBitmap(
-        bytes    = bytes,
-        cacheKey = "gallery:${thumb.id}"
-    )
 
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(2.sdp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick() }
     ) {
-        if (bitmap != null) {
+        val current = bitmap
+        if (current != null) {
             Image(
-                bitmap           = bitmap,
+                bitmap = current,
                 contentDescription = null,
-                modifier         = Modifier.fillMaxSize(),
-                contentScale     = ContentScale.Crop
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
         } else {
-            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(modifier = Modifier.fillMaxSize().background(Color.White))
         }
 
         if (isSelected) {
@@ -1645,23 +1810,37 @@ fun MessageBubble(
     onFileTap: (Message) -> Unit = {},
     onPhotoClick: (Int) -> Unit = {},
     isHighlighted: Boolean = false,
+    isTranslating: Boolean = false,
+    transparentBubbles: Boolean = false,
+    bubbleTransparency: Float = ThemePreferences.DEFAULT_BUBBLE_TRANSPARENCY,
+    myBubbleTextColor: Color? = null,
+    theirBubbleTextColor: Color? = null,
 ) {
     val isOut       = message.isOutgoing
     val s = LocalStrings.current
-    val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
+    val bubbleBaseColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
     else if (isOut) myBubbleColor else theirBubbleColor
+    val glassEnabled = transparentBubbles && !isCurrentMatch
+    val glassTransparency = bubbleTransparency.coerceIn(0f, 1f)
+    val bubbleVisibility = if (glassEnabled) (1f - glassTransparency) else 1f
+    // Solid background only when glass is OFF; otherwise we draw the
+    // LiquidGlassSurface ourselves and skip the plain fill.
+    val bubbleColor = if (glassEnabled) Color.Transparent else bubbleBaseColor
     val bubbleImageBytes = if (isCurrentMatch) null
     else if (isOut) myBubbleImage else theirBubbleImage
     val bubbleImageBitmap = rememberAsyncImageBitmap(
         bytes = bubbleImageBytes,
         cacheKey = if (bubbleImageBytes != null) "bubble:${if (isOut) "out" else "in"}" else null
     )
-    val textColor   = if (bubbleImageBitmap != null) Color.White
-    else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
+    val textOverride = if (isOut) myBubbleTextColor else theirBubbleTextColor
+    val textColor   = textOverride
+        ?: if (bubbleImageBitmap != null) Color.White
+        else if (bubbleBaseColor.luminance() > 0.5f) Color.Black else Color.White
     val timeText    = remember(message.timestamp) { formatMessageTime(message.timestamp) }
     val timeColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
 
     val cachedBytes = message.mediaId?.let { mediaCache[it] }
+        ?: message.localPreviewBytes?.takeIf { message.type == "voice" }
     val bytesForDecode = if (message.type == "image") cachedBytes ?: message.localPreviewBytes else null
     val localBitmap = rememberAsyncImageBitmap(
         bytes = bytesForDecode,
@@ -1691,12 +1870,9 @@ fun MessageBubble(
                 maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(end = 4.sdp, bottom = 4.sdp))
             if (message.status == MessageStatus.SENT || message.status == MessageStatus.READ) {
-                Text(
-                    text = if (message.status == MessageStatus.READ) "✓✓" else "✓",
+                MessageStatusTicks(
+                    isRead = message.status == MessageStatus.READ,
                     color = timeColor,
-                    fontSize = 11.ssp,
-                    maxLines = 1, softWrap = false,
-                    modifier = Modifier.padding(end = 6.sdp, bottom = 4.sdp)
                 )
             }
         }
@@ -1716,8 +1892,21 @@ fun MessageBubble(
                 Image(
                     bitmap = bubbleImageBitmap,
                     contentDescription = null,
-                    modifier = Modifier.matchParentSize(),
+                    modifier = Modifier.matchParentSize().alpha(bubbleVisibility),
                     contentScale = ContentScale.Crop
+                )
+            }
+            if (glassEnabled) {
+                com.example.memegram.utils.LiquidGlassSurface(
+                    modifier = Modifier.matchParentSize(),
+                    transparency = glassTransparency,
+                    tint = bubbleBaseColor,
+                    shape = RoundedCornerShape(
+                        topStart    = 16.sdp, topEnd = 16.sdp,
+                        bottomStart = if (isOut) 16.sdp else 4.sdp,
+                        bottomEnd   = if (isOut) 4.sdp else 16.sdp,
+                    ),
+                    tintAlphaScale = if (bubbleImageBitmap != null) 0.55f else 1f,
                 )
             }
             Box(
@@ -1989,14 +2178,36 @@ fun MessageBubble(
                     }
                     Text(text = annotated, color = textColor,
                         style = MaterialTheme.typography.bodyLarge, modifier = textMod)
-                    if (message.isTranslated && message.translatedFromLang != null) {
-                        val indicator = com.example.memegram.translation.translationIndicator(message.translatedFromLang)
-                        Text(
-                            text = "$indicator ${s.translated}",
-                            color = textColor.copy(alpha = 0.55f),
-                            fontSize = 10.ssp,
-                            modifier = if (isImageMsg) Modifier.padding(horizontal = 12.sdp) else Modifier
-                        )
+                    val footerMod = if (isImageMsg) Modifier.padding(horizontal = 12.sdp) else Modifier
+                    when {
+                        isTranslating -> {
+                            Row(
+                                modifier = footerMod.padding(top = 2.sdp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.sdp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(10.sdp),
+                                    strokeWidth = 1.5.sdp,
+                                    color = textColor.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = s.translating,
+                                    color = textColor.copy(alpha = 0.7f),
+                                    fontSize = 10.ssp,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                        message.isTranslated && message.translatedFromLang != null -> {
+                            val indicator = com.example.memegram.translation.translationIndicator(message.translatedFromLang)
+                            Text(
+                                text = "$indicator ${s.translated}",
+                                color = textColor.copy(alpha = 0.55f),
+                                fontSize = 10.ssp,
+                                modifier = footerMod
+                            )
+                        }
                     }
                 }
 
@@ -2138,18 +2349,28 @@ fun AlbumBubble(
     isCurrentMatch: Boolean = false,
     onPhotoClick: (Int) -> Unit = {},
     isHighlighted: Boolean = false,
+    transparentBubbles: Boolean = false,
+    bubbleTransparency: Float = ThemePreferences.DEFAULT_BUBBLE_TRANSPARENCY,
+    myBubbleTextColor: Color? = null,
+    theirBubbleTextColor: Color? = null,
 ) {
     val s = LocalStrings.current
-    val bubbleColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
+    val bubbleBaseColor = if (isCurrentMatch) MaterialTheme.colorScheme.tertiary
     else if (isOutgoing) myBubbleColor else theirBubbleColor
+    val glassEnabled = transparentBubbles && !isCurrentMatch
+    val glassTransparency = bubbleTransparency.coerceIn(0f, 1f)
+    val bubbleVisibility = if (glassEnabled) (1f - glassTransparency) else 1f
+    val bubbleColor = if (glassEnabled) Color.Transparent else bubbleBaseColor
     val bubbleImageBytes = if (isCurrentMatch) null
     else if (isOutgoing) myBubbleImage else theirBubbleImage
     val bubbleImageBitmap = rememberAsyncImageBitmap(
         bytes = bubbleImageBytes,
         cacheKey = if (bubbleImageBytes != null) "bubble:${if (isOutgoing) "out" else "in"}" else null
     )
-    val textColor = if (bubbleImageBitmap != null) Color.White
-    else if (bubbleColor.luminance() > 0.5f) Color.Black else Color.White
+    val textOverride = if (isOutgoing) myBubbleTextColor else theirBubbleTextColor
+    val textColor = textOverride
+        ?: if (bubbleImageBitmap != null) Color.White
+        else if (bubbleBaseColor.luminance() > 0.5f) Color.Black else Color.White
     val timeText = remember(albumMessages.lastOrNull()?.timestamp) {
         formatMessageTime(albumMessages.lastOrNull()?.timestamp ?: 0L)
     }
@@ -2196,12 +2417,9 @@ fun AlbumBubble(
             val allRead = albumMessages.all { it.status == MessageStatus.READ }
             val allDelivered = albumMessages.all { it.status == MessageStatus.SENT || it.status == MessageStatus.READ }
             if (allDelivered) {
-                Text(
-                    text = if (allRead) "✓✓" else "✓",
+                MessageStatusTicks(
+                    isRead = allRead,
                     color = timeColor,
-                    fontSize = 11.ssp,
-                    maxLines = 1, softWrap = false,
-                    modifier = Modifier.padding(end = 6.sdp, bottom = 4.sdp)
                 )
             }
         }
@@ -2223,8 +2441,21 @@ fun AlbumBubble(
                 Image(
                     bitmap = bubbleImageBitmap,
                     contentDescription = null,
-                    modifier = Modifier.matchParentSize(),
+                    modifier = Modifier.matchParentSize().alpha(bubbleVisibility),
                     contentScale = ContentScale.Crop
+                )
+            }
+            if (glassEnabled) {
+                com.example.memegram.utils.LiquidGlassSurface(
+                    modifier = Modifier.matchParentSize(),
+                    transparency = glassTransparency,
+                    tint = bubbleBaseColor,
+                    shape = RoundedCornerShape(
+                        topStart = 16.sdp, topEnd = 16.sdp,
+                        bottomStart = if (isOutgoing) 16.sdp else 4.sdp,
+                        bottomEnd = if (isOutgoing) 4.sdp else 16.sdp,
+                    ),
+                    tintAlphaScale = if (bubbleImageBitmap != null) 0.55f else 1f,
                 )
             }
 
@@ -2750,6 +2981,68 @@ private fun SwipeToReplyContainer(
                 }
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+private fun MessageStatusTicks(
+    isRead: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val secondTickProgress by animateFloatAsState(
+        targetValue = if (isRead) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "secondTickProgress"
+    )
+
+    Canvas(
+        modifier = modifier
+            .padding(end = 6.sdp, bottom = 4.sdp)
+            .size(width = 16.sdp, height = 11.sdp)
+    ) {
+        val w = size.width
+        val h = size.height
+        val strokePx = (h * 0.18f).coerceAtLeast(1.4f)
+        val stroke = Stroke(
+            width = strokePx,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+        )
+
+        fun drawCheck(offsetX: Float, alpha: Float) {
+            if (alpha <= 0f) return
+            val checkW = w * 0.62f
+            val checkH = h
+            val left = offsetX
+            val top = 0f
+            val p1x = left + checkW * 0.05f
+            val p1y = top + checkH * 0.55f
+            val p2x = left + checkW * 0.38f
+            val p2y = top + checkH * 0.92f
+            val p3x = left + checkW * 0.98f
+            val p3y = top + checkH * 0.10f
+
+            val path = Path().apply {
+                moveTo(p1x, p1y)
+                lineTo(p2x, p2y)
+                lineTo(p3x, p3y)
+            }
+            drawPath(
+                path = path,
+                color = color.copy(alpha = color.alpha * alpha),
+                style = stroke,
+            )
+        }
+
+        val firstShift = -1f * secondTickProgress * (w * 0.18f)
+        drawCheck(offsetX = w * 0.06f + firstShift, alpha = 1f)
+        if (secondTickProgress > 0f) {
+            val finalOffset = w * 0.36f
+            val startOffset = finalOffset - w * 0.10f
+            val ox = startOffset + (finalOffset - startOffset) * secondTickProgress
+            drawCheck(offsetX = ox, alpha = secondTickProgress)
         }
     }
 }

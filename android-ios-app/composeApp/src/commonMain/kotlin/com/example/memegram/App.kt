@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import com.example.memegram.utils.LocalScreenWidthDp
 import com.example.memegram.utils.LocalScreenHeightDp
 import com.example.memegram.utils.LocalTopBarImage
+import com.example.memegram.utils.LocalTopBarTextColorOverride
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -138,6 +139,7 @@ fun App() {
     val themeViewModel = koinViewModel<ThemeViewModel>()
         val topBarColor by themeViewModel.topBarColor.collectAsState()
         val topBarImageBytes by themeViewModel.topBarImage.collectAsState()
+        val topBarTextColorOverride by themeViewModel.topBarTextColor.collectAsState()
         val isDarkMode by themeViewModel.isDarkMode.collectAsState()
 
         val topBarBitmap = remember(topBarImageBytes) {
@@ -159,7 +161,8 @@ fun App() {
             CompositionLocalProvider(
                 LocalScreenWidthDp provides screenWidthDp,
                 LocalScreenHeightDp provides screenHeightDp,
-                LocalTopBarImage provides topBarBitmap
+                LocalTopBarImage provides topBarBitmap,
+                LocalTopBarTextColorOverride provides topBarTextColorOverride
             ) {
         MaterialTheme(colorScheme = colorScheme) {
             Surface {

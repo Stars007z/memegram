@@ -29,6 +29,7 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 import kotlinx.coroutines.launch
 
 private enum class CropTarget { AVATAR, COVER }
@@ -40,7 +41,7 @@ fun ProfileScreen(
     onBack: () -> Unit,
     viewModel: ProfileViewModel
 ) {
-    val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val s = LocalStrings.current
     val username      by viewModel.username.collectAsState()
     val bio           by viewModel.bio.collectAsState()

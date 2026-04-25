@@ -24,6 +24,7 @@ import com.example.memegram.localization.AppStrings
 import com.example.memegram.localization.LocalStrings
 import com.example.memegram.notifications.NotificationPrefs
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import kotlin.time.Clock
@@ -36,7 +37,7 @@ fun NotificationsScreen(
     viewModel: NotificationsViewModel,
 ) {
     val s = LocalStrings.current
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
 
     val uiState by viewModel.uiState.collectAsState()
     val previewEnabled by viewModel.previewEnabled.collectAsState()

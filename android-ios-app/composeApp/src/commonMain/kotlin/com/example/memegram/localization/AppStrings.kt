@@ -224,6 +224,18 @@ interface AppStrings {
     val chatBgColor: String
     val myMessageColor: String
     val otherMessageColor: String
+    val transparentBubblesTitle: String
+    val transparentBubblesSubtitle: String
+    val bubbleTransparencyLabel: String
+    val previewBubbleMy: String
+    val previewBubbleTheir: String
+    val textColorSection: String
+    val textColorTopBar: String
+    val textColorChatBg: String
+    val textColorMyMessage: String
+    val textColorOtherMessage: String
+    val textColorAuto: String
+    val reset: String
     val chooseColor: String
     val colorPickerPresets: String
     val colorPickerCustom: String
@@ -263,6 +275,7 @@ interface AppStrings {
     val storageOther: String
     val storageMiscellaneous: String
     val storageTextMessages: String
+    val storageOnDeviceModel: String
     fun clearSelectedSize(size: String): String
     val storageCloudInfo: String
     val autoRemoveMedia: String
@@ -286,6 +299,7 @@ interface AppStrings {
     val translate: String
     val showOriginal: String
     val translated: String
+    val translating: String
     val showTranslation: String
     val autoTranslate: String
     val targetLanguage: String
@@ -352,6 +366,8 @@ interface AppStrings {
     val cannotMessageTitle: String
     val cannotMessageBlockedByPeer: String
     val mlsChatBrokenBanner: String
+    val userDeletedAccountBanner: String
+    val deletedAccountTitle: String
 
     val mon: String
     val tue: String
@@ -598,6 +614,18 @@ object RuStrings : AppStrings {
     override val chatBgColor = "Цвет фона чата"
     override val myMessageColor = "Цвет моих сообщений"
     override val otherMessageColor = "Цвет чужих сообщений"
+    override val transparentBubblesTitle = "Прозрачные баблы"
+    override val transparentBubblesSubtitle = "Сделать баблы сообщений полупрозрачными, чтобы был виден фон чата"
+    override val bubbleTransparencyLabel = "Прозрачность"
+    override val previewBubbleMy = "Моё сообщение"
+    override val previewBubbleTheir = "Сообщение от собеседника"
+    override val textColorSection = "Цвет текста"
+    override val textColorTopBar = "Текст в шапке"
+    override val textColorChatBg = "Текст системных сообщений"
+    override val textColorMyMessage = "Текст моих сообщений"
+    override val textColorOtherMessage = "Текст чужих сообщений"
+    override val textColorAuto = "Авто (по яркости фона)"
+    override val reset = "Сброс"
     override val chooseColor = "Выберите цвет"
     override val colorPickerPresets = "Готовые"
     override val colorPickerCustom = "Пользовательский"
@@ -637,6 +665,7 @@ object RuStrings : AppStrings {
     override val storageOther = "Другое"
     override val storageMiscellaneous = "Прочее"
     override val storageTextMessages = "Текстовые сообщения"
+    override val storageOnDeviceModel = "Языковая модель (на устройстве)"
     override fun clearSelectedSize(size: String) = "Очистить выбранное $size"
     override val storageCloudInfo = "Все медиафайлы останутся в облаке Memegram и могут быть загружены повторно при необходимости."
     override val autoRemoveMedia = "Авто-удаление кэшированных медиа"
@@ -660,6 +689,7 @@ object RuStrings : AppStrings {
     override val translate = "Перевести"
     override val showOriginal = "Показать оригинал"
     override val translated = "Переведено"
+    override val translating = "Перевожу…"
     override val showTranslation = "Показать перевод"
     override val autoTranslate = "Авто-перевод"
     override val targetLanguage = "Целевой язык"
@@ -669,7 +699,7 @@ object RuStrings : AppStrings {
     override val targetLanguageHint = "целевой язык"
     override val translationNotAvailable = "Перевод недоступен: недостаточно памяти или модель не загружена"
     override val translationModel = "Модель перевода"
-    override val translationModelDescription = "NLLB-200 (~300 МБ). Скачивается один раз с серверов Memegram."
+    override val translationModelDescription = "NLLB-200. Скачивается один раз с серверов Memegram."
     override val downloadModel = "Загрузить модель"
     override val downloadingModel = "Загрузка модели…"
     override val cancelDownload = "Отменить"
@@ -725,6 +755,8 @@ object RuStrings : AppStrings {
     override val cannotMessageTitle = "Невозможно написать"
     override val cannotMessageBlockedByPeer = "Этот пользователь заблокировал вас. Вы не можете отправлять ему сообщения."
     override val mlsChatBrokenBanner = "Чат недоступен для расшифровки. Попросите собеседника создать новый чат."
+    override val userDeletedAccountBanner = "Этот пользователь удалил аккаунт. Вы не можете отправлять ему сообщения."
+    override val deletedAccountTitle = "Удалённый аккаунт"
 
     override val mon = "Пн"
     override val tue = "Вт"
@@ -975,6 +1007,18 @@ object EnStrings : AppStrings {
     override val chatBgColor = "Chat background color"
     override val myMessageColor = "My message color"
     override val otherMessageColor = "Other message color"
+    override val transparentBubblesTitle = "Transparent bubbles"
+    override val transparentBubblesSubtitle = "Make message bubbles semi-transparent so the chat background shows through"
+    override val bubbleTransparencyLabel = "Transparency"
+    override val previewBubbleMy = "My message"
+    override val previewBubbleTheir = "Message from contact"
+    override val textColorSection = "Text color"
+    override val textColorTopBar = "Top bar text"
+    override val textColorChatBg = "System messages text"
+    override val textColorMyMessage = "My messages text"
+    override val textColorOtherMessage = "Other messages text"
+    override val textColorAuto = "Auto (based on background luminance)"
+    override val reset = "Reset"
     override val chooseColor = "Choose color"
     override val colorPickerPresets = "Presets"
     override val colorPickerCustom = "Custom"
@@ -1014,6 +1058,7 @@ object EnStrings : AppStrings {
     override val storageOther = "Other"
     override val storageMiscellaneous = "Miscellaneous"
     override val storageTextMessages = "Text messages"
+    override val storageOnDeviceModel = "Language model (on-device)"
     override fun clearSelectedSize(size: String) = "Clear Selected $size"
     override val storageCloudInfo = "All media will stay in the Memegram cloud and can be re-downloaded if you need them again."
     override val autoRemoveMedia = "Auto-remove cached media"
@@ -1037,6 +1082,7 @@ object EnStrings : AppStrings {
     override val translate = "Translate"
     override val showOriginal = "Show original"
     override val translated = "Translated"
+    override val translating = "Translating…"
     override val showTranslation = "Show translation"
     override val autoTranslate = "Auto-translate"
     override val targetLanguage = "Target language"
@@ -1046,7 +1092,7 @@ object EnStrings : AppStrings {
     override val targetLanguageHint = "target language"
     override val translationNotAvailable = "Translation unavailable: not enough memory or model not loaded"
     override val translationModel = "Translation model"
-    override val translationModelDescription = "NLLB-200 (~300 MB). Downloaded once from Memegram servers."
+    override val translationModelDescription = "NLLB-200. Downloaded once from Memegram servers."
     override val downloadModel = "Download model"
     override val downloadingModel = "Downloading model…"
     override val cancelDownload = "Cancel"
@@ -1102,6 +1148,8 @@ object EnStrings : AppStrings {
     override val cannotMessageTitle = "Cannot send message"
     override val cannotMessageBlockedByPeer = "This user has blocked you. You cannot send them messages."
     override val mlsChatBrokenBanner = "This chat can't be decrypted. Ask the other person to create a new chat."
+    override val userDeletedAccountBanner = "This user deleted their account. You can't send them messages."
+    override val deletedAccountTitle = "Deleted Account"
 
     override val mon = "Mon"
     override val tue = "Tue"

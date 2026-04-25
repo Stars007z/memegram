@@ -55,6 +55,7 @@ import kotlin.time.Instant
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +75,7 @@ fun ChatsScreen(
     onLinkedDevicesClick: () -> Unit,
     profileViewModel: ProfileViewModel
 ) {
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val s = LocalStrings.current
     val chats by viewModel.chats.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
