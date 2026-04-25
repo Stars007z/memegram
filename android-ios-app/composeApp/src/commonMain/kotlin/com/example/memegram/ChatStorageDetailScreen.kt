@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 import com.example.memegram.utils.sdp
 import kotlin.math.roundToInt
 
@@ -46,7 +47,7 @@ fun ChatStorageDetailScreen(
     viewModel: StorageViewModel
 ) {
     val s = LocalStrings.current
-    val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
 
     val isLoading by viewModel.isLoading.collectAsState()
     val categories by viewModel.chatDetailCategories.collectAsState()

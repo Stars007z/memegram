@@ -67,8 +67,6 @@ class MemegramApp : Application() {
     }
 
     companion object {
-        const val CHANNEL_MESSAGES = "memegram_messages"
-
         private const val CHANNEL_MESSAGES_PREFIX = "memegram_messages_v"
 
         fun channelIdForVibration(strength: Int): String {

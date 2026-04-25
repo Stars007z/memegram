@@ -102,8 +102,11 @@ class UserService:
             select(User).options(selectinload(User.settings)).where(User.id == uuid.UUID(user_id))
         )
         user = result.scalar_one_or_none()
-        if not user or user.is_deleted:
+        if not user:
             raise ValueError("User not found")
+        # Note: we DO return soft-deleted users so peers can render a
+        # tombstone profile in 1:1 chats. Caller must respect is_deleted
+        # and only expose minimal fields (id, username, is_deleted).
         return user, user.settings
 
     async def get_user_by_public_key_with_settings(self, user_public_key: str) -> tuple[User, UserSettings | None]:
@@ -159,11 +162,16 @@ class UserService:
         return user
 
     async def delete_user(self, user_id: str) -> tuple[datetime, list[str]]:
-        """Hard-delete a user and return (deleted_at, media_ids).
+        """Soft-delete a user and return (deleted_at, media_ids).
 
-        Collects every media id referenced by the user row and the user's
-        settings BEFORE removing the rows so the orchestrator can fan-out
-        deletion to media-service. UserSettings is removed via ORM cascade.
+        We keep the row alive so peers in 1:1 conversations can still resolve
+        the user_id to a tombstone profile (anonymized username + is_deleted
+        flag). All PII (avatar, profile background, bio, public key, settings
+        media) is wiped and listed in media_ids so the orchestrator can
+        fan-out deletion to media-service.
+
+        Idempotent: re-running on an already-deleted user is a no-op and
+        returns (existing deleted_at, []).
         """
         from sqlalchemy.orm import selectinload
 
@@ -173,6 +181,9 @@ class UserService:
         user = result.scalar_one_or_none()
         if not user:
             raise ValueError("User not found")
+
+        if user.is_deleted:
+            return user.deleted_at or _now(), []
 
         media_ids: list[str] = []
         for attr in ("avatar_media_id", "profile_background_media_id"):
@@ -191,15 +202,29 @@ class UserService:
                 v = getattr(settings, attr, None)
                 if v:
                     media_ids.append(str(v))
+                    setattr(settings, attr, None)
 
         ts = _now()
-        await self.session.delete(user)
+
+        # Anonymize username so peers see "Deleted Account" instead of the
+        # original handle, while still being able to resolve the user_id.
+        short = user_id.replace("-", "")[:8]
+        user.username = f"deleted_{short}"
+        user.bio = None
+        user.avatar_media_id = None
+        user.profile_background_media_id = None
+        user.user_public_key = None
+        user.last_active = None
+        user.is_deleted = True
+        user.deleted_at = ts
+
         await self.session.flush()
 
         logger.info(
             "user.deleted",
             user_id=user_id,
             media_count=len(media_ids),
+            mode="soft",
         )
 
         return ts, media_ids

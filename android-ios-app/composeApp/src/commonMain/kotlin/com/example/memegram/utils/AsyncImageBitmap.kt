@@ -34,6 +34,23 @@ object ImageBitmapCache {
     fun clear() {
         cache.clear()
     }
+
+    fun invalidatePrefix(prefix: String) {
+        val it = cache.keys.iterator()
+        while (it.hasNext()) {
+            val k = it.next()
+            if (k.startsWith(prefix)) it.remove()
+        }
+    }
+}
+
+private fun ByteArray.fingerprint(): String {
+    val n = size
+    if (n == 0) return "0"
+    val a = this[0].toInt() and 0xFF
+    val b = this[(n / 2)].toInt() and 0xFF
+    val c = this[n - 1].toInt() and 0xFF
+    return "$n.$a.$b.$c"
 }
 
 @Composable
@@ -42,11 +59,13 @@ fun rememberAsyncImageBitmap(
     cacheKey: String? = null,
     maxDimension: Int = 0,
 ): ImageBitmap? {
-    val effectiveKey = remember(cacheKey, maxDimension) {
-        cacheKey?.let { if (maxDimension > 0) "$it@$maxDimension" else it }
+    val effectiveKey = remember(cacheKey, maxDimension, bytes) {
+        if (cacheKey == null || bytes == null) return@remember null
+        val base = if (maxDimension > 0) "$cacheKey@$maxDimension" else cacheKey
+        "$base#${bytes.fingerprint()}"
     }
 
-    var bitmap by remember(effectiveKey, bytes) {
+    var bitmap by remember(effectiveKey) {
         mutableStateOf(effectiveKey?.let { ImageBitmapCache.get(it) })
     }
 

@@ -1,7 +1,5 @@
 package com.example.memegram.data.local
 
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.example.memegram.AppContextHolder
 import com.ionspin.kotlin.crypto.signature.Signature
 import com.russhwolf.settings.Settings
@@ -17,18 +15,7 @@ class AndroidKeyManager : KeyManager {
     private val KEY_PUBLIC = "identity_public_key"
 
     private val securePrefs by lazy {
-        val context = AppContextHolder.context
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-
-        EncryptedSharedPreferences.create(
-            context,
-            "key_manager_secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        SecurePrefsFactory.create(AppContextHolder.context, "key_manager_secure_prefs")
     }
 
     override fun getOrCreateKeyPair(): Pair<ByteArray, ByteArray> {

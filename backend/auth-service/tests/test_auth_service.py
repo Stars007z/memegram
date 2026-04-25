@@ -26,6 +26,9 @@ from app.services.auth_service import AuthService
 def _make_service() -> AuthService:
     """Собирает AuthService c замоканной сессией и репозиториями."""
     session = MagicMock()
+    session.flush = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
     service = AuthService.__new__(AuthService)
     service.session = session
     service.device_repo = MagicMock()
@@ -37,8 +40,10 @@ def _make_service() -> AuthService:
         for name in (
             "create",
             "update",
+            "delete",
             "get_by_id",
             "get_by_device_id",
+            "get_by_client_device_id",
             "get_by_code",
             "mark_as_used",
             "create_invite",
@@ -47,6 +52,8 @@ def _make_service() -> AuthService:
             "get_by_field",
         ):
             setattr(repo, name, AsyncMock())
+    # По умолчанию client_device_id ещё не зарегистрирован.
+    service.device_repo.get_by_client_device_id.return_value = None
     return service
 
 

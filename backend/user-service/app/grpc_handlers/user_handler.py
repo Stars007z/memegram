@@ -80,6 +80,11 @@ class UserHandler(user_pb2_grpc.UserServiceServicer):
     ) -> user_pb2.UserProfile:
         is_owner = str(user.id) == requester_user_id
 
+        # Soft-deleted accounts always expose a tombstone profile, regardless
+        # of who is asking. UI layers render this as "Deleted Account".
+        if user.is_deleted and not is_owner:
+            return _build_minimal_profile(user)
+
         if is_owner:
             return _build_full_profile(user, settings, is_owner=True)
 

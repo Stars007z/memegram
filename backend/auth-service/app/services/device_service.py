@@ -438,16 +438,24 @@ class DeviceService:
         target_device_ids: list[str],
         reason: str,
     ) -> dict:
-        requesting = await self.device_repo.get_by_device_id(requesting_device_id)
-        if not requesting:
-            raise ValueError("Requesting device not found")
-        if str(requesting.user_id) != user_id:
-            raise PermissionError("Device does not belong to user")
-        if requesting.device_type != "primary":
-            raise PermissionError("Only primary device can bulk revoke")
+        # System path: account deletion fanout from orchestrator. No specific
+        # requesting device exists (all devices are being revoked) and the
+        # caller has already been authorized upstream. Skip the owner-check.
+        is_system_purge = reason == "account_deleted" and not requesting_device_id
+
+        requesting = None
+        if not is_system_purge:
+            requesting = await self.device_repo.get_by_device_id(requesting_device_id)
+            if not requesting:
+                raise ValueError("Requesting device not found")
+            if str(requesting.user_id) != user_id:
+                raise PermissionError("Device does not belong to user")
+            if requesting.device_type != "primary":
+                raise PermissionError("Only primary device can bulk revoke")
 
         revoked_ids = []
         now = datetime.utcnow()
+        revoked_by = requesting.id if requesting is not None else None
 
         for tid in target_device_ids:
             target = await self.device_repo.get_by_device_id(tid)
@@ -455,7 +463,9 @@ class DeviceService:
                 continue
             if str(target.user_id) != user_id:
                 continue
-            if target.device_type == "primary":
+            # In system purge we DO want to revoke the primary device too,
+            # because the user is being deleted entirely.
+            if not is_system_purge and target.device_type == "primary":
                 continue
             if not target.is_active:
                 continue
@@ -465,7 +475,7 @@ class DeviceService:
                 {
                     "is_active": False,
                     "revoked_at": now,
-                    "revoked_by_device_id": requesting.id,
+                    "revoked_by_device_id": revoked_by,
                 },
             )
             await self._revoke_device_sessions(target.id)
@@ -474,7 +484,7 @@ class DeviceService:
         logger.info(
             "device.bulk_revoked",
             user_id=user_id,
-            requesting_device_id=str(requesting.id),
+            requesting_device_id=str(requesting.id) if requesting else "system",
             revoked_count=len(revoked_ids),
             revoked_device_ids=revoked_ids,
             reason=reason,

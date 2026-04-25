@@ -186,8 +186,12 @@ class ChatsViewModel(
                         if (peerId != null) {
                             val profile = profileRepository.getOrFetch(peerId)
                             if (profile != null) {
-                                chatName = profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
-                                peerAvatarMediaId = profile.avatarMediaId
+                                chatName = if (profile.isDeleted) {
+                                    com.example.memegram.localization.S.current.deletedAccountTitle
+                                } else {
+                                    profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
+                                }
+                                peerAvatarMediaId = if (profile.isDeleted) null else profile.avatarMediaId
                             }
                         }
                     } catch (_: Exception) {}
@@ -444,7 +448,24 @@ class ChatsViewModel(
             "member_left" -> {
                 val leftUserId = event.data?.userId
                 val myUserId = sessionManager.getUserId()
-                if (leftUserId != null && leftUserId != myUserId && mlsManager.hasGroup(convId)) {
+                val reason = event.data?.reason
+                val convType = event.data?.conversationType
+
+                if (leftUserId == null || leftUserId == myUserId) return
+
+                if (convType == "direct" || reason == "account_deleted") {
+                    viewModelScope.launch {
+                        try {
+                            profileRepository.refresh(leftUserId)
+                        } catch (_: Exception) {}
+                    }
+                    if (convType != "direct" && mlsManager.hasGroup(convId)) {
+                        handleMemberLeftRemoval(convId, leftUserId)
+                    }
+                    return
+                }
+
+                if (mlsManager.hasGroup(convId)) {
                     handleMemberLeftRemoval(convId, leftUserId)
                 }
             }
@@ -465,6 +486,10 @@ class ChatsViewModel(
                 println("MemegramDebug [ChatsVM]: role_changed: user=$userId, newRole=$newRole in conv=$convId")
             }
             "conversation_deleted" -> {
+                if (event.data?.reason == "account_deleted") {
+                    println("MemegramDebug [ChatsVM]: ignoring conversation_deleted with reason=account_deleted (legacy)")
+                    return
+                }
                 println("MemegramDebug [ChatsVM]: conversation_deleted event for conv=$convId — purging locally")
                 try { mlsManager.deleteLocalGroup(convId) } catch (_: Exception) {}
                 chatRepository.deleteChat(convId)

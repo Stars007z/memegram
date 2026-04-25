@@ -70,6 +70,9 @@ class SessionRefresher(
         val expired = sessionManager.isTokenExpired
         println("MemegramDebug [SessionRefresher] tokenExpired=$expired")
         if (!expired) {
+            scope.launch {
+                runCatching { notificationsRepository.registerCurrentDeviceToken() }
+            }
             _state.value = SessionState.Authenticated
             return
         }

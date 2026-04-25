@@ -2,6 +2,7 @@ package com.example.memegram
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import kotlin.math.roundToInt
@@ -53,7 +55,7 @@ fun StorageScreen(
     viewModel: StorageViewModel
 ) {
     val s = LocalStrings.current
-    val topBarTextColor = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
 
     val isLoading by viewModel.isLoading.collectAsState()
     val totalSize by viewModel.totalSize.collectAsState()
@@ -314,14 +316,38 @@ private fun StorageDonutChart(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
-    val selected = remember(categories) { categories.filter { it.isSelected && it.sizeBytes > 0 } }
-    val selectedTotal = remember(selected) { selected.sumOf { it.sizeBytes } }
-    val displayedSize = if (selected.isEmpty()) totalSize else selectedTotal
+    val allNonEmpty = remember(categories) {
+        categories.filter { it.sizeBytes > 0 }.sortedBy { it.type }
+    }
+    val selectedTotal = remember(categories) {
+        categories.filter { it.isSelected && it.sizeBytes > 0 }.sumOf { it.sizeBytes }
+    }
+    val displayedSize = selectedTotal
+
+    val animatedWeights: Map<String, Float> = allNonEmpty.associate { cat ->
+        val target = if (cat.isSelected) 1f else 0f
+        val anim by animateFloatAsState(
+            targetValue = target,
+            animationSpec = spring(
+                dampingRatio = 0.85f,
+                stiffness = 220f
+            ),
+            label = "donutWeight_${cat.type}"
+        )
+        cat.type to anim
+    }
+
+    val emptyAlpha by animateFloatAsState(
+        targetValue = if (selectedTotal == 0L) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 200f),
+        label = "donutEmptyAlpha"
+    )
 
     val (valueStr, unitStr) = remember(displayedSize) { formatSizeComponents(displayedSize) }
 
     val strokeWidthDp = 26.sdp
     val chartSize = 210.sdp
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
 
     Box(modifier = modifier.size(chartSize), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -331,12 +357,15 @@ private fun StorageDonutChart(
             val radius = diameter / 2
             val cx = size.width / 2
             val cy = size.height / 2
-            val gapDegrees = if (selected.size > 1) 3f else 0f
-            val minSweep = 6f
 
-            if (selected.isEmpty()) {
+            val effectiveValues = allNonEmpty.map { cat ->
+                (cat.sizeBytes.toDouble()) * (animatedWeights[cat.type] ?: 0f)
+            }
+            val effectiveTotal = effectiveValues.sum()
+
+            if (emptyAlpha > 0.001f) {
                 drawArc(
-                    color = Color.Gray.copy(alpha = 0.3f),
+                    color = placeholderColor.copy(alpha = placeholderColor.alpha * emptyAlpha),
                     startAngle = 0f,
                     sweepAngle = 360f,
                     useCenter = false,
@@ -344,14 +373,27 @@ private fun StorageDonutChart(
                     topLeft = Offset(cx - radius, cy - radius),
                     size = Size(diameter, diameter)
                 )
-            } else {
-                val totalGap = gapDegrees * selected.size
-                val available = 360f - totalGap
-                val rawSweeps = selected.map { (it.sizeBytes.toFloat() / selectedTotal.toFloat()) * available }
-                val adjusted = rawSweeps.map { it.coerceAtLeast(minSweep) }.toMutableList()
+            }
+
+            if (effectiveTotal > 0.0) {
+                val visibleCount = effectiveValues.count { it > 0.0001 }
+                val gapDegrees = if (visibleCount > 1) 3f else 0f
+                val totalGap = gapDegrees * visibleCount
+                val available = (360f - totalGap).coerceAtLeast(0f)
+                val minSweep = if (visibleCount > 1) 6f else 0f
+
+                val rawSweeps = effectiveValues.map { v ->
+                    if (v > 0.0) (v / effectiveTotal).toFloat() * available else 0f
+                }
+                val adjusted = rawSweeps.map {
+                    if (it > 0f) it.coerceAtLeast(minSweep) else 0f
+                }.toMutableList()
                 val overflow = adjusted.sum() - available
                 if (overflow > 0f) {
-                    val reducible = adjusted.mapIndexed { i, v -> i to (v - minSweep) }.filter { it.second > 0f }
+                    val reducible = adjusted.mapIndexedNotNull { i, v ->
+                        val extra = v - minSweep
+                        if (extra > 0f) i to extra else null
+                    }
                     val reducibleSum = reducible.sumOf { it.second.toDouble() }.toFloat()
                     if (reducibleSum > 0f) {
                         reducible.forEach { (i, extra) ->
@@ -359,34 +401,72 @@ private fun StorageDonutChart(
                         }
                     }
                 }
+
                 var startAngle = -90f
-                selected.forEachIndexed { idx, cat ->
+                allNonEmpty.forEachIndexed { idx, cat ->
                     val sweep = adjusted[idx]
+                    if (sweep <= 0f) return@forEachIndexed
+                    val w = animatedWeights[cat.type] ?: 0f
+                    val gap = if (visibleCount > 1) gapDegrees else 0f
                     drawArc(
-                        color = cat.color,
-                        startAngle = startAngle + gapDegrees / 2,
-                        sweepAngle = (sweep - gapDegrees).coerceAtLeast(0.5f),
+                        color = cat.color.copy(alpha = w.coerceIn(0f, 1f)),
+                        startAngle = startAngle + gap / 2,
+                        sweepAngle = (sweep - gap).coerceAtLeast(0.5f),
                         useCenter = false,
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                         topLeft = Offset(cx - radius, cy - radius),
                         size = Size(diameter, diameter)
                     )
-                    startAngle += sweep + gapDegrees
+                    startAngle += sweep + gap
                 }
             }
         }
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                valueStr,
-                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                color = onSurface
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.animateContentSize(
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 260f)
             )
-            Text(
-                unitStr,
-                style = MaterialTheme.typography.bodyMedium,
-                color = onSurfaceVariant
-            )
+        ) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = valueStr,
+                transitionSpec = {
+                    (androidx.compose.animation.fadeIn(
+                        animationSpec = androidx.compose.animation.core.tween(180)
+                    ) + androidx.compose.animation.slideInVertically(
+                        animationSpec = androidx.compose.animation.core.tween(220)
+                    ) { it / 3 }) togetherWith
+                        (androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.tween(150)
+                        ) + androidx.compose.animation.slideOutVertically(
+                            animationSpec = androidx.compose.animation.core.tween(220)
+                        ) { -it / 3 })
+                },
+                label = "donutValue"
+            ) { v ->
+                Text(
+                    v,
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                    color = onSurface
+                )
+            }
+            androidx.compose.animation.AnimatedContent(
+                targetState = unitStr,
+                transitionSpec = {
+                    androidx.compose.animation.fadeIn(
+                        animationSpec = androidx.compose.animation.core.tween(180)
+                    ) togetherWith androidx.compose.animation.fadeOut(
+                        animationSpec = androidx.compose.animation.core.tween(150)
+                    )
+                },
+                label = "donutUnit"
+            ) { u ->
+                Text(
+                    u,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onSurfaceVariant
+                )
+            }
         }
     }
 }

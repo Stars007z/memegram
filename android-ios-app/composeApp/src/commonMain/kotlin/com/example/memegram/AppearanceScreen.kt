@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
@@ -121,7 +122,15 @@ fun AppearanceScreen(
     val isLoading by viewModel.isLoading.collectAsState()
 
     var showColorPickerForKey by remember { mutableStateOf<String?>(null) }
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    var showTextColorPickerForKey by remember { mutableStateOf<String?>(null) }
+    val transparentBubbles by viewModel.transparentBubbles.collectAsState()
+    val bubbleTransparency by viewModel.bubbleTransparency.collectAsState()
+    val myBubbleTextColor by viewModel.myBubbleTextColor.collectAsState()
+    val theirBubbleTextColor by viewModel.theirBubbleTextColor.collectAsState()
+    val topBarTextColorOverride by viewModel.topBarTextColor.collectAsState()
+    val chatBgTextColor by viewModel.chatBgTextColor.collectAsState()
+    val topBarTextColor = topBarTextColorOverride
+        ?: if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
     val scope = rememberCoroutineScope()
 
     var cropBytes by remember { mutableStateOf<ByteArray?>(null) }
@@ -317,31 +326,134 @@ fun AppearanceScreen(
                     currentColor = topBarColor,
                     hasImage = topBarImage != null,
                     onColorClick = { showColorPickerForKey = "topbar" },
-                    onPhotoClick = { topBarPicker() }
+                    onPhotoClick = { topBarPicker() },
+                    onPhotoClear = { viewModel.clearImage("topbar") },
                 )
                 AppearanceSettingItem(
                     title = s.chatBgColor,
                     currentColor = chatBgColor,
                     hasImage = chatBgImage != null,
                     onColorClick = { showColorPickerForKey = "chatbg" },
-                    onPhotoClick = { chatBgPicker() }
+                    onPhotoClick = { chatBgPicker() },
+                    onPhotoClear = { viewModel.clearImage("chatbg") },
                 )
                 AppearanceSettingItem(
                     title = s.myMessageColor,
                     currentColor = myBubbleColor,
                     hasImage = myBubbleImage != null,
                     onColorClick = { showColorPickerForKey = "mybubble" },
-                    onPhotoClick = { myBubblePicker() }
+                    onPhotoClick = { myBubblePicker() },
+                    onPhotoClear = { viewModel.clearImage("mybubble") },
                 )
                 AppearanceSettingItem(
                     title = s.otherMessageColor,
                     currentColor = theirBubbleColor,
                     hasImage = theirBubbleImage != null,
                     onColorClick = { showColorPickerForKey = "theirbubble" },
-                    onPhotoClick = { theirBubblePicker() }
+                    onPhotoClick = { theirBubblePicker() },
+                    onPhotoClear = { viewModel.clearImage("theirbubble") },
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.sdp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.setTransparentBubbles(!transparentBubbles) }
+                        .padding(horizontal = 16.sdp, vertical = 12.sdp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(s.transparentBubblesTitle, fontSize = 16.ssp)
+                        Text(
+                            s.transparentBubblesSubtitle,
+                            fontSize = 12.ssp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = transparentBubbles,
+                        onCheckedChange = { viewModel.setTransparentBubbles(it) }
+                    )
+                }
+
+                if (transparentBubbles) {
+                    LiquidGlassSlider(
+                        transparency = bubbleTransparency,
+                        onTransparencyChange = { viewModel.setBubbleTransparency(it) },
+                        myBubbleColor = myBubbleColor,
+                        theirBubbleColor = theirBubbleColor,
+                        chatBgColor = chatBgColor,
+                        chatBgImage = chatBgImage,
+                        bubbleTransparencyLabel = s.bubbleTransparencyLabel,
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.sdp))
+
+                Text(
+                    s.textColorSection,
+                    modifier = Modifier.padding(horizontal = 16.sdp, vertical = 8.sdp),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                TextColorSettingItem(
+                    title = s.textColorTopBar,
+                    currentColor = topBarTextColorOverride,
+                    autoLabel = s.textColorAuto,
+                    resetLabel = s.reset,
+                    onClick = { showTextColorPickerForKey = "topbar" },
+                    onReset = { viewModel.resetTextColor("topbar") }
+                )
+                TextColorSettingItem(
+                    title = s.textColorChatBg,
+                    currentColor = chatBgTextColor,
+                    autoLabel = s.textColorAuto,
+                    resetLabel = s.reset,
+                    onClick = { showTextColorPickerForKey = "chatbg" },
+                    onReset = { viewModel.resetTextColor("chatbg") }
+                )
+                TextColorSettingItem(
+                    title = s.textColorMyMessage,
+                    currentColor = myBubbleTextColor,
+                    autoLabel = s.textColorAuto,
+                    resetLabel = s.reset,
+                    onClick = { showTextColorPickerForKey = "mybubble" },
+                    onReset = { viewModel.resetTextColor("mybubble") }
+                )
+                TextColorSettingItem(
+                    title = s.textColorOtherMessage,
+                    currentColor = theirBubbleTextColor,
+                    autoLabel = s.textColorAuto,
+                    resetLabel = s.reset,
+                    onClick = { showTextColorPickerForKey = "theirbubble" },
+                    onReset = { viewModel.resetTextColor("theirbubble") }
                 )
 
                 Spacer(Modifier.height(24.sdp))
+
+                if (showTextColorPickerForKey != null) {
+                    val current = when (showTextColorPickerForKey) {
+                        "topbar" -> topBarTextColorOverride
+                        "chatbg" -> chatBgTextColor
+                        "mybubble" -> myBubbleTextColor
+                        "theirbubble" -> theirBubbleTextColor
+                        else -> null
+                    } ?: Color.Black
+                    ColorPickerDialog(
+                        title = s.chooseColor,
+                        cancelLabel = s.cancel,
+                        selectLabel = s.selectColor,
+                        presetsLabel = s.colorPickerPresets,
+                        customLabel = s.colorPickerCustom,
+                        hexLabel = s.colorPickerHex,
+                        initialColor = current,
+                        onColorSelected = { color ->
+                            viewModel.updateTextColor(showTextColorPickerForKey!!, color)
+                            showTextColorPickerForKey = null
+                        },
+                        onDismiss = { showTextColorPickerForKey = null }
+                    )
+                }
 
                 if (showColorPickerForKey != null) {
                     val currentColor = when (showColorPickerForKey) {
@@ -385,7 +497,8 @@ private fun AppearanceSettingItem(
     currentColor: Color,
     hasImage: Boolean,
     onColorClick: () -> Unit,
-    onPhotoClick: () -> Unit
+    onPhotoClick: () -> Unit,
+    onPhotoClear: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -395,21 +508,42 @@ private fun AppearanceSettingItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        Surface(
-            modifier = Modifier
-                .size(36.sdp)
-                .clip(CircleShape)
-                .clickable(onClick = onPhotoClick),
-            shape = CircleShape,
-            color = if (hasImage) Color(0xFF6075F2) else MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                Icon(
-                    Icons.Default.CameraAlt,
-                    contentDescription = null,
-                    tint = if (hasImage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.sdp)
-                )
+        Box(modifier = Modifier.size(44.sdp), contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier
+                    .size(36.sdp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onPhotoClick),
+                shape = CircleShape,
+                color = if (hasImage) Color(0xFF6075F2) else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        tint = if (hasImage) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.sdp)
+                    )
+                }
+            }
+            if (hasImage && onPhotoClear != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(18.sdp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error)
+                        .border(1.5.sdp, MaterialTheme.colorScheme.surface, CircleShape)
+                        .clickable(onClick = onPhotoClear),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onError,
+                        modifier = Modifier.size(12.sdp),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(10.sdp))
@@ -420,6 +554,49 @@ private fun AppearanceSettingItem(
                 .background(currentColor)
                 .border(1.sdp, MaterialTheme.colorScheme.outline, CircleShape)
         )
+    }
+}
+
+@Composable
+private fun TextColorSettingItem(
+    title: String,
+    currentColor: Color?,
+    autoLabel: String,
+    resetLabel: String,
+    onClick: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.sdp, vertical = 12.sdp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = if (currentColor == null) autoLabel else currentColor.toHexString(),
+                fontSize = 12.ssp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (currentColor != null) {
+            TextButton(onClick = onReset) { Text(resetLabel) }
+            Spacer(Modifier.width(6.sdp))
+        }
+        Box(
+            modifier = Modifier
+                .size(36.sdp)
+                .clip(CircleShape)
+                .background(currentColor ?: Color.Transparent)
+                .border(1.sdp, MaterialTheme.colorScheme.outline, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (currentColor == null) {
+                Text("A", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.ssp)
+            }
+        }
     }
 }
 
@@ -575,5 +752,110 @@ private fun HueBar(hue: Float, onHueChanged: (Float) -> Unit, modifier: Modifier
             drawCircle(Color.White, size.height / 2f - 2f, Offset(px, size.height / 2f), style = Stroke(3f))
             drawCircle(Color.Black, size.height / 2f, Offset(px, size.height / 2f), style = Stroke(1.5f))
         }
+    }
+}
+
+@Composable
+private fun LiquidGlassSlider(
+    transparency: Float,
+    onTransparencyChange: (Float) -> Unit,
+    myBubbleColor: Color,
+    theirBubbleColor: Color,
+    chatBgColor: Color,
+    chatBgImage: ByteArray?,
+    bubbleTransparencyLabel: String,
+) {
+    val percent = (transparency * 100f).roundToInt().coerceIn(1, 100)
+    val s = LocalStrings.current
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.sdp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(bubbleTransparencyLabel, fontSize = 14.ssp, modifier = Modifier.weight(1f))
+            Text("$percent%", fontSize = 14.ssp, fontWeight = FontWeight.Bold)
+        }
+        Slider(
+            value = percent.toFloat(),
+            onValueChange = { onTransparencyChange((it / 100f).coerceIn(0.01f, 1f)) },
+            valueRange = 1f..100f,
+            steps = 0,
+        )
+
+        val bgBitmap = com.example.memegram.utils.rememberAsyncImageBitmap(
+            bytes = chatBgImage,
+            cacheKey = if (chatBgImage != null) "appearance:chatbg-preview" else null,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.sdp)
+                .clip(RoundedCornerShape(12.sdp))
+                .background(chatBgColor),
+        ) {
+            if (bgBitmap != null) {
+                Image(
+                    bitmap = bgBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            PreviewBubble(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.sdp),
+                tint = theirBubbleColor,
+                transparency = transparency,
+                isOutgoing = false,
+                sampleText = s.previewBubbleTheir,
+            )
+            PreviewBubble(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.sdp),
+                tint = myBubbleColor,
+                transparency = transparency,
+                isOutgoing = true,
+                sampleText = s.previewBubbleMy,
+            )
+        }
+        Spacer(Modifier.height(8.sdp))
+    }
+}
+
+@Composable
+private fun PreviewBubble(
+    modifier: Modifier,
+    tint: Color,
+    transparency: Float,
+    isOutgoing: Boolean,
+    sampleText: String,
+) {
+    val shape = RoundedCornerShape(
+        topStart = 16.sdp, topEnd = 16.sdp,
+        bottomStart = if (isOutgoing) 16.sdp else 4.sdp,
+        bottomEnd = if (isOutgoing) 4.sdp else 16.sdp,
+    )
+    val visibility = (1f - transparency).coerceIn(0f, 1f)
+    val textColor = if (tint.luminance() > 0.5f) Color.Black else Color.White
+    Box(
+        modifier = modifier
+            .widthIn(max = 140.sdp)
+            .clip(shape),
+    ) {
+        com.example.memegram.utils.LiquidGlassSurface(
+            modifier = Modifier.matchParentSize(),
+            transparency = transparency,
+            tint = tint,
+            shape = shape,
+        )
+        Text(
+            sampleText,
+            color = textColor.copy(alpha = (0.4f + 0.6f * visibility).coerceIn(0f, 1f)),
+            fontSize = 12.ssp,
+            modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp),
+        )
     }
 }

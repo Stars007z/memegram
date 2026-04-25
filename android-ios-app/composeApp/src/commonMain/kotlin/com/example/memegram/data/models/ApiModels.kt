@@ -158,7 +158,9 @@ data class SseEventData(
     @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
     @SerialName("deleted_by") val deletedBy: String? = null,
     @SerialName("last_read_message_id") val lastReadMessageId: String? = null,
-    @SerialName("read_at") val readAt: Long = 0L
+    @SerialName("read_at") val readAt: Long = 0L,
+    val reason: String? = null,
+    @SerialName("conversation_type") val conversationType: String? = null
 )
 
 @Serializable

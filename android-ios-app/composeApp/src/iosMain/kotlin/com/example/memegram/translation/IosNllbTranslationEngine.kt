@@ -138,10 +138,12 @@ class IosNllbTranslationEngine private constructor(
             decoderSession = ensureSession(bridge, decoderPath, decoderSession)
             tokenized.zip(encoded).map { (tok, enc) ->
                 val ids = decodeAutoregressive(bridge, decoderSession, tok.decoderStartIds, enc.hidden, enc.shape, enc.mask)
+                bridge.clearPersistentInputs(decoderSession)
                 tokenizer.decode(ids)
             }
         } finally {
             if (decoderSession != 0L) {
+                bridge.clearPersistentInputs(decoderSession)
                 bridge.closeSession(decoderSession)
                 decoderSession = 0L
             }
@@ -162,36 +164,33 @@ class IosNllbTranslationEngine private constructor(
         val generated = mutableListOf<Int>()
         val decoderInputIds = decoderStartIds.toMutableList()
         val srcSeqLen = encoderAttentionMask.size.toLong()
+        val vocabSize = tokenizer.vocabSize
+
+        check(bridge.setPersistentFloatInput(session, "encoder_hidden_states", hiddenData, hiddenShape)) {
+            "ORT setPersistentFloatInput(encoder_hidden_states) failed"
+        }
+        check(bridge.setPersistentInt64Input(session, "encoder_attention_mask", encoderAttentionMask, longArrayOf(1, srcSeqLen))) {
+            "ORT setPersistentInt64Input(encoder_attention_mask) failed"
+        }
 
         for (step in 0 until maxLength) {
-            val decoderSeqLen = decoderInputIds.size.toLong()
-            val decoderInput = LongArray(decoderInputIds.size) { decoderInputIds[it].toLong() }
+            val decoderSeqLen = decoderInputIds.size
+            val decoderInput = LongArray(decoderSeqLen) { decoderInputIds[it].toLong() }
 
-            val outputs = bridge.run(
+            val nextId = bridge.runArgmaxLastStep(
                 handle = session,
-                int64Names = arrayOf("input_ids", "encoder_attention_mask"),
-                int64Data = arrayOf(decoderInput, encoderAttentionMask),
-                int64Shapes = arrayOf(longArrayOf(1, decoderSeqLen), longArrayOf(1, srcSeqLen)),
-                floatNames = arrayOf("encoder_hidden_states"),
-                floatData = arrayOf(hiddenData),
-                floatShapes = arrayOf(hiddenShape),
-                outputNames = arrayOf("logits"),
+                int64Names = arrayOf("input_ids"),
+                int64Data = arrayOf(decoderInput),
+                int64Shapes = arrayOf(longArrayOf(1, decoderSeqLen.toLong())),
+                logitsOutputName = "logits",
+                lastStepIndex = decoderSeqLen - 1,
+                vocabSize = vocabSize,
             )
-            val logitsOut = outputs[0]
-            val vocabSize = logitsOut.shape.last().toInt()
-            val lastStart = (decoderSeqLen.toInt() - 1) * vocabSize
 
-            var bestIdx = 0
-            var bestVal = Float.NEGATIVE_INFINITY
-            val data = logitsOut.data
-            for (i in 0 until vocabSize) {
-                val v = data[lastStart + i]
-                if (v > bestVal) { bestVal = v; bestIdx = i }
-            }
-
-            if (bestIdx == tokenizer.eosTokenId) break
-            generated.add(bestIdx)
-            decoderInputIds.add(bestIdx)
+            if (nextId < 0) error("ORT decoder argmax failed at step $step")
+            if (nextId == tokenizer.eosTokenId) break
+            generated.add(nextId)
+            decoderInputIds.add(nextId)
         }
 
         return generated

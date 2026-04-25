@@ -33,13 +33,28 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         println("MemegramDebug [FCM] onNewToken: ${token.take(16)}…")
-        val repo = runCatching {
-            GlobalContext.get().get<NotificationsRepository>()
-        }.getOrNull() ?: return
-
         serviceScope.launch {
-            repo.registerCurrentDeviceToken()
+            registerWithKoinRetry()
         }
+    }
+
+    private suspend fun registerWithKoinRetry() {
+        val delaysMs = longArrayOf(0L, 250L, 500L, 1_000L, 2_000L, 5_000L, 10_000L, 15_000L)
+        for ((attempt, delayMs) in delaysMs.withIndex()) {
+            if (delayMs > 0) kotlinx.coroutines.delay(delayMs)
+            val repo = runCatching {
+                GlobalContext.get().get<NotificationsRepository>()
+            }.getOrNull()
+            if (repo != null) {
+                runCatching { repo.registerCurrentDeviceToken() }
+                    .onFailure { e ->
+                        println("MemegramDebug [FCM] register after onNewToken failed: ${e.message}")
+                    }
+                return
+            }
+            println("MemegramDebug [FCM] Koin not ready (attempt ${attempt + 1}), retrying…")
+        }
+        println("MemegramDebug [FCM] giving up onNewToken registration; will retry on next app launch")
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -49,24 +64,33 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
 
         val eventType = data["event_type"].orEmpty()
         val conversationId = data["conversation_id"].orEmpty()
-        if (conversationId.isEmpty()) {
-            println("MemegramDebug [FCM] skip: empty conversation_id")
-            return
-        }
 
         when (eventType) {
-            "new_message", "message_edited" -> showMessageNotification(data, conversationId)
+            "new_message", "message_edited" -> {
+                if (conversationId.isEmpty()) {
+                    println("MemegramDebug [FCM] skip $eventType: empty conversation_id")
+                    return
+                }
+                showMessageNotification(data, conversationId)
+            }
 
             "member_added" -> {
+                if (conversationId.isEmpty()) return
                 showSystemNotification(data, conversationId, openChatOnTap = true)
             }
 
             "member_kicked" -> {
+                if (conversationId.isEmpty()) return
                 purgeConversationLocally(conversationId)
                 showSystemNotification(data, conversationId, openChatOnTap = false)
             }
 
             "conversation_deleted" -> {
+                if (conversationId.isEmpty()) return
+                if (data["reason"] == "account_deleted") {
+                    println("MemegramDebug [FCM] ignoring conversation_deleted reason=account_deleted")
+                    return
+                }
                 purgeConversationLocally(conversationId)
             }
 
