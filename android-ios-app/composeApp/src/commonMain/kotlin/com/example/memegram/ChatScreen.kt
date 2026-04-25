@@ -783,7 +783,7 @@ fun ChatScreen(
                                 DropdownMenuItem(text = { Text(s.search) },           leadingIcon = { Icon(Icons.Default.Search, null) },           onClick = { showMenu = false; isSearchMode = true })
                                 DropdownMenuItem(text = { Text(s.notifications) },    leadingIcon = { Icon(Icons.Default.NotificationsOff, null) },  onClick = { showMenu = false; showMuteDialog = true })
                                 DropdownMenuItem(text = { Text(s.changeWallpaper) },  leadingIcon = { Icon(Icons.Default.Wallpaper, null) },         onClick = { showMenu = false })
-                                if (!isGroupChat) {
+                                if (!isGroupChat && !isPeerDeleted) {
                                     DropdownMenuItem(
                                         text = { Text(if (isPeerBlocked) s.unblockUser else s.blockUser, color = if (!isPeerBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
                                         leadingIcon = { Icon(Icons.Default.Block, null, tint = if (!isPeerBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },

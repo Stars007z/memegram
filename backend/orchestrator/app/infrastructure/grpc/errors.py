@@ -17,6 +17,8 @@ def grpc_error_to_exception(e: grpc.RpcError, service_name: str = "Service") -> 
         return ValidationError(f"Already exists: {details}")
     if code == grpc.StatusCode.ABORTED:
         return ValidationError(f"Conflict: {details}")
+    if code == grpc.StatusCode.FAILED_PRECONDITION:
+        return PermissionDeniedError(details)
     if code == grpc.StatusCode.UNAVAILABLE:
         return GatewayError(f"{service_name} is unavailable", code=503)
     return GatewayError(f"{service_name} error: {details}", code=502)

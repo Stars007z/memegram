@@ -521,7 +521,8 @@ class AuthHandler(auth_pb2_grpc.AuthServiceServicer):
                 return auth_pb2.TransferPrimaryResponse()
 
     async def BulkRevokeDevices(self, request, context):
-        if not request.user_id or not request.requesting_device_id:
+        is_account_deleted = request.reason == "account_deleted"
+        if not request.user_id or (not request.requesting_device_id and not is_account_deleted):
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("user_id and requesting_device_id are required")
             return auth_pb2.BulkRevokeDevicesResponse()

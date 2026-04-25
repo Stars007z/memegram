@@ -103,3 +103,20 @@ class GrpcItemStorageGateway(IItemStorageGateway):
         except grpc.RpcError as e:
             raise grpc_error_to_exception(e, _SERVICE)
         return ConfirmUploadResult(success=resp.success)
+
+    async def delete_item(
+        self,
+        owner_user_id: str,
+        item_id: str,
+    ) -> bool:
+        try:
+            resp = await self._stub().DeleteItem(
+                item_storage_pb2.DeleteItemRequest(
+                    owner_user_id=owner_user_id,
+                    item_id=item_id,
+                ),
+                timeout=self._settings.ITEM_STORAGE_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return resp.success

@@ -248,6 +248,24 @@ class TestSendMessage:
                 client_message_id=uuid.uuid4(),
             )
 
+    async def test_direct_rejects_when_peer_left(self, service, member_repo, conversation_repo):
+        # Arrange
+        sender = uuid.uuid4()
+        member_repo.is_member.return_value = True
+        conversation_repo.get_by_id.return_value = SimpleNamespace(type="direct")
+        member_repo.get_active_members.return_value = [SimpleNamespace(user_id=sender)]
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="Recipient is not available"):
+            await service.send_message(
+                sender_user_id=sender,
+                sender_device_id=uuid.uuid4(),
+                conversation_id=uuid.uuid4(),
+                mls_ciphertext=b"",
+                type="text",
+                client_message_id=uuid.uuid4(),
+            )
+
     async def test_direct_blocked_the_peer(
         self,
         service,

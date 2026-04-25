@@ -445,7 +445,7 @@ class GrpcAuthGateway(IAuthGateway):
 
     async def bulk_revoke_user_devices(self, user_id: str) -> BulkRevokeDevicesResult:
         devices = await self.get_devices(user_id=user_id)
-        target_ids = [d.id for d in devices if getattr(d, "is_active", True)]
+        target_ids = [d.id for d in devices]
         if not target_ids:
             return BulkRevokeDevicesResult(success=True, revoked_count=0, revoked_device_ids=[])
         return await self.bulk_revoke_devices(

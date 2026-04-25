@@ -444,6 +444,70 @@ class TestDeleteUser:
         service.session.delete.assert_not_called()
         service.session.flush.assert_awaited()
 
+    async def test_delete_user_wipes_settings_and_collects_media_ids(self, service):
+        # Arrange
+        user_id = str(uuid.uuid4())
+        avatar_id = uuid.uuid4()
+        bg_id = uuid.uuid4()
+        chat_bg_id = uuid.uuid4()
+        top_bar_id = uuid.uuid4()
+        my_bubble_id = uuid.uuid4()
+        their_bubble_id = uuid.uuid4()
+        settings = SimpleNamespace(
+            chat_background_media_id=chat_bg_id,
+            top_bar_media_id=top_bar_id,
+            my_bubble_media_id=my_bubble_id,
+            their_bubble_media_id=their_bubble_id,
+            theme="dark",
+            language="ru",
+            is_translator_active=True,
+            animations_enabled=False,
+            account_auto_delete_after_days=30,
+            profile_visible_to="everybody",
+            last_active_visible_to="everybody",
+            top_bar_color="#000000",
+            updated_at=None,
+        )
+        user = SimpleNamespace(
+            id=uuid.UUID(user_id),
+            is_deleted=False,
+            username="bob",
+            bio="hi",
+            avatar_media_id=avatar_id,
+            profile_background_media_id=bg_id,
+            user_public_key="pk",
+            last_active=datetime.utcnow(),
+            deleted_at=None,
+            settings=settings,
+        )
+        _queue_execute(service.session, [_make_execute_result(scalar_one_or_none=user)])
+
+        # Act
+        deleted_at, media_ids = await service.delete_user(user_id)
+
+        # Assert
+        assert set(media_ids) == {
+            str(avatar_id),
+            str(bg_id),
+            str(chat_bg_id),
+            str(top_bar_id),
+            str(my_bubble_id),
+            str(their_bubble_id),
+        }
+        assert settings.chat_background_media_id is None
+        assert settings.top_bar_media_id is None
+        assert settings.my_bubble_media_id is None
+        assert settings.their_bubble_media_id is None
+        assert settings.theme == "system"
+        assert settings.language == "en"
+        assert settings.is_translator_active is False
+        assert settings.animations_enabled is True
+        assert settings.account_auto_delete_after_days is None
+        assert settings.profile_visible_to == "nobody"
+        assert settings.last_active_visible_to == "nobody"
+        assert settings.top_bar_color is None
+        assert settings.updated_at == deleted_at
+
     async def test_idempotent_when_already_deleted(self, service):
         user_id = str(uuid.uuid4())
         user = SimpleNamespace(

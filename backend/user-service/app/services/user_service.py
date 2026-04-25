@@ -168,10 +168,10 @@ class UserService:
         the user_id to a tombstone profile (anonymized username + is_deleted
         flag). All PII (avatar, profile background, bio, public key, settings
         media) is wiped and listed in media_ids so the orchestrator can
-        fan-out deletion to media-service.
+        fan-out deletion to item-storage.
 
-        Idempotent: re-running on an already-deleted user is a no-op and
-        returns (existing deleted_at, []).
+        Idempotent for PII/media cleanup: re-running on an already-deleted
+        user returns (existing deleted_at, []) and does not re-emit media IDs.
         """
         from sqlalchemy.orm import selectinload
 
@@ -206,8 +206,7 @@ class UserService:
 
         ts = _now()
 
-        # Anonymize username so peers see "Deleted Account" instead of the
-        # original handle, while still being able to resolve the user_id.
+        # Anonymize the stored handle while keeping a stable tombstone row.
         short = user_id.replace("-", "")[:8]
         user.username = f"deleted_{short}"
         user.bio = None
@@ -217,6 +216,17 @@ class UserService:
         user.last_active = None
         user.is_deleted = True
         user.deleted_at = ts
+
+        if settings is not None:
+            settings.theme = "system"
+            settings.language = "en"
+            settings.is_translator_active = False
+            settings.animations_enabled = True
+            settings.account_auto_delete_after_days = None
+            settings.profile_visible_to = "nobody"
+            settings.last_active_visible_to = "nobody"
+            settings.top_bar_color = None
+            settings.updated_at = ts
 
         await self.session.flush()
 
@@ -230,6 +240,12 @@ class UserService:
         return ts, media_ids
 
     async def check_and_process_auto_delete(self) -> tuple[int, list[str]]:
+        """Soft-delete inactive accounts.
+
+        This returns only deleted user IDs for now. Unlike the explicit
+        `/me` deletion path, this scheduled path does not yet fan out auth,
+        contact, messaging, or media cleanup through orchestrator.
+        """
         from sqlalchemy.sql import func
 
         subq = (
@@ -323,6 +339,10 @@ class UserService:
         if row is None:
             return False, False
         return True, row[0]
+
+    async def ensure_active_user(self, user_id: str) -> bool:
+        exists, is_deleted = await self.user_exists(user_id)
+        return exists and not is_deleted
 
     async def update_last_active(self, user_id: str) -> bool:
         should_update = await check_and_set_last_active_debounce(user_id)

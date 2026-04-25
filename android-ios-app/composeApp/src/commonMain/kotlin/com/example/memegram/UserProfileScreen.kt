@@ -47,6 +47,7 @@ fun UserProfileScreen(
     val isBlocked by viewModel.isBlocked.collectAsState()
     val isBlockedByPeer by viewModel.isBlockedByPeer.collectAsState()
     val isContact by viewModel.isContact.collectAsState()
+    val isDeleted = profile?.isDeleted == true
     val snackbarHostState = remember { SnackbarHostState() }
     var showCannotMessageDialog by remember { mutableStateOf(false) }
 
@@ -61,8 +62,8 @@ fun UserProfileScreen(
         }
     }
 
-    val displayUsername = profile?.username ?: initialUsername
-    val displayBio = profile?.bio ?: s.loading
+    val displayUsername = if (isDeleted) s.deletedAccountTitle else (profile?.username ?: initialUsername)
+    val displayBio = if (isDeleted) s.userDeletedAccountBanner else (profile?.bio ?: s.loading)
 
     Scaffold(
         topBar = {
@@ -92,7 +93,7 @@ fun UserProfileScreen(
                 modifier = Modifier.fillMaxWidth().aspectRatio(2.5f),
                 contentAlignment = Alignment.Center
             ) {
-                if (coverBytes != null) {
+                if (!isDeleted && coverBytes != null) {
                     val bitmap = remember(coverBytes) {
                         runCatching { coverBytes!!.decodeToImageBitmap() }.getOrNull()
                     }
@@ -127,7 +128,7 @@ fun UserProfileScreen(
                         .border(3.sdp, MaterialTheme.colorScheme.background, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (avatarBytes != null) {
+                    if (!isDeleted && avatarBytes != null) {
                         val bitmap = remember(avatarBytes) {
                             runCatching { avatarBytes!!.decodeToImageBitmap() }.getOrNull()
                         }
@@ -140,14 +141,14 @@ fun UserProfileScreen(
                         } else {
                             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.tertiary) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
+                                    Text(if (isDeleted) "?" else displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     } else {
                         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.tertiary) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
+                                Text(if (isDeleted) "?" else displayUsername.take(1).uppercase(), color = Color.White, fontSize = 40.ssp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -168,8 +169,9 @@ fun UserProfileScreen(
                 modifier = Modifier.offset(y = (-16).sdp)
             )
 
-            if (isBlocked || isBlockedByPeer) {
+            if (isDeleted || isBlocked || isBlockedByPeer) {
                 val (badgeText, badgeColor) = when {
+                    isDeleted -> s.userDeletedAccountBanner to MaterialTheme.colorScheme.onSurface
                     isBlockedByPeer -> s.youAreBlockedByUser to MaterialTheme.colorScheme.error
                     else -> s.youBlockedThisUser to MaterialTheme.colorScheme.error
                 }
@@ -210,25 +212,27 @@ fun UserProfileScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledIconButton(
                         onClick = {
-                            if (isBlockedByPeer) {
+                            if (isDeleted) {
+                                showCannotMessageDialog = true
+                            } else if (isBlockedByPeer) {
                                 showCannotMessageDialog = true
                             } else {
                                 profile?.userPublicKey?.let { onStartChat(it) }
                             }
                         },
                         modifier = Modifier.size(56.sdp),
-                        enabled = !isBlockedByPeer || true,
+                        enabled = !isDeleted && !isBlockedByPeer,
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Message, null,
-                            tint = if (isBlockedByPeer) LocalContentColor.current.copy(alpha = 0.5f) else LocalContentColor.current
+                            tint = if (isDeleted || isBlockedByPeer) LocalContentColor.current.copy(alpha = 0.5f) else LocalContentColor.current
                         )
                     }
                     Spacer(Modifier.height(8.sdp))
                     Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
                 }
 
-                if (!isContact) {
+                if (!isDeleted && !isContact) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         FilledTonalIconButton(
                             onClick = { viewModel.addToContacts() },
@@ -241,7 +245,7 @@ fun UserProfileScreen(
                     }
                 }
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (!isDeleted) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     FilledTonalIconButton(
                         onClick = { if (isBlocked) viewModel.unblockUser() else viewModel.blockUser() },
                         modifier = Modifier.size(56.sdp),
@@ -269,7 +273,7 @@ fun UserProfileScreen(
         AlertDialog(
             onDismissRequest = { showCannotMessageDialog = false },
             title = { Text(s.cannotMessageTitle) },
-            text = { Text(s.cannotMessageBlockedByPeer) },
+            text = { Text(if (isDeleted) s.userDeletedAccountBanner else s.cannotMessageBlockedByPeer) },
             confirmButton = {
                 TextButton(onClick = { showCannotMessageDialog = false }) {
                     Text(s.ok)

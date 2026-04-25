@@ -284,7 +284,7 @@ class TestIsContactIsBlocked:
 # purge_user
 # ---------------------------------------------------------------------------
 class TestPurgeUser:
-    async def test_deletes_contacts_and_blocks(self, service):
+    async def test_deletes_only_own_contacts_and_blocks(self, service):
         # session.execute is called twice; return mocks with rowcount.
         contacts_res = SimpleNamespace(rowcount=3)
         blocked_res = SimpleNamespace(rowcount=2)

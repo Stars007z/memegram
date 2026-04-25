@@ -22,6 +22,7 @@ from app.services.device_service import DeviceService
 def _make_service() -> DeviceService:
     session = MagicMock()
     session.execute = AsyncMock()
+    session.flush = AsyncMock()
     service = DeviceService.__new__(DeviceService)
     service.session = session
     service.device_repo = MagicMock()
@@ -33,6 +34,7 @@ def _make_service() -> DeviceService:
             "update",
             "get_by_id",
             "get_by_device_id",
+            "get_by_client_device_id",
             "get_by_user_id",
             "get_active_registration",
             "get_by_registration_id",
@@ -51,6 +53,7 @@ def _make_service() -> DeviceService:
         )
     )
     service._auth_service = auth_service
+    service.device_repo.get_by_client_device_id.return_value = None
     return service
 
 
@@ -147,6 +150,58 @@ class TestSubmitDeviceData:
         # Assert
         assert result["status"] == "awaiting_confirmation"
         service.registration_repo.update.assert_awaited()
+
+    async def test_rejects_active_registered_client_device_id(self, service):
+        # Arrange
+        reg = SimpleNamespace(
+            registration_code="000000",
+            status="pending",
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+        )
+        service.registration_repo.get_active_registration.return_value = reg
+        service.device_repo.get_by_client_device_id.return_value = SimpleNamespace(id=uuid.uuid4(), is_active=True)
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="already registered"):
+            await service.submit_device_data(
+                registration_id=str(uuid.uuid4()),
+                registration_code="000000",
+                device_id="d",
+                device_name="n",
+                device_type="secondary",
+                identity_key_pub=b"",
+                init_key_pub=b"",
+                credential_data=b"",
+            )
+
+    async def test_releases_inactive_registered_client_device_id(self, service):
+        # Arrange
+        reg = SimpleNamespace(
+            registration_code="000000",
+            status="pending",
+            expires_at=datetime.utcnow() + timedelta(minutes=5),
+        )
+        existing = SimpleNamespace(id=uuid.uuid4(), is_active=False, deleted_at=None)
+        service.registration_repo.get_active_registration.return_value = reg
+        service.device_repo.get_by_client_device_id.return_value = existing
+
+        # Act
+        result = await service.submit_device_data(
+            registration_id=str(uuid.uuid4()),
+            registration_code="000000",
+            device_id="d",
+            device_name="n",
+            device_type="secondary",
+            identity_key_pub=b"",
+            init_key_pub=b"",
+            credential_data=b"",
+        )
+
+        # Assert
+        assert result["status"] == "awaiting_confirmation"
+        updates = service.device_repo.update.await_args.args[1]
+        assert updates["client_device_id"] is None
+        assert updates["deleted_at"] is not None
 
     async def test_rejects_unknown_registration(self, service):
         service.registration_repo.get_active_registration.return_value = None
@@ -273,6 +328,67 @@ class TestConfirmDeviceAddition:
         assert result["access_token"] == "access"
         service.device_repo.create.assert_awaited_once()
         service.session_repo.create.assert_awaited_once()
+
+    async def test_confirm_rejects_active_registered_client_device_id(self, service):
+        # Arrange
+        uid = uuid.uuid4()
+        primary = _device(user_id=uid, device_type="primary")
+        service.device_repo.get_by_device_id.return_value = primary
+        service.registration_repo.get_active_registration.return_value = SimpleNamespace(
+            user_id=uid,
+            status="awaiting_confirmation",
+            device_id="client-dev",
+            device_name="ipad",
+            identity_key_pub=b"id",
+            init_key_pub=b"init",
+            credential_data=b"cred",
+        )
+        service.device_repo.get_by_client_device_id.return_value = SimpleNamespace(id=uuid.uuid4(), is_active=True)
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="already registered"):
+            await service.confirm_device_addition(
+                user_id=str(uid),
+                device_id="primary-dev",
+                registration_id=str(uuid.uuid4()),
+                confirm=True,
+            )
+
+    async def test_confirm_releases_inactive_registered_client_device_id(self, service):
+        # Arrange
+        uid = uuid.uuid4()
+        primary = _device(user_id=uid, device_type="primary")
+        service.device_repo.get_by_device_id.return_value = primary
+        service.registration_repo.get_active_registration.return_value = SimpleNamespace(
+            user_id=uid,
+            status="awaiting_confirmation",
+            device_id="client-dev",
+            device_name="ipad",
+            identity_key_pub=b"id",
+            init_key_pub=b"init",
+            credential_data=b"cred",
+        )
+        service.device_repo.get_by_client_device_id.return_value = SimpleNamespace(
+            id=uuid.uuid4(),
+            is_active=False,
+            deleted_at=None,
+        )
+
+        # Act
+        result = await service.confirm_device_addition(
+            user_id=str(uid),
+            device_id="primary-dev",
+            registration_id=str(uuid.uuid4()),
+            confirm=True,
+        )
+
+        # Assert
+        assert result["status"] == "confirmed"
+        assert service.device_repo.update.await_count == 1
+        service.device_repo.create.assert_awaited_once()
+        release_updates = service.device_repo.update.await_args_list[0].args[1]
+        assert release_updates["client_device_id"] is None
+        assert release_updates["deleted_at"] is not None
 
     async def test_rejects_non_primary(self, service):
         uid = uuid.uuid4()
@@ -500,21 +616,28 @@ class TestBulkRevoke:
         uid = uuid.uuid4()
         primary = _device(user_id=uid, device_type="primary", is_active=True)
         secondary = _device(user_id=uid, device_type="secondary", is_active=True)
+        inactive = _device(user_id=uid, device_type="secondary", is_active=False)
         other_user = _device(user_id=uuid.uuid4(), device_type="secondary", is_active=True)
 
-        service.device_repo.get_by_device_id.side_effect = [primary, secondary, other_user]
+        service.device_repo.get_by_device_id.side_effect = [primary, secondary, inactive, other_user]
 
         result = await service.bulk_revoke_devices(
             user_id=str(uid),
             requesting_device_id="",
-            target_device_ids=["p", "s", "other"],
+            target_device_ids=["p", "s", "inactive", "other"],
             reason="account_deleted",
         )
 
-        assert result["revoked_count"] == 2
-        assert set(result["revoked_device_ids"]) == {str(primary.id), str(secondary.id)}
-        # Update was called for each (not for the foreign-user device).
-        assert service.device_repo.update.await_count == 2
+        assert result["revoked_count"] == 3
+        assert set(result["revoked_device_ids"]) == {str(primary.id), str(secondary.id), str(inactive.id)}
+        # Update was called for each same-user device (not for the foreign-user device).
+        assert service.device_repo.update.await_count == 3
+        updates = [call.args[1] for call in service.device_repo.update.await_args_list]
+        assert all(u["client_device_id"] is None for u in updates)
+        assert all(u["identity_key_pub"] == b"" for u in updates)
+        assert all(u["init_key_pub"] == b"" for u in updates)
+        assert all(u["credential_data"] == b"" for u in updates)
+        assert all(u["deleted_at"] is not None for u in updates)
 
 
 # ---------------------------------------------------------------------------
