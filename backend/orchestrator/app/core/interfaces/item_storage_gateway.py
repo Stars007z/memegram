@@ -56,3 +56,10 @@ class IItemStorageGateway(ABC):
         owner_user_id: str,
         item_id: str,
     ) -> ConfirmUploadResult: ...
+
+    @abstractmethod
+    async def delete_item(
+        self,
+        owner_user_id: str,
+        item_id: str,
+    ) -> bool: ...

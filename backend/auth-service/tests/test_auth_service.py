@@ -143,6 +143,100 @@ class TestRegister:
         # Assert
         assert result["device_type"] == "admin"
 
+    async def test_register_releases_inactive_device_row_without_deleting_it(self, service):
+        # Arrange
+        invite = SimpleNamespace(
+            code="INV",
+            is_used=False,
+            is_admin=False,
+            expires_at=datetime.utcnow() + timedelta(days=1),
+        )
+        existing = SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            is_active=False,
+            deleted_at=None,
+        )
+        service.invite_repo.get_by_code.return_value = invite
+        service.device_repo.get_by_client_device_id.return_value = existing
+
+        # Act
+        await service.register(
+            username="alice",
+            invite_code="INV",
+            device_id="dev-1",
+            device_name="iPhone",
+            identity_key_pub=b"id",
+            init_key_pub=b"init",
+            credential_data=b"cred",
+        )
+
+        # Assert
+        service.device_repo.delete.assert_not_awaited()
+        service.device_repo.update.assert_awaited_once()
+        updates = service.device_repo.update.await_args.args[1]
+        assert updates["is_active"] is False
+        assert updates["client_device_id"] is None
+        assert updates["identity_key_pub"] == b""
+        assert updates["init_key_pub"] == b""
+        assert updates["credential_data"] == b""
+        assert updates["deleted_at"] is not None
+
+    async def test_register_preserves_existing_deleted_at_when_releasing_inactive_row(self, service):
+        # Arrange
+        invite = SimpleNamespace(
+            code="INV",
+            is_used=False,
+            is_admin=False,
+            expires_at=datetime.utcnow() + timedelta(days=1),
+        )
+        deleted_at = datetime.utcnow() - timedelta(days=1)
+        existing = SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            is_active=False,
+            deleted_at=deleted_at,
+        )
+        service.invite_repo.get_by_code.return_value = invite
+        service.device_repo.get_by_client_device_id.return_value = existing
+
+        # Act
+        await service.register(
+            username="alice",
+            invite_code="INV",
+            device_id="dev-1",
+            device_name="iPhone",
+            identity_key_pub=b"id",
+            init_key_pub=b"init",
+            credential_data=b"cred",
+        )
+
+        # Assert
+        assert service.device_repo.update.await_args.args[1]["deleted_at"] == deleted_at
+
+    async def test_register_rejects_active_device_id_collision(self, service):
+        # Arrange
+        invite = SimpleNamespace(
+            code="INV",
+            is_used=False,
+            is_admin=False,
+            expires_at=datetime.utcnow() + timedelta(days=1),
+        )
+        service.invite_repo.get_by_code.return_value = invite
+        service.device_repo.get_by_client_device_id.return_value = SimpleNamespace(is_active=True)
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="already registered"):
+            await service.register(
+                username="alice",
+                invite_code="INV",
+                device_id="dev-1",
+                device_name="iPhone",
+                identity_key_pub=b"id",
+                init_key_pub=b"init",
+                credential_data=b"cred",
+            )
+
     async def test_register_rejects_missing_invite(self, service):
         # Arrange
         service.invite_repo.get_by_code.return_value = None

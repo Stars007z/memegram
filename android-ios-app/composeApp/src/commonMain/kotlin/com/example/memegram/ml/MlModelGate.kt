@@ -40,6 +40,7 @@ object MlModelGate {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var workerJob: Job? = null
     private var idleJob: Job? = null
+    private val activeModelLock = Mutex()
 
     init { startWorker() }
 
@@ -64,8 +65,10 @@ object MlModelGate {
         return deferred.await()
     }
 
-    fun onMemoryPressure() {
-        scope.launch { cancelAllAuto(reason = "Memory pressure") }
+    fun onMemoryPressure(cancelQueuedAuto: Boolean = true) {
+        if (cancelQueuedAuto) {
+            scope.launch { cancelAllAuto(reason = "Memory pressure") }
+        }
         scope.launch { triggerRelease() }
     }
 
@@ -86,8 +89,10 @@ object MlModelGate {
     }
 
     private suspend fun triggerRelease() {
-        val hook = releaseHook
-        try { hook?.invoke() } catch (_: Throwable) { /* swallow */ }
+        activeModelLock.withLock {
+            val hook = releaseHook
+            try { hook?.invoke() } catch (_: Throwable) { /* swallow */ }
+        }
     }
 
     private fun startWorker() {
@@ -122,7 +127,7 @@ object MlModelGate {
     private suspend fun <R> runTask(task: Task<R>) {
         if (task.deferred.isCancelled) return
         try {
-            val result = task.block()
+            val result = activeModelLock.withLock { task.block() }
             task.deferred.complete(result)
         } catch (ce: CancellationException) {
             task.deferred.cancel(ce)

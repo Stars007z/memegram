@@ -54,11 +54,12 @@ class MessageServiceImpl(IMessageService):
         if conv is not None and conv.type == "direct":
             members = await self._members.get_active_members(conversation_id)
             peer = next((m for m in members if m.user_id != sender_user_id), None)
-            if peer is not None:
-                if await self._contacts.is_blocked(peer.user_id, sender_user_id):
-                    raise ValueError("PERMISSION_DENIED: You are blocked by this user")
-                if await self._contacts.is_blocked(sender_user_id, peer.user_id):
-                    raise ValueError("PERMISSION_DENIED: You have blocked this user")
+            if peer is None:
+                raise ValueError("FAILED_PRECONDITION: Recipient is not available")
+            if await self._contacts.is_blocked(peer.user_id, sender_user_id):
+                raise ValueError("PERMISSION_DENIED: You are blocked by this user")
+            if await self._contacts.is_blocked(sender_user_id, peer.user_id):
+                raise ValueError("PERMISSION_DENIED: You have blocked this user")
 
         existing = await self._messages.get_by_client_message_id(client_message_id)
         if existing:

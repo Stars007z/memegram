@@ -62,8 +62,13 @@ class UserProfileViewModel(
                 val profile = profileRepository.getOrFetch(userId, forceRefresh = true)
                 if (profile != null) {
                     _userProfile.value = profile
-                    profile.avatarMediaId?.let { fetchImage(it, "avatar") }
-                    profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                    if (profile.isDeleted) {
+                        _avatarBytes.value = null
+                        _coverBytes.value = null
+                    } else {
+                        profile.avatarMediaId?.let { fetchImage(it, "avatar") }
+                        profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
+                    }
                 }
                 try {
                     val contacts = contactsRepository.getContacts(limit = 200, offset = 0).getOrNull()

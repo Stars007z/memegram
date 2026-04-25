@@ -63,6 +63,8 @@ class IosNllbTranslationEngine private constructor(
     private val translateMutex = Mutex()
 
     fun close() {
+        if (!translateMutex.tryLock()) return
+        try {
         val bridge = IosOnnxBridge.delegate ?: return
         if (encoderSession != 0L) {
             bridge.closeSession(encoderSession)
@@ -71,6 +73,9 @@ class IosNllbTranslationEngine private constructor(
         if (decoderSession != 0L) {
             bridge.closeSession(decoderSession)
             decoderSession = 0L
+        }
+        } finally {
+            translateMutex.unlock()
         }
     }
 

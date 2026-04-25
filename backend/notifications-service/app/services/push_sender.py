@@ -101,7 +101,6 @@ class FcmSender(IPushSender):
                 "sender_user_id": _s(payload.data.get("sender_user_id", "")),
                 "sender_name": _s(payload.data.get("sender_name", "")),
                 "msg_type": _s(payload.data.get("message_type", "")),
-                "message_type": _s(payload.data.get("message_type", "")),
                 "avatar_url": _s(payload.avatar_url or ""),
                 "timestamp": _s(payload.data.get("timestamp", "")),
                 "title": _s(payload.title),

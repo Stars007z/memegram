@@ -79,6 +79,16 @@ class DeviceService:
         if reg.status not in ("pending",):
             raise ValueError(f"Registration is in unexpected state: {reg.status}")
 
+        existing = await self.device_repo.get_by_client_device_id(device_id)
+        await self._release_client_device_id(existing)
+
+        if existing is not None:
+            logger.info(
+                "device.addition.inactive_client_device_id_released",
+                old_device_id=str(existing.id),
+                client_device_id=device_id,
+            )
+
         await self.registration_repo.update(
             reg,
             {
@@ -193,6 +203,16 @@ class DeviceService:
 
         device_uuid = uuid.uuid4()
         final_name = new_device_name or reg.device_name or "Unknown device"
+
+        existing = await self.device_repo.get_by_client_device_id(reg.device_id)
+        await self._release_client_device_id(existing)
+
+        if existing is not None:
+            logger.info(
+                "device.confirm.inactive_client_device_id_released",
+                old_device_id=str(existing.id),
+                client_device_id=reg.device_id,
+            )
 
         await self.device_repo.create(
             {
@@ -467,17 +487,25 @@ class DeviceService:
             # because the user is being deleted entirely.
             if not is_system_purge and target.device_type == "primary":
                 continue
-            if not target.is_active:
+            if not target.is_active and not is_system_purge:
                 continue
 
-            await self.device_repo.update(
-                target,
-                {
-                    "is_active": False,
-                    "revoked_at": now,
-                    "revoked_by_device_id": revoked_by,
-                },
-            )
+            updates = {
+                "is_active": False,
+                "revoked_at": now,
+                "revoked_by_device_id": revoked_by,
+            }
+            if is_system_purge:
+                updates.update(
+                    {
+                        "client_device_id": None,
+                        "identity_key_pub": b"",
+                        "init_key_pub": b"",
+                        "credential_data": b"",
+                        "deleted_at": now,
+                    }
+                )
+            await self.device_repo.update(target, updates)
             await self._revoke_device_sessions(target.id)
             revoked_ids.append(str(target.id))
 
@@ -519,12 +547,30 @@ class DeviceService:
         )
         await self.session.execute(stmt)
 
+    async def _release_client_device_id(self, existing) -> None:
+        if existing is None:
+            return
+        if existing.is_active:
+            raise ValueError("client_device_id already registered to an active account")
+        await self.device_repo.update(
+            existing,
+            {
+                "is_active": False,
+                "client_device_id": None,
+                "identity_key_pub": b"",
+                "init_key_pub": b"",
+                "credential_data": b"",
+                "deleted_at": existing.deleted_at or datetime.utcnow(),
+            },
+        )
+        await self.session.flush()
+
     @staticmethod
     def _device_to_dict(device) -> dict:
         return {
             "id": str(device.id),
             "user_id": str(device.user_id),
-            "client_device_id": device.client_device_id,
+            "client_device_id": device.client_device_id or "",
             "device_name": device.device_name or "",
             "device_type": device.device_type,
             "is_active": device.is_active,

@@ -226,6 +226,16 @@ class GrpcUserGateway(IUserGateway):
         except grpc.RpcError:
             return False
 
+    async def user_exists(self, user_id: str) -> tuple[bool, bool]:
+        try:
+            response = await self._stub().UserExists(
+                user_pb2.UserExistsRequest(user_id=user_id),
+                timeout=self._settings.USER_GRPC_TIMEOUT,
+            )
+        except grpc.RpcError as e:
+            raise grpc_error_to_exception(e, _SERVICE)
+        return response.exists, response.is_deleted
+
     async def check_and_process_auto_delete(self) -> AutoDeleteResult:
         try:
             response = await self._stub().CheckAndProcessAutoDelete(
