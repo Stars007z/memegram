@@ -25,6 +25,7 @@ import com.example.memegram.localization.LocalStrings
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,7 +37,7 @@ fun UserProfileScreen(
     onStartChat: (String) -> Unit,
     viewModel: UserProfileViewModel
 ) {
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val s = LocalStrings.current
     val profile by viewModel.userProfile.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()

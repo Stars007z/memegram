@@ -6,7 +6,10 @@ import grpc
 
 from app.container import Container
 from app.generated import notifications_pb2
+from app.logging_config import get_logger
 from app.repositories.device_push_token_repo import DevicePushTokenRepository
+
+logger = get_logger(__name__)
 
 
 class TokenHandler:
@@ -19,16 +22,27 @@ class TokenHandler:
         if request.platform not in ("ios", "android"):
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("platform must be 'ios' or 'android'")
+            logger.warning(
+                "token.register_invalid_platform",
+                platform=request.platform,
+                user_id=request.user_id,
+            )
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
         if not request.push_token or not request.push_token.strip():
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("push_token is required")
+            logger.warning(
+                "token.register_empty_token",
+                platform=request.platform,
+                user_id=request.user_id,
+            )
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
         if not request.user_id or not request.device_id:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details("user_id and device_id are required")
+            logger.warning("token.register_missing_ids")
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
         try:
@@ -40,16 +54,30 @@ class TokenHandler:
                     platform=request.platform,
                     push_token=request.push_token,
                 )
+            logger.info(
+                "token.registered",
+                user_id=request.user_id,
+                device_id=request.device_id,
+                platform=request.platform,
+                token_prefix=request.push_token[:20],
+            )
             return notifications_pb2.RegisterPushTokenResponse(success=True)
 
         except ValueError as e:
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details(f"Invalid UUID: {e}")
+            logger.warning("token.register_invalid_uuid", error=str(e))
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
         except Exception as e:
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Internal error: {e}")
+            logger.error(
+                "token.register_failed",
+                user_id=request.user_id,
+                device_id=request.device_id,
+                error=str(e),
+            )
             return notifications_pb2.RegisterPushTokenResponse(success=False)
 
     async def unregister_push_token(self, request, context):
@@ -70,6 +98,11 @@ class TokenHandler:
                     context.set_details("Push token not found or permission denied")
                     return notifications_pb2.UnregisterPushTokenResponse(success=False)
 
+            logger.info(
+                "token.unregistered",
+                user_id=request.user_id,
+                device_id=request.device_id,
+            )
             return notifications_pb2.UnregisterPushTokenResponse(success=True)
 
         except ValueError as e:
@@ -80,4 +113,10 @@ class TokenHandler:
         except Exception as e:
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Internal error: {e}")
+            logger.error(
+                "token.unregister_failed",
+                user_id=request.user_id,
+                device_id=request.device_id,
+                error=str(e),
+            )
             return notifications_pb2.UnregisterPushTokenResponse(success=False)

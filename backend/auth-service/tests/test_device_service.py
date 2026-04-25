@@ -493,6 +493,29 @@ class TestBulkRevoke:
         assert result["revoked_count"] == 1
         assert result["revoked_device_ids"] == [str(good.id)]
 
+    async def test_account_deleted_system_purge_revokes_all_including_primary(self, service):
+        # System path: orchestrator passes empty requesting_device_id with
+        # reason="account_deleted" — owner check is skipped and the primary
+        # device must also be revoked.
+        uid = uuid.uuid4()
+        primary = _device(user_id=uid, device_type="primary", is_active=True)
+        secondary = _device(user_id=uid, device_type="secondary", is_active=True)
+        other_user = _device(user_id=uuid.uuid4(), device_type="secondary", is_active=True)
+
+        service.device_repo.get_by_device_id.side_effect = [primary, secondary, other_user]
+
+        result = await service.bulk_revoke_devices(
+            user_id=str(uid),
+            requesting_device_id="",
+            target_device_ids=["p", "s", "other"],
+            reason="account_deleted",
+        )
+
+        assert result["revoked_count"] == 2
+        assert set(result["revoked_device_ids"]) == {str(primary.id), str(secondary.id)}
+        # Update was called for each (not for the foreign-user device).
+        assert service.device_repo.update.await_count == 2
+
 
 # ---------------------------------------------------------------------------
 # get_device_stats

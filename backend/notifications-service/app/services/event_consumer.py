@@ -149,6 +149,13 @@ class EventConsumer:
             payload_raw = decoded.get("payload", "{}")
             payload = json.loads(payload_raw)
 
+            logger.info(
+                "event_consumer.event_received",
+                entry_id=entry_id_str,
+                event_type=event_type,
+                conversation_id=payload.get("conversation_id", ""),
+            )
+
             dedup_key = f"notif:dedup:{entry_id_str}"
             was_set = await self._own_redis.set(dedup_key, "1", nx=True, ex=3600)
             if not was_set:
@@ -290,19 +297,27 @@ class EventConsumer:
         conversation_id = event.get("conversation_id", "")
         deleted_by = event.get("deleted_by", "")
         member_user_ids = event.get("member_user_ids", []) or []
+        reason = event.get("reason", "")
+        conversation_type = event.get("conversation_type", "")
 
         recipient_ids = [uid for uid in member_user_ids if uid and uid != deleted_by]
         if not recipient_ids:
             return
 
+        data: dict[str, str] = {
+            "event_type": "conversation_deleted",
+            "conversation_id": conversation_id,
+        }
+        if reason:
+            data["reason"] = reason
+        if conversation_type:
+            data["conversation_type"] = conversation_type
+
         await self._send_push_to_users(
             recipient_user_ids=recipient_ids,
             title="",
             body="",
-            data={
-                "event_type": "conversation_deleted",
-                "conversation_id": conversation_id,
-            },
+            data=data,
             thread_id=conversation_id,
             avatar_url=None,
             event_type="conversation_deleted",
@@ -327,8 +342,22 @@ class EventConsumer:
             )
 
             if not tokens:
-                logger.debug("push.no_active_tokens", user_ids=recipient_user_ids)
+                logger.info(
+                    "push.no_active_tokens",
+                    event_type=event_type,
+                    conversation_id=conversation_id,
+                    recipient_count=len(recipient_user_ids),
+                )
                 return
+
+            logger.info(
+                "push.dispatching",
+                event_type=event_type,
+                conversation_id=conversation_id,
+                recipient_count=len(recipient_user_ids),
+                token_count=len(tokens),
+                platforms=[t.platform for t in tokens],
+            )
 
             tasks = []
             for token in tokens:
@@ -358,6 +387,15 @@ class EventConsumer:
     ) -> None:
         result = await send_with_retry(sender, payload)
         if result.success:
+            payload_data = getattr(payload, "data", None) or {}
+            platform_attr = getattr(payload, "platform", None)
+            logger.info(
+                "push.sent",
+                token_id=str(token_id),
+                platform=getattr(platform_attr, "value", str(platform_attr) if platform_attr else ""),
+                event_type=payload_data.get("event_type", ""),
+                conversation_id=payload_data.get("conversation_id", ""),
+            )
             await repo.mark_success(token_id)
         elif result.error_type == PushErrorType.PERMANENT_TOKEN:
             logger.info("push.token_deactivated", token_id=str(token_id), error_code=result.error_code)

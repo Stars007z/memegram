@@ -44,6 +44,7 @@ val appModule = module {
     single<KeyManager> { createPlatformKeyManager(get()) }
     single { ApiService(get(), get(), baseUrl = "https://memegram.win") }
     single { ThemePreferences(get()) }
+    single { AppearanceRepository(get(), get()) }
     single<UserRepository> { UserRepositoryImpl(get(), get(), get()) }
     single<ContactsRepository> { ContactsRepositoryImpl(get()) }
     single<MlsManager> {

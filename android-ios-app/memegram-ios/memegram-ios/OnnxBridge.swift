@@ -9,12 +9,20 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
     static let shared = OnnxBridge()
 
     #if canImport(OnnxRuntimeBindings)
+    private final class SessionEntry {
+        let session: ORTSession
+        var persistentInt64: [String: ORTValue] = [:]
+        var persistentFloat: [String: ORTValue] = [:]
+        var persistentBacking: [String: NSMutableData] = [:]
+        init(session: ORTSession) { self.session = session }
+    }
+
     private let env: ORTEnv? = {
         do { return try ORTEnv(loggingLevel: .warning) }
         catch { print("[OnnxBridge] ORTEnv init failed: \(error)"); return nil }
     }()
 
-    private var sessions: [Int64: ORTSession] = [:]
+    private var sessions: [Int64: SessionEntry] = [:]
     #endif
 
     private var nextHandle: Int64 = 1
@@ -36,11 +44,13 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
             let opts = try ORTSessionOptions()
             try opts.setIntraOpNumThreads(2)
             try opts.setGraphOptimizationLevel(.basic)
+            try opts.addConfigEntry(withKey: "session.disable_cpu_mem_arena", value: "1")
+            try opts.addConfigEntry(withKey: "session.disable_mem_pattern", value: "1")
             let session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: opts)
             lock.lock(); defer { lock.unlock() }
             _lastLoadError = nil
             let h = nextHandle; nextHandle += 1
-            sessions[h] = session
+            sessions[h] = SessionEntry(session: session)
             return h
         } catch {
             let msg = "\(error)"
@@ -62,6 +72,132 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
         #endif
     }
 
+    func clearPersistentInputs(handle: Int64) {
+        #if canImport(OnnxRuntimeBindings)
+        lock.lock(); defer { lock.unlock() }
+        guard let entry = sessions[handle] else { return }
+        entry.persistentInt64.removeAll(keepingCapacity: false)
+        entry.persistentFloat.removeAll(keepingCapacity: false)
+        entry.persistentBacking.removeAll(keepingCapacity: false)
+        #endif
+    }
+
+    func setPersistentInt64Input(handle: Int64, name: String, data: KotlinLongArray, shape: KotlinLongArray) -> Bool {
+        #if canImport(OnnxRuntimeBindings)
+        lock.lock()
+        guard let entry = sessions[handle] else { lock.unlock(); return false }
+        lock.unlock()
+        do {
+            let (value, backing) = try buildInt64Tensor(array: data, shape: shape)
+            lock.lock()
+            entry.persistentInt64[name] = value
+            entry.persistentBacking[name] = backing
+            lock.unlock()
+            return true
+        } catch {
+            print("[OnnxBridge] setPersistentInt64Input(\(name)) error: \(error)")
+            return false
+        }
+        #else
+        return false
+        #endif
+    }
+
+    func setPersistentFloatInput(handle: Int64, name: String, data: KotlinFloatArray, shape: KotlinLongArray) -> Bool {
+        #if canImport(OnnxRuntimeBindings)
+        lock.lock()
+        guard let entry = sessions[handle] else { lock.unlock(); return false }
+        lock.unlock()
+        do {
+            let (value, backing) = try buildFloatTensor(array: data, shape: shape)
+            lock.lock()
+            entry.persistentFloat[name] = value
+            entry.persistentBacking[name] = backing
+            lock.unlock()
+            return true
+        } catch {
+            print("[OnnxBridge] setPersistentFloatInput(\(name)) error: \(error)")
+            return false
+        }
+        #else
+        return false
+        #endif
+    }
+
+    func runArgmaxLastStep(
+        handle: Int64,
+        int64Names: KotlinArray<NSString>,
+        int64Data: KotlinArray<KotlinLongArray>,
+        int64Shapes: KotlinArray<KotlinLongArray>,
+        logitsOutputName: String,
+        lastStepIndex: Int32,
+        vocabSize: Int32
+    ) -> Int32 {
+        #if canImport(OnnxRuntimeBindings)
+        lock.lock()
+        guard let entry = sessions[handle] else {
+            lock.unlock()
+            print("[OnnxBridge] runArgmaxLastStep: invalid handle \(handle)")
+            return -1
+        }
+        let session = entry.session
+        let persistentInt64 = entry.persistentInt64
+        let persistentFloat = entry.persistentFloat
+        lock.unlock()
+
+        do {
+            var inputs: [String: ORTValue] = [:]
+            inputs.reserveCapacity(persistentInt64.count + persistentFloat.count + Int(int64Names.size))
+            for (k, v) in persistentInt64 { inputs[k] = v }
+            for (k, v) in persistentFloat { inputs[k] = v }
+
+            let count = Int(int64Names.size)
+            for i in 0..<count {
+                let name = int64Names.get(index: Int32(i))! as String
+                let arr = int64Data.get(index: Int32(i))!
+                let shape = int64Shapes.get(index: Int32(i))!
+                let (value, _) = try buildInt64Tensor(array: arr, shape: shape)
+                inputs[name] = value
+            }
+
+            let outSet: Set<String> = [logitsOutputName]
+            let outputs = try session.run(withInputs: inputs, outputNames: outSet, runOptions: nil)
+            guard let logitsValue = outputs[logitsOutputName] else {
+                print("[OnnxBridge] runArgmaxLastStep: missing output \(logitsOutputName)")
+                return -1
+            }
+
+            let data = try logitsValue.tensorData() as Data
+            let vocab = Int(vocabSize)
+            let lastStart = Int(lastStepIndex) * vocab
+            let byteOffset = lastStart * MemoryLayout<Float>.size
+            let byteLen = vocab * MemoryLayout<Float>.size
+            guard byteOffset + byteLen <= data.count else {
+                print("[OnnxBridge] runArgmaxLastStep: slice out of range " +
+                      "(offset=\(byteOffset) len=\(byteLen) total=\(data.count))")
+                return -1
+            }
+
+            var bestIdx: Int32 = 0
+            var bestVal: Float = -.infinity
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                let base = raw.baseAddress!.advanced(by: byteOffset)
+                    .assumingMemoryBound(to: Float.self)
+                for i in 0..<vocab {
+                    let v = base[i]
+                    if v > bestVal { bestVal = v; bestIdx = Int32(i) }
+                }
+            }
+            return bestIdx
+        } catch {
+            print("[OnnxBridge] runArgmaxLastStep error: \(error)")
+            return -1
+        }
+        #else
+        return -1
+        #endif
+    }
+
     func run(
         handle: Int64,
         int64Names: KotlinArray<NSString>,
@@ -74,30 +210,37 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
     ) -> KotlinArray<OnnxOutput> {
         #if canImport(OnnxRuntimeBindings)
         lock.lock()
-        guard let session = sessions[handle] else {
+        guard let entry = sessions[handle] else {
             lock.unlock()
             print("[OnnxBridge] run: invalid handle \(handle)")
             return KotlinArray<OnnxOutput>(size: 0) { _ in OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0)) }
         }
+        let session = entry.session
+        let persistentInt64 = entry.persistentInt64
+        let persistentFloat = entry.persistentFloat
         lock.unlock()
 
         do {
             var inputs: [String: ORTValue] = [:]
             let int64Count = Int(int64Names.size)
             let floatCount = Int(floatNames.size)
-            inputs.reserveCapacity(int64Count + floatCount)
+            inputs.reserveCapacity(persistentInt64.count + persistentFloat.count + int64Count + floatCount)
+            for (k, v) in persistentInt64 { inputs[k] = v }
+            for (k, v) in persistentFloat { inputs[k] = v }
 
             for i in 0..<int64Count {
                 let name = int64Names.get(index: Int32(i))! as String
                 let arr = int64Data.get(index: Int32(i))!
                 let shape = int64Shapes.get(index: Int32(i))!
-                inputs[name] = try makeInt64Tensor(array: arr, shape: shape)
+                let (value, _) = try buildInt64Tensor(array: arr, shape: shape)
+                inputs[name] = value
             }
             for i in 0..<floatCount {
                 let name = floatNames.get(index: Int32(i))! as String
                 let arr = floatData.get(index: Int32(i))!
                 let shape = floatShapes.get(index: Int32(i))!
-                inputs[name] = try makeFloatTensor(array: arr, shape: shape)
+                let (value, _) = try buildFloatTensor(array: arr, shape: shape)
+                inputs[name] = value
             }
 
             let outNames: [String] = (0..<Int(outputNames.size)).map { outputNames.get(index: Int32($0))! as String }
@@ -143,34 +286,24 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
     }
 
     #if canImport(OnnxRuntimeBindings)
-    private func makeInt64Tensor(array: KotlinLongArray, shape: KotlinLongArray) throws -> ORTValue {
+    private func buildInt64Tensor(array: KotlinLongArray, shape: KotlinLongArray) throws -> (ORTValue, NSMutableData) {
         let count = Int(array.size)
-        var buf = Data(count: count * MemoryLayout<Int64>.size)
-        buf.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-            let dst = raw.bindMemory(to: Int64.self).baseAddress!
-            for i in 0..<count { dst[i] = array.get(index: Int32(i)) }
-        }
+        let buf = NSMutableData(length: count * MemoryLayout<Int64>.size)!
+        let dst = buf.mutableBytes.bindMemory(to: Int64.self, capacity: count)
+        for i in 0..<count { dst[i] = array.get(index: Int32(i)) }
         let shapeArr: [NSNumber] = (0..<Int(shape.size)).map { NSNumber(value: shape.get(index: Int32($0))) }
-        return try ORTValue(
-            tensorData: NSMutableData(data: buf),
-            elementType: .int64,
-            shape: shapeArr
-        )
+        let value = try ORTValue(tensorData: buf, elementType: .int64, shape: shapeArr)
+        return (value, buf)
     }
 
-    private func makeFloatTensor(array: KotlinFloatArray, shape: KotlinLongArray) throws -> ORTValue {
+    private func buildFloatTensor(array: KotlinFloatArray, shape: KotlinLongArray) throws -> (ORTValue, NSMutableData) {
         let count = Int(array.size)
-        var buf = Data(count: count * MemoryLayout<Float>.size)
-        buf.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-            let dst = raw.bindMemory(to: Float.self).baseAddress!
-            for i in 0..<count { dst[i] = array.get(index: Int32(i)) }
-        }
+        let buf = NSMutableData(length: count * MemoryLayout<Float>.size)!
+        let dst = buf.mutableBytes.bindMemory(to: Float.self, capacity: count)
+        for i in 0..<count { dst[i] = array.get(index: Int32(i)) }
         let shapeArr: [NSNumber] = (0..<Int(shape.size)).map { NSNumber(value: shape.get(index: Int32($0))) }
-        return try ORTValue(
-            tensorData: NSMutableData(data: buf),
-            elementType: .float,
-            shape: shapeArr
-        )
+        let value = try ORTValue(tensorData: buf, elementType: .float, shape: shapeArr)
+        return (value, buf)
     }
     #endif
 }

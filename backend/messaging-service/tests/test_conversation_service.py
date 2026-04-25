@@ -799,7 +799,7 @@ class TestDeleteConversation:
 # purge_user_membership
 # ---------------------------------------------------------------------------
 class TestPurgeUserMembership:
-    async def test_groups_marked_left_directs_deleted_and_events_published(
+    async def test_groups_and_directs_marked_left_and_events_published(
         self,
         service,
         conversation_repo,
@@ -823,33 +823,27 @@ class TestPurgeUserMembership:
             (group_member_b, group_conv_b),
             (direct_member, direct_conv),
         ]
-        delete_result = SimpleNamespace(rowcount=1)
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            # First call -> SELECT, second -> DELETE.
-            if execute_side_effect.calls == 0:
-                execute_side_effect.calls += 1
-                return select_result
-            execute_side_effect.calls += 1
-            return delete_result
-
-        execute_side_effect.calls = 0
-        conversation_repo.session.execute.side_effect = execute_side_effect
+        conversation_repo.session.execute.return_value = select_result
 
         # Act
-        groups_left, directs_purged = await service.purge_user_membership(user_id)
+        groups_left, directs_left = await service.purge_user_membership(user_id)
 
         # Assert
         assert groups_left == 2
-        assert directs_purged == 1
+        assert directs_left == 1
+        # All memberships are now soft-left (no hard delete for directs).
         assert group_member_a.left_at is not None
         assert group_member_b.left_at is not None
-        assert direct_member.left_at is None  # deleted, not marked
-        # 1 SELECT + 1 DELETE = 2 executes
-        assert conversation_repo.session.execute.await_count == 2
+        assert direct_member.left_at is not None
+        # Only one SELECT — no DELETE statement.
+        assert conversation_repo.session.execute.await_count == 1
         conversation_repo.session.flush.assert_awaited_once()
-        # 2 group member_left + 1 direct conversation_deleted = 3 events
+        # 3 conversations × 1 member_left event each.
         assert stream_mock.publish_event.await_count == 3
+        for call in stream_mock.publish_event.await_args_list:
+            payload = call.args[1]
+            assert payload["event_type"] == "member_left"
+            assert payload["reason"] == "account_deleted"
 
     async def test_idempotent_when_no_memberships(
         self,
@@ -863,11 +857,11 @@ class TestPurgeUserMembership:
         conversation_repo.session.execute.return_value = select_result
 
         # Act
-        groups_left, directs_purged = await service.purge_user_membership(uuid.uuid4())
+        groups_left, directs_left = await service.purge_user_membership(uuid.uuid4())
 
         # Assert
         assert groups_left == 0
-        assert directs_purged == 0
+        assert directs_left == 0
         # Only the SELECT is executed, no DELETE.
         assert conversation_repo.session.execute.await_count == 1
         conversation_repo.session.flush.assert_awaited_once()

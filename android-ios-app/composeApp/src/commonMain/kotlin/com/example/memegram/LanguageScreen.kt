@@ -24,6 +24,7 @@ import com.example.memegram.translation.langNativeName
 import com.example.memegram.utils.sdp
 import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
+import com.example.memegram.utils.resolveTopBarTextColor
 
 data class Language(
     val code: String,
@@ -39,7 +40,7 @@ fun LanguageScreen(
     viewModel: LanguageViewModel
 ) {
     val s = LocalStrings.current
-    val topBarTextColor = if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
+    val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val currentLang by viewModel.currentLang.collectAsState()
     val autoTranslateEnabled by viewModel.autoTranslateEnabled.collectAsState()
     val targetLanguage by viewModel.targetLanguage.collectAsState()

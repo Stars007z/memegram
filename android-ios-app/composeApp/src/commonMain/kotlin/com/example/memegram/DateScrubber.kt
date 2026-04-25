@@ -1,35 +1,44 @@
 package com.example.memegram
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.memegram.data.gallery.GallerySection
 import com.example.memegram.localization.S
+import com.example.memegram.utils.sdp
+import com.example.memegram.utils.ssp
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
-import com.example.memegram.utils.sdp
-import com.example.memegram.utils.ssp
 
 @Composable
 fun DateScrubber(
@@ -56,58 +65,111 @@ fun DateScrubber(
     }
     val thumbFraction = if (isDragging) dragFraction else scrollFraction
 
-    val currentLabel by remember {
-        derivedStateOf {
-            val firstIdx = gridState.firstVisibleItemIndex
-            sections.lastOrNull { it.firstItemIndex <= firstIdx }?.label ?: ""
-        }
-    }
+    val animatedFraction by animateFloatAsState(
+        targetValue = thumbFraction,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "scrubberThumbFraction"
+    )
 
     BoxWithConstraints(modifier = modifier.width(56.sdp)) {
         val trackH = maxHeight
 
+        val trackWidth by animateDpAsState(
+            targetValue = if (isDragging) 6.sdp else 3.sdp,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "scrubberTrackWidth"
+        )
+        val trackColor by animateColorAsState(
+            targetValue = if (isDragging)
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+            else
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+            label = "scrubberTrackColor"
+        )
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
+                .padding(end = 6.sdp)
                 .fillMaxHeight()
-                .width(if (isDragging) 5.sdp else 3.sdp)
-                .background(
-                    if (isDragging)
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                    RoundedCornerShape(3.sdp)
-                )
+                .padding(vertical = 4.sdp)
+                .width(trackWidth)
+                .background(trackColor, RoundedCornerShape(trackWidth / 2))
         )
 
-        val thumbSize = if (isDragging) 22.sdp else 16.sdp
+        val thumbW = 14.sdp
+        val thumbH = 34.sdp
+        val thumbScale by animateFloatAsState(
+            targetValue = if (isDragging) 1.18f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "scrubberThumbScale"
+        )
+
+        val primary = MaterialTheme.colorScheme.primary
+        val gradient = remember(primary) {
+            Brush.verticalGradient(
+                listOf(
+                    primary.lighten(0.18f),
+                    primary,
+                    primary.darken(0.12f),
+                )
+            )
+        }
+
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .padding(end = 2.sdp)
                 .offset(
                     x = 0.sdp,
-                    y = (trackH * thumbFraction - thumbSize / 2).coerceAtLeast(0.sdp)
+                    y = (trackH * animatedFraction - thumbH / 2).coerceIn(0.sdp, (trackH - thumbH))
                 )
-                .size(thumbSize)
-                .background(MaterialTheme.colorScheme.primary, CircleShape)
-        )
+                .scale(thumbScale)
+                .shadow(
+                    elevation = if (isDragging) 8.sdp else 4.sdp,
+                    shape = RoundedCornerShape(50),
+                    clip = false,
+                    ambientColor = primary.copy(alpha = 0.4f),
+                    spotColor    = primary.copy(alpha = 0.4f),
+                )
+                .size(width = thumbW, height = thumbH)
+                .background(gradient, RoundedCornerShape(50)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.UnfoldMore,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.95f),
+                modifier = Modifier.size(12.sdp)
+            )
+        }
 
         if (isDragging && dragLabel.isNotEmpty()) {
+            val bubbleY = (trackH * animatedFraction - 16.sdp).coerceIn(0.sdp, trackH - 32.sdp)
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = (-40).sdp,
-                        y = (trackH * dragFraction - 16.sdp).coerceAtLeast(0.sdp)
-                    )
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-22).sdp, y = bubbleY)
                     .wrapContentSize(align = Alignment.CenterEnd, unbounded = true)
-                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(10.sdp))
+                    .shadow(6.sdp, RoundedCornerShape(12.sdp), clip = false)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.82f),
+                                Color.Black.copy(alpha = 0.72f),
+                            )
+                        ),
+                        RoundedCornerShape(12.sdp)
+                    )
                     .padding(horizontal = 12.sdp, vertical = 6.sdp)
             ) {
                 Text(
-                    text     = dragLabel,
-                    color    = Color.White,
+                    text = dragLabel,
+                    color = Color.White,
                     fontSize = 13.ssp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Visible
@@ -122,13 +184,16 @@ fun DateScrubber(
                     fun handle(yPx: Float) {
                         val fraction = (yPx / size.height).coerceIn(0f, 1f)
                         dragFraction = fraction
-                        val targetItem = (fraction * totalItems).toInt().coerceIn(0, (totalItems - 1).coerceAtLeast(0))
+                        val targetItem = (fraction * totalItems).toInt()
+                            .coerceIn(0, (totalItems - 1).coerceAtLeast(0))
                         dragLabel = sections.lastOrNull { it.firstItemIndex <= targetItem }?.label
                             ?: sections.firstOrNull()?.label
                             ?: ""
                         val loaded = loadedItems.coerceAtLeast(1)
                         val scrollTarget = targetItem.coerceAtMost(loaded - 1)
-                        scope.launch { gridState.scrollToItem((scrollTarget / columns) * columns) }
+                        scope.launch {
+                            gridState.scrollToItem((scrollTarget / columns) * columns)
+                        }
                     }
                     detectDragGestures(
                         onDragStart = { offset ->
@@ -145,6 +210,26 @@ fun DateScrubber(
                 }
         )
     }
+}
+
+private fun Color.lighten(fraction: Float): Color {
+    val f = fraction.coerceIn(0f, 1f)
+    return Color(
+        red = red + (1f - red) * f,
+        green = green + (1f - green) * f,
+        blue = blue + (1f - blue) * f,
+        alpha = alpha,
+    )
+}
+
+private fun Color.darken(fraction: Float): Color {
+    val f = (1f - fraction.coerceIn(0f, 1f))
+    return Color(
+        red = red * f,
+        green = green * f,
+        blue = blue * f,
+        alpha = alpha,
+    )
 }
 
 fun formatChatTimestamp(timestampMs: Long): String {

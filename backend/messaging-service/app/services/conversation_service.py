@@ -568,18 +568,22 @@ class ConversationServiceImpl(IConversationService):
         return True
 
     async def purge_user_membership(self, user_id: uuid.UUID) -> tuple[int, int]:
-        """Account-deletion fanout: remove user from every conversation.
+        """Account-deletion fanout: mark user as left in every conversation.
 
-        For groups: mark the membership as left (left_at = now) WITHOUT
-        producing an MLS commit. Other members may keep messaging using stale
-        keys — that's acceptable for a deleted account.
-        For direct conversations: hard-delete the membership row only; the
-        conversation itself is kept so the peer keeps history.
+        Behavior is identical for groups and direct chats: set
+        ``left_at = now`` on the membership row. We do NOT publish an MLS
+        commit (the deleted account cannot sign one anyway) and we do NOT
+        delete conversations or messages — the peer keeps full history.
+
+        Peers detect that the other side is gone by resolving user_id via
+        user-service: a soft-deleted user comes back with ``is_deleted=true``
+        and a tombstone username, which the client renders as
+        "Deleted Account" and uses to disable the message input.
 
         Idempotent: re-running yields (0, 0).
-        Returns (groups_left, directs_purged).
+        Returns (groups_left, directs_left).
         """
-        from sqlalchemy import delete, select
+        from sqlalchemy import select
 
         from app.models.conversation import Conversation
         from app.models.conversation_member import ConversationMember
@@ -596,30 +600,26 @@ class ConversationServiceImpl(IConversationService):
         )
 
         groups_left = 0
-        directs_purged = 0
+        directs_left = 0
         now = datetime.utcnow()
 
-        direct_member_ids: list[uuid.UUID] = []
-        group_conv_ids: list[uuid.UUID] = []
-        direct_conv_ids: list[uuid.UUID] = []
+        affected_conv_ids: list[tuple[uuid.UUID, str]] = []
         for member, conv in rows.all():
+            member.left_at = now
             ctype = getattr(conv, "type", None)
             if ctype == "group":
-                member.left_at = now
                 groups_left += 1
-                group_conv_ids.append(conv.id)
             else:
-                direct_member_ids.append(member.id)
-                direct_conv_ids.append(conv.id)
-
-        if direct_member_ids:
-            res = await session.execute(delete(ConversationMember).where(ConversationMember.id.in_(direct_member_ids)))
-            directs_purged = res.rowcount or len(direct_member_ids)
+                directs_left += 1
+            affected_conv_ids.append((conv.id, ctype or "group"))
 
         await session.flush()
 
-        # Best-effort fanout so peers update their UIs in real time.
-        for cid in group_conv_ids:
+        # Best-effort fanout so peers update their UIs in real time. We use
+        # ``member_left`` for both group and direct chats so the client treats
+        # them uniformly: it does NOT delete the conversation or messages,
+        # only re-resolves the peer profile and re-renders the header / input.
+        for cid, ctype in affected_conv_ids:
             try:
                 await self._stream.publish_event(
                     cid,
@@ -627,23 +627,7 @@ class ConversationServiceImpl(IConversationService):
                         "event_type": "member_left",
                         "user_id": str(user_id),
                         "reason": "account_deleted",
-                    },
-                )
-            except Exception as exc:  # pragma: no cover - best-effort
-                logger.warning(
-                    "messaging.purge_user_membership.publish_failed",
-                    conversation_id=str(cid),
-                    error=str(exc),
-                )
-        for cid in direct_conv_ids:
-            try:
-                await self._stream.publish_event(
-                    cid,
-                    {
-                        "event_type": "conversation_deleted",
-                        "deleted_by": str(user_id),
-                        "conversation_type": "direct",
-                        "reason": "account_deleted",
+                        "conversation_type": ctype,
                     },
                 )
             except Exception as exc:  # pragma: no cover - best-effort
@@ -657,10 +641,10 @@ class ConversationServiceImpl(IConversationService):
             "messaging.purge_user_membership",
             user_id=str(user_id),
             groups_left=groups_left,
-            directs_purged=directs_purged,
+            directs_left=directs_left,
         )
 
-        return groups_left, directs_purged
+        return groups_left, directs_left
 
     async def _check_blocks_both_ways(
         self,

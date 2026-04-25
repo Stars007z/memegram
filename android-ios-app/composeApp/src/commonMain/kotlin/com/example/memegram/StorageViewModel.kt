@@ -8,6 +8,7 @@ import com.example.memegram.data.files.avatarsCacheSizeBytes
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.ProfileRepository
 import com.example.memegram.localization.S
+import com.example.memegram.translation.TranslationService
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,6 +51,7 @@ val StorageColorDocuments = Color(0xFF66BB6A)
 val StorageColorVoice     = Color(0xFFFFCA28)
 val StorageColorMusic     = Color(0xFFAB47BC)
 val StorageColorText      = Color(0xFF26A69A)
+val StorageColorModel     = Color(0xFF7E57C2)
 val StorageColorOther     = Color(0xFFEC407A)
 
 fun colorForType(type: String): Color = when (type) {
@@ -59,6 +61,7 @@ fun colorForType(type: String): Color = when (type) {
     "voice" -> StorageColorVoice
     "music" -> StorageColorMusic
     "text"  -> StorageColorText
+    "model" -> StorageColorModel
     else    -> StorageColorOther
 }
 
@@ -71,6 +74,7 @@ fun displayNameForType(type: String): String {
         "voice" -> s.storageVoiceMessages
         "music" -> s.storageMusic
         "text"  -> s.storageTextMessages
+        "model" -> s.storageOnDeviceModel
         else    -> s.storageOther
     }
 }
@@ -129,6 +133,7 @@ class StorageViewModel(
     private val profileRepository: ProfileRepository,
     private val sessionManager: SessionManager,
     private val avatarCache: AvatarCache,
+    private val translationService: TranslationService,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
@@ -244,21 +249,33 @@ class StorageViewModel(
             refreshProfilesCacheSize()
 
             val typeStats = chatRepository.getStorageByType()
-            val total = typeStats.sumOf { it.totalSize }
+            val modelSize = runCatching { translationService.getModelSize() }.getOrDefault(0L)
+            val total = typeStats.sumOf { it.totalSize } + modelSize
             _totalSize.value = total
 
-            val cats = typeStats.map { stat ->
+            val baseCats = typeStats.map { stat ->
                 StorageCategoryUi(
                     type = stat.type,
                     sizeBytes = stat.totalSize,
                     messageCount = stat.messageCount,
                     percentage = if (total > 0) (stat.totalSize * 100f / total) else 0f,
                     color = colorForType(stat.type),
-                    isSelected = stat.type != "text"
+                    isSelected = true
                 )
-            }.sortedByDescending { it.sizeBytes }
+            }
+            val withModel = if (modelSize > 0) {
+                baseCats + StorageCategoryUi(
+                    type = "model",
+                    sizeBytes = modelSize,
+                    messageCount = 0L,
+                    percentage = if (total > 0) (modelSize * 100f / total) else 0f,
+                    color = colorForType("model"),
+                    isSelected = true
+                )
+            } else baseCats
+            val cats = withModel.sortedByDescending { it.sizeBytes }
             _categories.value = cats
-            _selectedCategories.value = cats.filter { it.isSelected }.map { it.type }.toSet()
+            _selectedCategories.value = cats.map { it.type }.toSet()
 
             val perConvPerType = chatRepository.getStoragePerConversationPerType()
             val grouped = perConvPerType.groupBy { it.conversationId }
@@ -293,11 +310,11 @@ class StorageViewModel(
                     messageCount = stat.messageCount,
                     percentage = if (total > 0) (stat.totalSize * 100f / total) else 0f,
                     color = colorForType(stat.type),
-                    isSelected = stat.type != "text"
+                    isSelected = true
                 )
             }.sortedByDescending { it.sizeBytes }
             _chatDetailCategories.value = cats
-            _chatDetailSelectedCategories.value = cats.filter { it.isSelected }.map { it.type }.toSet()
+            _chatDetailSelectedCategories.value = cats.map { it.type }.toSet()
 
             val media = chatRepository.getMediaItemsByConversation(conversationId)
             _chatDetailMediaItems.value = media
@@ -328,7 +345,11 @@ class StorageViewModel(
         viewModelScope.launch {
             val selected = _selectedCategories.value
             selected.forEach { type ->
-                chatRepository.deleteMessagesByType(type)
+                if (type == "model") {
+                    runCatching { translationService.deleteModel() }
+                } else {
+                    chatRepository.deleteMessagesByType(type)
+                }
             }
             loadStorageOverview()
         }
