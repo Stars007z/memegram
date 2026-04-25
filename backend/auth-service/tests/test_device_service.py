@@ -384,7 +384,8 @@ class TestConfirmDeviceAddition:
 
         # Assert
         assert result["status"] == "confirmed"
-        assert service.device_repo.update.await_count == 2
+        assert service.device_repo.update.await_count == 1
+        service.device_repo.create.assert_awaited_once()
         release_updates = service.device_repo.update.await_args_list[0].args[1]
         assert release_updates["client_device_id"] is None
         assert release_updates["deleted_at"] is not None
