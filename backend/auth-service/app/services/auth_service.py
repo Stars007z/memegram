@@ -58,9 +58,7 @@ class AuthService:
                 # Active row with same client_device_id but a different user
                 # means previous account-deletion fanout silently failed to
                 # revoke it. Refusing here avoids account hijacking.
-                raise ValueError(
-                    "client_device_id already registered to an active account"
-                )
+                raise ValueError("client_device_id already registered to an active account")
             await self.device_repo.delete(existing)
             await self.session.flush()
             logger.info(

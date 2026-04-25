@@ -507,10 +507,11 @@ class TestCheckAndProcessAutoDelete:
         # Assert
         assert count == 2
         assert ids == [str(u1.id), str(u2.id)]
-        # Hard delete: verify ORM session.delete was awaited for both candidates.
-        deleted_args = [c.args[0] for c in service.session.delete.await_args_list]
-        assert u1 in deleted_args
-        assert u2 in deleted_args
+        # Soft-delete: каждый кандидат помечен is_deleted=True и анонимизирован.
+        for u in (u1, u2):
+            assert u.is_deleted is True
+            assert u.deleted_at is not None
+            assert u.username.startswith("deleted_")
 
     async def test_no_candidates_returns_zero(self, service):
         # Arrange
