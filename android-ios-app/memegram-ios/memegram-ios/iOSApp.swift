@@ -22,6 +22,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         IosZipBridge.shared.register(delegate: ZipBridge.shared)
         IosLanguageIdBridge.shared.register(delegate: LanguageIdBridge.shared)
         IosPhotoPickerBridge.shared.register(delegate: PhotoPickerBridge.shared)
+        IosFileOpenBridge.shared.register(delegate: FileOpenBridge.shared)
 
         UNUserNotificationCenter.current().delegate = self
         let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]

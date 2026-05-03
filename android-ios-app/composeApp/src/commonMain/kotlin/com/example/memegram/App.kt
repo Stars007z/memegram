@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,7 +59,8 @@ import org.koin.compose.viewmodel.koinViewModel
 @Serializable data class ChatDetailRoute(
     val chatName: String,
     val conversationId: String = "",
-    val avatarMediaId: String = ""
+    val avatarMediaId: String = "",
+    val scrollToMessageId: Int? = null
 )
 @Serializable object AppearanceRoute
 @Serializable object NotificationsRoute
@@ -128,7 +132,9 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun App() {
     LaunchedEffect(Unit) {
-        LibsodiumInitializer.initializeWithCallback { }
+        if (!LibsodiumInitializer.isInitialized()) {
+            LibsodiumInitializer.initializeWithCallback { }
+        }
     }
     remember {
         if (KoinPlatform.getKoinOrNull() == null) {
@@ -171,6 +177,10 @@ fun App() {
 
                 LaunchedEffect(navBackStackEntry) {
                     themeViewModel.refreshTheme()
+                    if (ManualBackTransition.skipNextPopAnimation) {
+                        withFrameNanos { }
+                        ManualBackTransition.skipNextPopAnimation = false
+                    }
                 }
 
                 val sessionRefresher = koinInject<SessionRefresher>()
@@ -215,16 +225,24 @@ fun App() {
                         ) + fadeOut(tween(280))
                     },
                     popEnterTransition = {
-                        slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            tween(280)
-                        ) + fadeIn(tween(280))
+                        if (ManualBackTransition.skipNextPopAnimation) {
+                            EnterTransition.None
+                        } else {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(280)
+                            ) + fadeIn(tween(280))
+                        }
                     },
                     popExitTransition = {
-                        slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            tween(280)
-                        ) + fadeOut(tween(280))
+                        if (ManualBackTransition.skipNextPopAnimation) {
+                            ExitTransition.None
+                        } else {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(280)
+                            ) + fadeOut(tween(280))
+                        }
                     },
                 ) {
                     composable<SplashRoute> {
@@ -281,12 +299,13 @@ fun App() {
                                     )
                                 ) { launchSingleTop = true }
                             },
-                            onNavigateToChat = { convId, chatName, avatarMediaId ->
+                            onNavigateToChat = { convId, chatName, avatarMediaId, messageId ->
                                 navController.navigate(
                                     ChatDetailRoute(
                                         chatName = chatName ?: strings.newChat,
                                         conversationId = convId,
-                                        avatarMediaId = avatarMediaId ?: ""
+                                        avatarMediaId = avatarMediaId ?: "",
+                                        scrollToMessageId = messageId
                                     )
                                 ) { launchSingleTop = true }
                             },
@@ -321,9 +340,10 @@ fun App() {
                         }
 
                         val savedStateHandle = backStackEntry.savedStateHandle
-                        val scrollToMessageId by savedStateHandle
+                        val savedScrollToMessageId by savedStateHandle
                             .getStateFlow<Int?>("scrollToMessageId", null)
                             .collectAsState()
+                        val scrollToMessageId = savedScrollToMessageId ?: route.scrollToMessageId
                         val replyToMessageId by savedStateHandle
                             .getStateFlow<Int?>("replyToMessageId", null)
                             .collectAsState()
@@ -359,6 +379,14 @@ fun App() {
                             replyToMessageId = replyToMessageId,
                             onScrollToConsumed = { savedStateHandle["scrollToMessageId"] = null },
                             onReplyToConsumed = { savedStateHandle["replyToMessageId"] = null },
+                            onSwipeBack = {
+                                ManualBackTransition.skipNextPopAnimation = true
+                                if (navController.previousBackStackEntry != null) {
+                                    navController.popBackStack()
+                                } else {
+                                    ManualBackTransition.skipNextPopAnimation = false
+                                }
+                            },
                             viewModel = viewModel
                         )
                     }

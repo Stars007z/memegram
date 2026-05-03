@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.example.memegram.BlockedUsersCache
 import com.example.memegram.MainActivity
 import com.example.memegram.MemegramApp
 import com.example.memegram.R
@@ -105,12 +106,20 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             val repo = GlobalContext.get().get<ChatRepository>()
             runBlocking { repo.getChatById(conversationId)?.muteUntil ?: 0L }
         }.getOrDefault(0L)
-        return muteUntilMs > System.currentTimeMillis()
+        return muteUntilMs == Long.MAX_VALUE || muteUntilMs > System.currentTimeMillis()
     }
 
     private fun notificationPrefs(): NotificationPrefs? = runCatching {
         GlobalContext.get().get<NotificationPrefs>()
     }.getOrNull()
+
+    private fun isSenderBlocked(data: Map<String, String>): Boolean {
+        val senderUserId = data["sender_user_id"]?.takeIf { it.isNotBlank() } ?: return false
+        return runCatching {
+            val cache = GlobalContext.get().get<BlockedUsersCache>()
+            runBlocking { cache.isBlockedNow(senderUserId) }
+        }.getOrDefault(false)
+    }
 
     private fun appStrings(): AppStrings {
         val isRu = Locale.getDefault().language.equals("ru", ignoreCase = true)
@@ -132,14 +141,16 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        val prefs = notificationPrefs()
-        val previewEnabled = prefs?.previewEnabledNow() ?: NotificationPrefs.DEFAULT_PREVIEW_ENABLED
+        if (isSenderBlocked(data)) {
+            println("MemegramDebug [FCM] blocked sender, skip message")
+            return
+        }
+
         val vibrationStrength =
-            prefs?.vibrationStrengthNow() ?: NotificationPrefs.DEFAULT_VIBRATION_STRENGTH
+            notificationPrefs()?.vibrationStrengthNow() ?: NotificationPrefs.DEFAULT_VIBRATION_STRENGTH
 
         val title = data["title"].orEmpty().ifEmpty { data["conversation_name"].orEmpty() }
-        val rawBody = data["body"].orEmpty()
-        val body = if (previewEnabled) rawBody else appStrings().genericNotificationBody
+        val body = appStrings().genericNotificationBody
         val chatName = data["conversation_name"].orEmpty().ifEmpty { title }
         val avatarMediaId = data["avatar_url"].orEmpty()
 
@@ -149,10 +160,6 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setContentIntent(pi)
             .setGroup("conv_$conversationId")
-
-        if (previewEnabled && rawBody.isNotEmpty()) {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText(rawBody))
-        }
 
         try {
             nm.notify(conversationId.hashCode(), builder.build())
@@ -222,13 +229,17 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setContentTitle(title)
             .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
 
         if (vibrationStrength <= 0) {
-            builder.setVibrate(longArrayOf(0L))
+            builder
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setSilent(true)
+                .setDefaults(0)
         } else {
-            builder.setVibrate(MemegramApp.vibrationPatternFor(vibrationStrength))
+            builder
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVibrate(MemegramApp.vibrationPatternFor(vibrationStrength))
         }
         return builder
     }

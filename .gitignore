@@ -29,6 +29,8 @@ skibiobi.py
 logs/
 
 *.db
+!android-ios-app/composeApp/src/commonMain/sqldelight/databases/
+!android-ios-app/composeApp/src/commonMain/sqldelight/databases/*.db
 *.sqlite
 
 build/

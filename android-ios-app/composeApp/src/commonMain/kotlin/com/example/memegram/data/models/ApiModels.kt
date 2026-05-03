@@ -112,6 +112,13 @@ data class ConversationResponse(
     @SerialName("is_peer_blocked") val isPeerBlocked: Boolean = false,
     @SerialName("is_blocked_by_peer") val isBlockedByPeer: Boolean = false,
     @SerialName("peer_last_read_message_id") val peerLastReadMessageId: String? = null,
+    @SerialName("mls_group") val mlsGroup: MlsGroupInfo? = null,
+)
+
+@Serializable
+data class MlsGroupInfo(
+    @SerialName("current_epoch") val currentEpoch: Long = 0,
+    @SerialName("cipher_suite") val cipherSuite: Int = 1,
 )
 
 @Serializable

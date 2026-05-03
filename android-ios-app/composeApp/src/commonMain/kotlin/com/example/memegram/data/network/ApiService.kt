@@ -196,11 +196,16 @@ class ApiService(
             noCache()
         }.body()
 
-    suspend fun getMessages(conversationId: String, limit: Int = 50): List<MessageResponse> {
+    suspend fun getMessages(
+        conversationId: String,
+        limit: Int = 50,
+        beforeMessageId: String = ""
+    ): List<MessageResponse> {
         val response = client.get("$baseUrl/api/v1/messaging/conversations/$conversationId/messages") {
             header("Authorization", "Bearer ${sessionManager.getAccessToken()}")
             noCache()
             parameter("limit", limit)
+            if (beforeMessageId.isNotBlank()) parameter("before_message_id", beforeMessageId)
         }.body<GetMessagesResponse>()
         return response.messages
     }
@@ -251,7 +256,7 @@ class ApiService(
         client.get("$baseUrl/api/v1/messaging/key-packages/count") {
             bearerAuth(token())
             noCache()
-        }.body<Map<String, Int>>()["count"] ?: 0
+        }.body<Map<String, Int>>().let { it["available_count"] ?: it["count"] ?: 0 }
 
     suspend fun uploadKeyPackages(packagesB64: List<String>) {
         client.post("$baseUrl/api/v1/messaging/key-packages") {
@@ -576,7 +581,6 @@ class ApiService(
 
     suspend fun getDeviceAdditionStatus(registrationId: String): DeviceAdditionStatusResponse =
         client.get("$baseUrl/api/v1/devices/addition/$registrationId/status") {
-            bearerAuth(token())
             noCache()
         }.body()
 

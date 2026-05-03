@@ -2,6 +2,8 @@
 
 package com.example.memegram.data.wipe
 
+import com.example.memegram.database.AppDatabase
+import com.example.memegram.getHardwareDeviceId
 import com.example.memegram.mls.MlsManager
 import com.russhwolf.settings.Settings
 import kotlinx.cinterop.BetaInteropApi
@@ -45,9 +47,27 @@ actual class ClientDataWiper(
     private val plainSettings: Settings,
     private val secureSettings: Settings,
     private val mlsManager: MlsManager,
+    private val database: AppDatabase,
 ) {
     actual suspend fun wipeAll() {
         withContext(Dispatchers.Default) {
+            val retainedDeviceId = secureSettings.getStringOrNull("device_id")
+                ?.takeIf { it.isNotBlank() }
+                ?: runCatching { getHardwareDeviceId() }.getOrNull()
+
+            clearAuthSecrets(retainedDeviceId)
+
+            runCatching {
+                database.appDatabaseQueries.transaction {
+                    database.appDatabaseQueries.deleteAllMessages()
+                    database.appDatabaseQueries.deleteAllChats()
+                    database.appDatabaseQueries.clearBlockedUsers()
+                    database.appDatabaseQueries.clearUserProfiles()
+                }
+                database.appDatabaseQueries.vacuumDb()
+                println("MemegramDebug [AccountDelete] wipe.db.sql.ok")
+            }.onFailure { println("MemegramDebug [AccountDelete] wipe.db.sql.fail: ${it.message}") }
+
             runCatching {
                 val docs = nsPath(NSDocumentDirectory)
                 if (docs != null) {
@@ -122,8 +142,30 @@ actual class ClientDataWiper(
             wipeDirectory(NSDocumentDirectory, keepRootDirs = false)
             wipeDirectory(NSCachesDirectory, keepRootDirs = false)
 
+            restoreDeviceId(retainedDeviceId)
+
             println("MemegramDebug [AccountDelete] wipeAll: done")
         }
+    }
+
+    private fun clearAuthSecrets(retainedDeviceId: String?) {
+        runCatching {
+            secureSettings.remove("access_token")
+            secureSettings.remove("refresh_token")
+            secureSettings.remove("user_id")
+            secureSettings.remove("device_type")
+            secureSettings.remove("expires_at")
+            retainedDeviceId?.let { secureSettings.putString("device_id", it) }
+            println("MemegramDebug [AccountDelete] wipe.session.immediate.ok")
+        }.onFailure { println("MemegramDebug [AccountDelete] wipe.session.immediate.fail: ${it.message}") }
+    }
+
+    private fun restoreDeviceId(retainedDeviceId: String?) {
+        if (retainedDeviceId.isNullOrBlank()) return
+        runCatching {
+            secureSettings.putString("device_id", retainedDeviceId)
+            println("MemegramDebug [AccountDelete] wipe.device_id.restored")
+        }.onFailure { println("MemegramDebug [AccountDelete] wipe.device_id.restore.fail: ${it.message}") }
     }
 
     private fun wipeDirectory(directory: ULong, keepRootDirs: Boolean) {
@@ -155,8 +197,10 @@ actual fun createClientDataWiper(
     plainSettings: Settings,
     secureSettings: Settings,
     mlsManager: MlsManager,
+    database: AppDatabase,
 ): ClientDataWiper = ClientDataWiper(
     plainSettings = plainSettings,
     secureSettings = secureSettings,
     mlsManager = mlsManager,
+    database = database,
 )

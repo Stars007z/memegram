@@ -93,9 +93,25 @@ class IosNllbTranslationEngine private constructor(
         text: String,
         srcLangFlores: String,
         tgtLangFlores: String,
+        onProgress: (TranslationProgress) -> Unit = {},
     ): String = translateMutex.withLock {
         withContext(Dispatchers.Default) {
         val sentences = if (text.length > 300) splitSentences(text) else listOf(text)
+        val totalSentences = sentences.size.coerceAtLeast(1)
+        fun emitProgress(
+            phase: TranslationProgressPhase,
+            fraction: Float,
+            completedSentences: Int = 0,
+        ) {
+            onProgress(
+                TranslationProgress(
+                    fraction = fraction.coerceIn(0f, 0.98f),
+                    phase = phase,
+                    completedSentences = completedSentences.coerceIn(0, totalSentences),
+                    totalSentences = totalSentences,
+                )
+            )
+        }
 
         data class Tokenized(
             val inputIds: LongArray,
@@ -103,11 +119,16 @@ class IosNllbTranslationEngine private constructor(
             val decoderStartIds: List<Int>,
         )
 
-        val tokenized = sentences.map { s ->
+        emitProgress(TranslationProgressPhase.TOKENIZING, 0.18f)
+        val tokenized = sentences.mapIndexed { index, s ->
             val ids = tokenizer.encode(s, srcLangFlores)
             val idsLong = LongArray(ids.size) { ids[it].toLong() }
             val mask = LongArray(ids.size) { 1L }
             val startIds = tokenizer.decoderStartIds(tgtLangFlores)
+            emitProgress(
+                TranslationProgressPhase.TOKENIZING,
+                0.18f + 0.04f * ((index + 1).toFloat() / totalSentences)
+            )
             Tokenized(idsLong, mask, startIds)
         }
 
@@ -117,7 +138,8 @@ class IosNllbTranslationEngine private constructor(
 
         val encoded: List<Encoded> = try {
             encoderSession = ensureSession(bridge, encoderPath, encoderSession)
-            tokenized.map { tok ->
+            emitProgress(TranslationProgressPhase.ENCODING, 0.26f)
+            tokenized.mapIndexed { index, tok ->
                 val seqLen = tok.inputIds.size.toLong()
                 val outputs = bridge.run(
                     handle = encoderSession,
@@ -130,6 +152,10 @@ class IosNllbTranslationEngine private constructor(
                     outputNames = arrayOf("last_hidden_state"),
                 )
                 val out = outputs[0]
+                emitProgress(
+                    TranslationProgressPhase.ENCODING,
+                    0.26f + 0.14f * ((index + 1).toFloat() / totalSentences)
+                )
                 Encoded(out.data, out.shape, tok.attentionMask)
             }
         } finally {
@@ -140,9 +166,27 @@ class IosNllbTranslationEngine private constructor(
         }
 
         val results: List<String> = try {
+            emitProgress(TranslationProgressPhase.LOADING_DECODER, 0.42f)
             decoderSession = ensureSession(bridge, decoderPath, decoderSession)
-            tokenized.zip(encoded).map { (tok, enc) ->
-                val ids = decodeAutoregressive(bridge, decoderSession, tok.decoderStartIds, enc.hidden, enc.shape, enc.mask)
+            emitProgress(TranslationProgressPhase.DECODING, 0.50f)
+            tokenized.zip(encoded).mapIndexed { index, (tok, enc) ->
+                fun sentenceProgress(tokenProgress: Float) {
+                    val sentenceFraction = (index.toFloat() + tokenProgress.coerceIn(0f, 1f)) / totalSentences
+                    emitProgress(
+                        TranslationProgressPhase.DECODING,
+                        0.50f + 0.46f * sentenceFraction,
+                        completedSentences = index
+                    )
+                }
+                val ids = decodeAutoregressive(
+                    bridge, decoderSession, tok.decoderStartIds, enc.hidden, enc.shape, enc.mask,
+                    onTokenProgress = ::sentenceProgress
+                )
+                emitProgress(
+                    TranslationProgressPhase.DECODING,
+                    0.50f + 0.46f * ((index + 1).toFloat() / totalSentences),
+                    completedSentences = index + 1
+                )
                 bridge.clearPersistentInputs(decoderSession)
                 tokenizer.decode(ids)
             }
@@ -154,6 +198,7 @@ class IosNllbTranslationEngine private constructor(
             }
         }
 
+        emitProgress(TranslationProgressPhase.FINISHING, 0.98f, totalSentences)
         results.joinToString(" ")
         }
     }
@@ -165,6 +210,7 @@ class IosNllbTranslationEngine private constructor(
         hiddenData: FloatArray,
         hiddenShape: LongArray,
         encoderAttentionMask: LongArray,
+        onTokenProgress: (Float) -> Unit = {},
     ): List<Int> {
         val generated = mutableListOf<Int>()
         val decoderInputIds = decoderStartIds.toMutableList()
@@ -193,9 +239,13 @@ class IosNllbTranslationEngine private constructor(
             )
 
             if (nextId < 0) error("ORT decoder argmax failed at step $step")
-            if (nextId == tokenizer.eosTokenId) break
+            if (nextId == tokenizer.eosTokenId) {
+                onTokenProgress(1f)
+                break
+            }
             generated.add(nextId)
             decoderInputIds.add(nextId)
+            onTokenProgress((step + 1).toFloat() / maxLength)
         }
 
         return generated

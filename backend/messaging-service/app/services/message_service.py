@@ -263,9 +263,29 @@ class MessageServiceImpl(IMessageService):
     ) -> None:
         members = await self._members.get_active_members(conversation_id)
         for m in members:
-            if m.user_id != sender_user_id:
-                key = f"unread:{m.user_id}:{conversation_id}"
-                await self._redis.incr(key)
+            if m.user_id == sender_user_id:
+                continue
+
+            try:
+                if await self._contacts.is_blocked(m.user_id, sender_user_id):
+                    logger.debug(
+                        "message.unread.skipped_blocked_sender",
+                        conversation_id=str(conversation_id),
+                        recipient_user_id=str(m.user_id),
+                        sender_user_id=str(sender_user_id),
+                    )
+                    continue
+            except Exception as exc:
+                logger.warning(
+                    "message.unread.block_lookup_failed",
+                    conversation_id=str(conversation_id),
+                    recipient_user_id=str(m.user_id),
+                    sender_user_id=str(sender_user_id),
+                    error=str(exc),
+                )
+
+            key = f"unread:{m.user_id}:{conversation_id}"
+            await self._redis.incr(key)
 
     @staticmethod
     def _to_result(msg) -> MessageResult:

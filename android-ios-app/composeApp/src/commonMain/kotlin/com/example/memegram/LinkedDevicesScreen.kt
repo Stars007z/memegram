@@ -60,7 +60,10 @@ fun LinkedDevicesScreen(
         }
     }
     successMessage?.let {
-        LaunchedEffect(it) { vm.clearSuccess() }
+        LaunchedEffect(it) {
+            snackbarHostState.showSnackbar(it)
+            vm.clearSuccess()
+        }
     }
 
     Scaffold(
@@ -121,6 +124,7 @@ fun LinkedDevicesScreen(
                         registration = reg,
                         declineLabel = s.decline,
                         allowLabel = s.allow,
+                        canConfirm = reg.status == "awaiting_confirmation",
                         onConfirm  = { vm.confirmAddition(reg.registrationId, true) },
                         onReject   = { vm.confirmAddition(reg.registrationId, false) }
                     )
@@ -259,6 +263,7 @@ private fun PendingDeviceCard(
     registration: PendingDeviceRegistration,
     declineLabel: String,
     allowLabel: String,
+    canConfirm: Boolean,
     onConfirm: () -> Unit,
     onReject: () -> Unit
 ) {
@@ -276,9 +281,9 @@ private fun PendingDeviceCard(
                     tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.sdp))
                 Column {
-                    Text(registration.deviceName, fontWeight = FontWeight.Medium)
+                    Text(registration.deviceName.ifBlank { registration.status }, fontWeight = FontWeight.Medium)
                     Text(
-                        registration.deviceType,
+                        registration.deviceType.ifBlank { registration.status },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -293,7 +298,11 @@ private fun PendingDeviceCard(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) { Text(declineLabel) }
-                Button(onClick = onConfirm, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = onConfirm,
+                    enabled = canConfirm,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(allowLabel)
                 }
             }

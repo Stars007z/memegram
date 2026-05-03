@@ -582,3 +582,45 @@ class TestUnreadIncrement:
 
         # Assert — incr вызвали ровно для двух "others".
         assert redis_mock.incr.await_count == 2
+
+    async def test_skips_unread_for_recipient_who_blocked_sender(
+        self,
+        service,
+        member_repo,
+        conversation_repo,
+        message_repo,
+        redis_mock,
+        contacts_mock,
+    ):
+        # Arrange
+        sender = uuid.uuid4()
+        blocked_recipient = uuid.uuid4()
+        normal_recipient = uuid.uuid4()
+        member_repo.is_member.return_value = True
+        conversation_repo.get_by_id.return_value = SimpleNamespace(type="group")
+        message_repo.get_by_client_message_id.return_value = None
+        message_repo.create.return_value = _make_msg(sender_user_id=sender)
+        member_repo.get_active_members.return_value = [
+            SimpleNamespace(user_id=sender),
+            SimpleNamespace(user_id=blocked_recipient),
+            SimpleNamespace(user_id=normal_recipient),
+        ]
+
+        async def is_blocked(user_id, blocked_user_id):
+            return user_id == blocked_recipient and blocked_user_id == sender
+
+        contacts_mock.is_blocked.side_effect = is_blocked
+
+        # Act
+        await service.send_message(
+            sender_user_id=sender,
+            sender_device_id=uuid.uuid4(),
+            conversation_id=uuid.uuid4(),
+            mls_ciphertext=b"ct",
+            type="text",
+            client_message_id=uuid.uuid4(),
+        )
+
+        # Assert
+        redis_mock.incr.assert_awaited_once()
+        assert redis_mock.incr.await_args.args[0].startswith(f"unread:{normal_recipient}:")

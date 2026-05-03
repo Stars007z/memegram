@@ -40,7 +40,6 @@ fun NotificationsScreen(
     val topBarTextColor = resolveTopBarTextColor(topBarColor)
 
     val uiState by viewModel.uiState.collectAsState()
-    val previewEnabled by viewModel.previewEnabled.collectAsState()
     val vibrationStrength by viewModel.vibrationStrength.collectAsState()
 
     var privateExpanded by remember { mutableStateOf(false) }
@@ -154,14 +153,6 @@ fun NotificationsScreen(
             contentPadding = PaddingValues(vertical = 12.sdp),
         ) {
             // ── Global preferences ────────────────────────────────────
-            item("pref_preview") {
-                PreferenceRow(
-                    title = s.notificationPreview,
-                    subtitle = s.notificationPreviewDesc,
-                    checked = previewEnabled,
-                    onCheckedChange = viewModel::setPreviewEnabled,
-                )
-            }
             item("pref_vibration") {
                 VibrationRow(
                     strings = s,
@@ -227,39 +218,6 @@ fun NotificationsScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun PreferenceRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) },
-        shape = RoundedCornerShape(12.sdp),
-        tonalElevation = 2.sdp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.sdp, vertical = 12.sdp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(text = title, fontSize = 15.ssp, fontWeight = FontWeight.Medium)
-                Text(
-                    text = subtitle,
-                    fontSize = 12.ssp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.example.memegram
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -49,16 +51,25 @@ fun AddDeviceScreen(
             )
         }
     ) { padding ->
-        Box(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(24.sdp),
             contentAlignment = Alignment.Center
         ) {
+            val contentMaxWidth = minOf(maxWidth, 420.sdp)
+            val scannerSize = minOf(contentMaxWidth, maxHeight * 0.58f)
+
             when (step) {
                 AddDeviceStep.SCANNING -> {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = contentMaxWidth)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
                             s.scanQrHint,
                             style = MaterialTheme.typography.titleMedium,
@@ -68,8 +79,7 @@ fun AddDeviceScreen(
 
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
+                                .size(scannerSize)
                                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.sdp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center

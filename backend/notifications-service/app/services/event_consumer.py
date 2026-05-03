@@ -71,6 +71,17 @@ class EventConsumer:
 
     async def start(self) -> None:
         """Create consumer group (if needed) and start consuming."""
+        await self._ensure_consumer_group()
+
+        self._running = True
+        logger.info("event_consumer.started", consumer=self._consumer)
+        await asyncio.gather(
+            self._consume_loop(),
+            self._claim_loop(),
+        )
+
+    async def _ensure_consumer_group(self) -> None:
+        """Create the stream consumer group if Redis lost it after restart."""
         try:
             await self._messaging_redis.xgroup_create(
                 self._stream,
@@ -79,16 +90,18 @@ class EventConsumer:
                 mkstream=True,
             )
             logger.info("consumer_group.created", group=self._group, stream=self._stream)
-        except Exception:
+        except Exception as e:
+            if "BUSYGROUP" not in str(e):
+                logger.warning(
+                    "consumer_group.ensure_failed",
+                    group=self._group,
+                    stream=self._stream,
+                    error=str(e),
+                )
 
-            pass
-
-        self._running = True
-        logger.info("event_consumer.started", consumer=self._consumer)
-        await asyncio.gather(
-            self._consume_loop(),
-            self._claim_loop(),
-        )
+    @staticmethod
+    def _is_missing_group_error(error: Exception) -> bool:
+        return "NOGROUP" in str(error).upper()
 
     async def stop(self) -> None:
         self._running = False
@@ -111,6 +124,8 @@ class EventConsumer:
                         await self._process_entry(entry_id, fields)
 
             except Exception as e:
+                if self._is_missing_group_error(e):
+                    await self._ensure_consumer_group()
                 logger.error("event_consumer.loop_error", error=str(e))
                 await asyncio.sleep(1)
 
@@ -133,6 +148,8 @@ class EventConsumer:
                     for entry_id, fields in claimed:
                         await self._process_entry(entry_id, fields)
             except Exception as e:
+                if self._is_missing_group_error(e):
+                    await self._ensure_consumer_group()
                 logger.error("event_consumer.claim_error", error=str(e))
 
     async def _process_entry(self, entry_id: bytes | str, fields: dict) -> None:

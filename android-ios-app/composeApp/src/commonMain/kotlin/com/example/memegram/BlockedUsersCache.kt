@@ -69,6 +69,17 @@ class BlockedUsersCache(
 
     fun isBlocked(userId: String): Boolean = userId in _blockedIds.value
 
+    suspend fun isBlockedNow(userId: String): Boolean {
+        if (isBlocked(userId)) return true
+        val blocked = runCatching {
+            withContext(Dispatchers.Default) {
+                userId in database.appDatabaseQueries.selectAllBlockedUsers().executeAsList()
+            }
+        }.getOrDefault(false)
+        if (blocked) _blockedIds.value = _blockedIds.value + userId
+        return blocked
+    }
+
     private fun persistAll(ids: Set<String>) {
         ioScope.launch {
             runCatching {

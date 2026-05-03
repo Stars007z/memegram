@@ -56,16 +56,6 @@ fun LanguageScreen(
         listOf(
             Language("en", "English", "English"),
             Language("ru", "Русский", "Russian"),
-            Language("de", "Deutsch", "German"),
-            Language("fr", "Français", "French"),
-            Language("es", "Español", "Spanish"),
-            Language("zh", "中文", "Chinese"),
-            Language("ar", "العربية", "Arabic"),
-            Language("pt", "Português", "Portuguese"),
-            Language("it", "Italiano", "Italian"),
-            Language("ja", "日本語", "Japanese"),
-            Language("ko", "한국어", "Korean"),
-            Language("tr", "Türkçe", "Turkish"),
         )
     }
 

@@ -33,8 +33,6 @@ fun PrivacyScreen(
 ) {
     val s = LocalStrings.current
     val topBarTextColor       = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
-    val profileVisibleTo      by viewModel.profileVisibleTo.collectAsState()
-    val lastActiveVisibleTo   by viewModel.lastActiveVisibleTo.collectAsState()
     val autoDeleteDays        by viewModel.autoDeleteDays.collectAsState()
     val accountDeleted        by viewModel.accountDeleted.collectAsState()
     val isLoading             by viewModel.isLoading.collectAsState()
@@ -42,12 +40,8 @@ fun PrivacyScreen(
 
     LaunchedEffect(accountDeleted) { if (accountDeleted) onAccountDeleted() }
 
-    var showProfileVisDialog    by remember { mutableStateOf(false) }
-    var showLastActiveVisDialog by remember { mutableStateOf(false) }
     var showAutoDeleteAccDialog by remember { mutableStateOf(false) }
-    var showAutoDeleteMsgDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
-    var autoDeleteMsgOption     by remember { mutableStateOf<String?>(null) }
 
     error?.let { msg ->
         AlertDialog(
@@ -58,28 +52,6 @@ fun PrivacyScreen(
         )
     }
 
-    if (showProfileVisDialog) {
-        PrivacyChoiceDialog(
-            title   = s.whoSeesProfile,
-            options = PrivacyViewModel.visibilityOptions(s),
-            current = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
-            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showProfileVisDialog = false },
-            onDismiss = { showProfileVisDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
-    if (showLastActiveVisDialog) {
-        PrivacyChoiceDialog(
-            title   = s.whoSeesLastSeen,
-            options = PrivacyViewModel.visibilityOptions(s),
-            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
-            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showLastActiveVisDialog = false },
-            onDismiss = { showLastActiveVisDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
     if (showAutoDeleteAccDialog) {
         PrivacyChoiceDialog(
             title   = s.deleteAccountAfter,
@@ -87,17 +59,6 @@ fun PrivacyScreen(
             current = PrivacyViewModel.daysLabel(autoDeleteDays, s),
             onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it, s)); showAutoDeleteAccDialog = false },
             onDismiss = { showAutoDeleteAccDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
-    if (showAutoDeleteMsgDialog) {
-        PrivacyChoiceDialog(
-            title   = s.autoDeleteMessages,
-            options = listOf(s.autoDeleteOff, s.autoDelete1Day, s.autoDelete1Week, s.autoDelete1Month),
-            current = autoDeleteMsgOption ?: s.autoDeleteOff,
-            onSelect  = { autoDeleteMsgOption = it; showAutoDeleteMsgDialog = false },
-            onDismiss = { showAutoDeleteMsgDialog = false },
             cancelLabel = s.cancel
         )
     }
@@ -154,31 +115,7 @@ fun PrivacyScreen(
                 onClick = onBlackListClick
             )
 
-            Spacer(Modifier.height(4.sdp))
-
-            SectionLabel(s.privacySection)
-            PrivacyItem(
-                title = s.whoSeesProfile,
-                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showProfileVisDialog = true }
-            )
-            PrivacyItem(
-                title = s.whoSeesLastSeen,
-                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showLastActiveVisDialog = true }
-            )
-
-            Spacer(Modifier.height(4.sdp))
-
             SectionLabel(s.autoDeleteSection)
-            PrivacyItem(
-                title = s.autoDeleteMessages,
-                subtitle = autoDeleteMsgOption ?: s.autoDeleteOff,
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showAutoDeleteMsgDialog = true }
-            )
             PrivacyItem(
                 title = s.deleteAccountAfter,
                 subtitle = PrivacyViewModel.daysLabel(autoDeleteDays, s),

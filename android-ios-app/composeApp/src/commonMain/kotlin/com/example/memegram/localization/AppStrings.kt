@@ -44,6 +44,9 @@ interface AppStrings {
     val publicKey: String
     val start: String
     val nothingFound: String
+    val chatResults: String
+    val messageResults: String
+    fun searchResultsCount(n: Int): String
     val youPrefix: String
 
     val gallery: String
@@ -68,6 +71,8 @@ interface AppStrings {
     val resendUnsupported: String
     val clearHistory: String
     val clearHistoryMessage: String
+    val clearHistoryForEveryoneMessage: String
+    val clearHistoryForEveryoneNotAllowed: String
     val onlyForMe: String
     val forAll: String
     val deleteMessageTitle: String
@@ -205,8 +210,6 @@ interface AppStrings {
     val disable: String
     val disabled: String
     val enabled: String
-    val notificationPreview: String
-    val notificationPreviewDesc: String
     val vibration: String
     val vibrationOff: String
     val vibrationLight: String
@@ -433,6 +436,9 @@ object RuStrings : AppStrings {
     override val publicKey = "Публичный ключ"
     override val start = "Начать"
     override val nothingFound = "Ничего не найдено"
+    override val chatResults = "Чаты"
+    override val messageResults = "Сообщения"
+    override fun searchResultsCount(n: Int) = "$n совпадений"
     override val youPrefix = "Вы: "
 
     override val gallery = "Галерея"
@@ -457,6 +463,8 @@ object RuStrings : AppStrings {
     override val resendUnsupported = "Повторная отправка медиа недоступна. Удалите сообщение и отправьте файл заново."
     override val clearHistory = "Очистить историю"
     override val clearHistoryMessage = "Выберите, для кого очистить историю сообщений."
+    override val clearHistoryForEveryoneMessage = "Вся история сообщений будет удалена для всех участников. Это действие нельзя отменить."
+    override val clearHistoryForEveryoneNotAllowed = "Нельзя очистить всю историю для всех: вы можете удалять только свои сообщения, а в группе - все сообщения только если вы администратор."
     override val onlyForMe = "Только у меня"
     override val forAll = "У всех"
     override val deleteMessageTitle = "Удалить сообщение?"
@@ -595,8 +603,6 @@ object RuStrings : AppStrings {
     override val disable = "Отключить"
     override val disabled = "Отключено"
     override val enabled = "Включено"
-    override val notificationPreview = "Показывать текст сообщения"
-    override val notificationPreviewDesc = "Если выключено, в уведомлении не будет видно содержимое"
     override val vibration = "Вибрация"
     override val vibrationOff = "Выкл."
     override val vibrationLight = "Слабая"
@@ -826,6 +832,9 @@ object EnStrings : AppStrings {
     override val publicKey = "Public key"
     override val start = "Start"
     override val nothingFound = "Nothing found"
+    override val chatResults = "Chats"
+    override val messageResults = "Messages"
+    override fun searchResultsCount(n: Int) = "$n result${if (n == 1) "" else "s"}"
     override val youPrefix = "You: "
 
     override val gallery = "Gallery"
@@ -850,6 +859,8 @@ object EnStrings : AppStrings {
     override val resendUnsupported = "Resending media is not supported. Delete the message and send the file again."
     override val clearHistory = "Clear history"
     override val clearHistoryMessage = "Choose who to clear message history for."
+    override val clearHistoryForEveryoneMessage = "The entire message history will be deleted for everyone. This cannot be undone."
+    override val clearHistoryForEveryoneNotAllowed = "Cannot clear the whole history for everyone: you can only delete your own messages, or all group messages if you are an admin."
     override val onlyForMe = "Only for me"
     override val forAll = "For everyone"
     override val deleteMessageTitle = "Delete message?"
@@ -988,8 +999,6 @@ object EnStrings : AppStrings {
     override val disable = "Disable"
     override val disabled = "Disabled"
     override val enabled = "Enabled"
-    override val notificationPreview = "Show message text"
-    override val notificationPreviewDesc = "When off, notifications won't reveal message content"
     override val vibration = "Vibration"
     override val vibrationOff = "Off"
     override val vibrationLight = "Light"

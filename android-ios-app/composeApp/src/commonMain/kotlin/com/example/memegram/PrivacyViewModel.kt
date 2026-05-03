@@ -2,7 +2,6 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.UpdateSettingsRequest
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.localization.AppStrings
@@ -12,15 +11,8 @@ import kotlinx.coroutines.launch
 
 class PrivacyViewModel(
     private val userRepository: UserRepository,
-    private val sessionManager: SessionManager,
     private val pushTokenProvider: PushTokenProvider
 ) : ViewModel() {
-
-    private val _profileVisibleTo = MutableStateFlow("everybody")
-    val profileVisibleTo: StateFlow<String> = _profileVisibleTo.asStateFlow()
-
-    private val _lastActiveVisibleTo = MutableStateFlow("everybody")
-    val lastActiveVisibleTo: StateFlow<String> = _lastActiveVisibleTo.asStateFlow()
 
     private val _autoDeleteDays = MutableStateFlow<Int?>(null)
     val autoDeleteDays: StateFlow<Int?> = _autoDeleteDays.asStateFlow()
@@ -37,26 +29,8 @@ class PrivacyViewModel(
     init {
         viewModelScope.launch {
             userRepository.loadSettings().onSuccess { s ->
-                _profileVisibleTo.value = s.profileVisibleTo
-                _lastActiveVisibleTo.value = s.lastActiveVisibleTo
                 _autoDeleteDays.value = s.accountAutoDeleteAfterDays
             }
-        }
-    }
-
-    fun setProfileVisibleTo(value: String) {
-        _profileVisibleTo.value = value
-        viewModelScope.launch {
-            userRepository.updateSettings(UpdateSettingsRequest(profileVisibleTo = value))
-                .onFailure { _error.value = it.message }
-        }
-    }
-
-    fun setLastActiveVisibleTo(value: String) {
-        _lastActiveVisibleTo.value = value
-        viewModelScope.launch {
-            userRepository.updateSettings(UpdateSettingsRequest(lastActiveVisibleTo = value))
-                .onFailure { _error.value = it.message }
         }
     }
 
@@ -74,8 +48,7 @@ class PrivacyViewModel(
             userRepository.deleteAccount()
                 .onSuccess {
                     runCatching { pushTokenProvider.deleteToken() }
-                    sessionManager.clear()
-                    sessionManager.clearDeviceId()
+                        .onFailure { println("MemegramDebug [AccountDelete] push.delete.fail: ${it.message}") }
                     _accountDeleted.value = true
                 }
                 .onFailure { _error.value = it.message }
@@ -86,18 +59,6 @@ class PrivacyViewModel(
     fun clearError() { _error.value = null }
 
     companion object {
-        fun visibilityLabel(value: String, s: AppStrings) = when (value) {
-            "contacts" -> s.visContacts
-            "nobody"   -> s.visNobody
-            else       -> s.visEverybody
-        }
-        fun visibilityValue(label: String, s: AppStrings) = when (label) {
-            s.visContacts -> "contacts"
-            s.visNobody   -> "nobody"
-            else          -> "everybody"
-        }
-        fun visibilityOptions(s: AppStrings) = listOf(s.visEverybody, s.visContacts, s.visNobody)
-
         fun daysLabel(days: Int?, s: AppStrings) = when (days) {
             30  -> s.days1Month
             90  -> s.days3Months

@@ -12,6 +12,7 @@ import com.example.memegram.mls.MlsManager.Companion.BATCH_KEY_PACKAGES
 import com.example.memegram.utils.generateUuid
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.time.Clock
 
 enum class AddDeviceStep { SCANNING, SUBMITTING, WAITING_APPROVAL, CONFIRMED, REJECTED, ERROR }
 
@@ -57,8 +58,6 @@ class AddDeviceViewModel(
                 keyManager.getOrCreateKeyPair()
                 val authPubKey = keyManager.getPublicKeyBase64()
                 val localDeviceId = generateUuid()
-                mlsManager.initialize()
-                val creds = mlsManager.exportCredentials()
 
                 api.submitDeviceData(
                     registrationId = registrationId,
@@ -66,8 +65,8 @@ class AddDeviceViewModel(
                         deviceId       = localDeviceId,
                         deviceName     = getDeviceName(),
                         identityKeyPub = authPubKey,
-                        initKeyPub     = creds.initKeyPub,
-                        credentialData = creds.credentialData,
+                        initKeyPub     = authPubKey,
+                        credentialData = authPubKey,
                         registrationCode = registrationCode
                     )
                 )
@@ -100,7 +99,7 @@ class AddDeviceViewModel(
                                         accessToken  = token,
                                         refreshToken = refresh,
                                         userId       = device.userId,
-                                        deviceId     = device.clientDeviceId,
+                                        deviceId     = device.id,
                                         expiresAt    = statusResp.tokenExpiresAt,
                                         deviceType   = "secondary"
                                     )
@@ -108,27 +107,24 @@ class AddDeviceViewModel(
 
                                 mlsManager.clearAll()
                                 mlsManager.initialize()
-                                val newCreds = mlsManager.exportCredentials()
-
-                                try {
-                                    api.updateDeviceKeys(
-                                        deviceId = device.id,
-                                        request = UpdateDeviceKeysRequest(
-                                            identityKeyPub = newCreds.identityKeyPub,
-                                            initKeyPub = newCreds.initKeyPub,
-                                            credentialData = newCreds.credentialData
-                                        )
-                                    )
-                                    println("AddDeviceVM ✅ Реальные ключи устройства загружены на сервер")
-                                } catch (e: Exception) {
-                                    println("AddDeviceVM ❌ Ошибка updateDeviceKeys: ${e.message}")
-                                }
 
                                 uploadKeyPackages()
                                 notificationsRepository.registerCurrentDeviceToken()
                                 _step.value = AddDeviceStep.CONFIRMED
                             }
                             return@launch
+                        }
+                        "rejected" -> {
+                            _step.value = AddDeviceStep.REJECTED
+                            _error.value = "Добавление устройства отклонено на основном устройстве"
+                            return@launch
+                        }
+                        else -> {
+                            if (statusResp.expiresAt > 0 && Clock.System.now().epochSeconds >= statusResp.expiresAt) {
+                                _step.value = AddDeviceStep.ERROR
+                                _error.value = "Код добавления устройства истёк. Создайте новый QR-код."
+                                return@launch
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -163,7 +159,7 @@ class AddDeviceViewModel(
     }
 
     private fun getDeviceName(): String = try {
-        getPlatform().name
+        getDeviceModelName()
     } catch (_: Throwable) {
         "Unknown Device"
     }

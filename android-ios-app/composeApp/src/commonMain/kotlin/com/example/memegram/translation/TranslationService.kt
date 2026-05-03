@@ -8,6 +8,23 @@ data class TranslationResult(
     val detectedSourceLang: String
 )
 
+enum class TranslationProgressPhase {
+    IDENTIFYING_LANGUAGE,
+    LOADING_MODEL,
+    TOKENIZING,
+    ENCODING,
+    LOADING_DECODER,
+    DECODING,
+    FINISHING
+}
+
+data class TranslationProgress(
+    val fraction: Float,
+    val phase: TranslationProgressPhase,
+    val completedSentences: Int = 0,
+    val totalSentences: Int = 0,
+)
+
 data class ModelDownloadProgress(
     val bytesDownloaded: Long,
     val totalBytes: Long
@@ -20,7 +37,8 @@ interface TranslationService {
     suspend fun translate(
         text: String,
         sourceLang: String? = null,
-        targetLang: String
+        targetLang: String,
+        onProgress: (TranslationProgress) -> Unit = {}
     ): TranslationResult
 
     suspend fun identifyLanguage(text: String): String?

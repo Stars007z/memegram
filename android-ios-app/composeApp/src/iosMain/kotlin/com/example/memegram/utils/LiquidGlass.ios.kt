@@ -34,18 +34,19 @@ actual fun LiquidGlassSurface(
     if (transparency >= 1f) return
 
     val visibility = (1f - transparency).coerceIn(0f, 1f)
-    val tintAlpha = (visibility * 0.65f * tintAlphaScale).coerceIn(0f, 1f)
+    val tintAlpha = (visibility * 0.58f * tintAlphaScale).coerceIn(0f, 1f)
+    val effectAlpha = visibility
 
     val blurStyle: UIBlurEffectStyle = when {
-        visibility > 0.7f -> UIBlurEffectStyle.UIBlurEffectStyleSystemMaterial
-        visibility > 0.35f -> UIBlurEffectStyle.UIBlurEffectStyleSystemThinMaterial
-        else -> UIBlurEffectStyle.UIBlurEffectStyleSystemUltraThinMaterial
+        visibility > 0.7f -> UIBlurEffectStyle.UIBlurEffectStyleSystemMaterialLight
+        visibility > 0.35f -> UIBlurEffectStyle.UIBlurEffectStyleSystemThinMaterialLight
+        else -> UIBlurEffectStyle.UIBlurEffectStyleSystemUltraThinMaterialLight
     }
 
     val holder = remember { GlassHolder() }
 
-    LaunchedEffect(blurStyle, tint, tintAlpha) {
-        holder.update(blurStyle, tint, tintAlpha)
+    LaunchedEffect(blurStyle, effectAlpha, tint, tintAlpha) {
+        holder.update(blurStyle, effectAlpha, tint, tintAlpha)
     }
 
     Box(modifier = modifier.clip(shape)) {
@@ -58,10 +59,13 @@ actual fun LiquidGlassSurface(
                     setUserInteractionEnabled(false)
                 }
                 val effectView = UIVisualEffectView(effect = UIBlurEffect.effectWithStyle(blurStyle)).apply {
+                    setOpaque(false)
                     setBackgroundColor(UIColor.clearColor)
+                    setAlpha(effectAlpha.toDouble())
                     setUserInteractionEnabled(false)
                 }
                 val tintOverlay = UIView().apply {
+                    setOpaque(false)
                     setBackgroundColor(tint.toUIColor(tintAlpha))
                     setUserInteractionEnabled(false)
                 }
@@ -81,12 +85,13 @@ actual fun LiquidGlassSurface(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(tint.copy(alpha = tintAlpha * 0.28f))
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.18f * visibility),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.04f * visibility),
+                            Color.White.copy(alpha = 0.24f * visibility),
+                            Color.White.copy(alpha = 0.04f * visibility),
+                            Color.Black.copy(alpha = 0.05f * visibility),
                         ),
                     ),
                 ),
@@ -102,11 +107,12 @@ private class GlassHolder {
     var tintOverlay: UIView? = null
     var lastStyle: UIBlurEffectStyle? = null
 
-    fun update(style: UIBlurEffectStyle, tint: Color, tintAlpha: Float) {
+    fun update(style: UIBlurEffectStyle, effectAlpha: Float, tint: Color, tintAlpha: Float) {
         if (style != lastStyle) {
             effectView?.setEffect(UIBlurEffect.effectWithStyle(style))
             lastStyle = style
         }
+        effectView?.setAlpha(effectAlpha.coerceIn(0f, 1f).toDouble())
         tintOverlay?.setBackgroundColor(tint.toUIColor(tintAlpha))
         layout()
     }

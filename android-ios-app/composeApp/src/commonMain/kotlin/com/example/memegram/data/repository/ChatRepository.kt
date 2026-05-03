@@ -4,6 +4,7 @@ import com.example.memegram.ChatModel
 import com.example.memegram.ChatStorageStat
 import com.example.memegram.MediaItemInfo
 import com.example.memegram.Message
+import com.example.memegram.StoredChatMessage
 import com.example.memegram.StorageTypeStat
 import kotlinx.coroutines.flow.Flow
 
@@ -19,6 +20,7 @@ interface ChatRepository {
     suspend fun setMuteUntilForIds(conversationIds: List<String>, muteUntil: Long)
 
     fun getMessagesFlow(conversationId: String): Flow<List<Message>>
+    fun getAllMessagesFlow(): Flow<List<StoredChatMessage>>
     suspend fun saveMessage(message: Message, conversationId: String)
     suspend fun saveMessages(messages: List<Message>, conversationId: String)
     suspend fun deleteMessages(conversationId: String)

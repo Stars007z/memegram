@@ -68,7 +68,7 @@ class AuthViewModel(
                     username = username,
                     inviteCode = inviteCode,
                     deviceId = deviceId,
-                    deviceName = "KMP Device",
+                    deviceName = getDeviceModelName(),
                     identityKeyPub = pubKey,
                     initKeyPub = pubKey,
                     credentialData = pubKey

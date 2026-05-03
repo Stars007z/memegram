@@ -14,34 +14,6 @@ import java.io.File
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
-/**
- * ONNX Runtime inference engine for NLLB-200 translation.
- *
- * Implements the full encoder-decoder pipeline:
- *   1. Encoder: source token IDs → hidden states
- *   2. Decoder: hidden states → target token IDs (greedy, autoregressive)
- *
- * MEMORY DESIGN — BATCH-SEQUENTIAL:
- *   Encoder (399MB) and decoder (698MB) ONNX sessions are NEVER loaded
- *   simultaneously. Instead, translation is split into two phases:
- *
- *   Phase 1: Load encoder → run ALL sentences → copy hidden states → CLOSE encoder
- *   Phase 2: Load decoder → decode ALL sentences using cached hidden states → CLOSE decoder
- *
- *   This gives us the best of both worlds:
- *   - Peak native memory: max(encoder, decoder) ≈ 700MB (like per-sentence sequential)
- *   - Session load overhead: 1 encoder + 1 decoder ≈ 2.5s total (like simultaneous)
- *   - NOT 2N loads like the old per-sentence sequential approach
- *
- * NLLB-200 is a single multilingual model supporting 200 languages.
- * No English pivoting needed — translates directly between any pair.
- *
- * Input format:
- *   Encoder: [src_lang_id, text_tokens..., eos_id]
- *   Decoder: starts with [eos_id, tgt_lang_id], then generates greedily
- *
- * Models are exported by our tools/export_nllb.py script.
- */
 class NllbTranslationEngine private constructor(
     private val env: OrtEnvironment,
     private val encoderFile: File,
@@ -52,18 +24,6 @@ class NllbTranslationEngine private constructor(
     companion object {
         private const val TAG = "NLLB"
 
-        /**
-         * Prepare the NLLB engine from [modelDir].
-         *
-         * Lightweight — only parses tokenizer and config.
-         * ONNX sessions are created per-phase in [translate] (batch-sequential).
-         *
-         * Expected files:
-         *   - encoder_model.onnx
-         *   - decoder_model.onnx
-         *   - tokenizer.json
-         *   - config.json (optional)
-         */
         suspend fun load(modelDir: File): NllbTranslationEngine = withContext(Dispatchers.IO) {
             require(modelDir.isDirectory) { "Model directory does not exist: $modelDir" }
 
@@ -87,10 +47,6 @@ class NllbTranslationEngine private constructor(
 
             val env = OrtEnvironment.getEnvironment()
 
-            // Parse max_length from config.
-            // Cap at 128 to limit peak memory: without KV-cache the decoder
-            // re-processes ALL tokens at every step → memory grows quadratically.
-            // 128 output tokens ~ 80-100 words, enough for messenger messages.
             var maxLength = 128
             if (configJson != null) {
                 try {
@@ -111,54 +67,56 @@ class NllbTranslationEngine private constructor(
             )
         }
 
-        /**
-         * Create ONNX session options optimized for low memory.
-         */
         private fun createSessionOptions() = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(2))
-            // BASIC_OPT: lightweight optimizations only (constant folding, redundant node
-            // elimination). ALL_OPT creates temporary copies during graph transformation,
-            // nearly doubling peak memory for the 698MB decoder.
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
-            // Disable arena allocator: the default arena pools memory and does NOT return
-            // it to the OS when the session is closed. We need close() to actually free
-            // native memory between encoder and decoder phases.
             setCPUArenaAllocator(false)
-            // Disable memory pattern optimization to reduce peak memory during inference.
             setMemoryPatternOptimization(false)
         }
     }
 
-    /**
-     * Translate [text] from [srcLangFlores] to [tgtLangFlores].
-     *
-     * Uses batch-sequential approach:
-     *   1. Tokenize all sentences
-     *   2. Load encoder → encode ALL sentences → close encoder (~400MB freed)
-     *   3. Load decoder → decode ALL sentences → close decoder
-     *
-     * Sessions are never in memory simultaneously.
-     */
     suspend fun translate(
         text: String,
         srcLangFlores: String,
-        tgtLangFlores: String
+        tgtLangFlores: String,
+        onProgress: (TranslationProgress) -> Unit = {},
     ): String = withContext(Dispatchers.Default) {
         val sentences = if (text.length > 300) splitSentences(text) else listOf(text)
+        val totalSentences = sentences.size.coerceAtLeast(1)
+        fun emitProgress(
+            phase: TranslationProgressPhase,
+            fraction: Float,
+            completedSentences: Int = 0,
+        ) {
+            onProgress(
+                TranslationProgress(
+                    fraction = fraction.coerceIn(0f, 0.98f),
+                    phase = phase,
+                    completedSentences = completedSentences.coerceIn(0, totalSentences),
+                    totalSentences = totalSentences,
+                )
+            )
+        }
+
         Log.d(TAG, "translate(): ${sentences.size} sentence(s), total ${text.length} chars")
 
         // ── Step 1: Tokenize all sentences ───────────────────────────
+        emitProgress(TranslationProgressPhase.TOKENIZING, 0.18f)
         data class TokenizedSentence(
             val inputIds: List<Int>,
             val decoderStartIds: List<Int>,
             val attentionMask: LongArray
         )
 
-        val tokenized = sentences.map { s ->
+        val tokenized = sentences.mapIndexed { index, s ->
             val inputIds = tokenizer.encode(s, srcLangFlores)
             val decoderStartIds = tokenizer.decoderStartIds(tgtLangFlores)
             val attentionMask = LongArray(inputIds.size) { 1L }
             Log.d(TAG, "translate(): tokenized '${s.take(30)}...' → ${inputIds.size} tokens")
+            emitProgress(
+                TranslationProgressPhase.TOKENIZING,
+                0.18f + 0.04f * ((index + 1).toFloat() / totalSentences)
+            )
             TokenizedSentence(inputIds, decoderStartIds, attentionMask)
         }
 
@@ -174,9 +132,10 @@ class NllbTranslationEngine private constructor(
             val opts = createSessionOptions()
             val encoderSession = env.createSession(encoderFile.absolutePath, opts)
             Log.d(TAG, "translate(): encoder session loaded in ${System.currentTimeMillis() - tLoad}ms")
+            emitProgress(TranslationProgressPhase.ENCODING, 0.26f)
 
             try {
-                tokenized.map { tok ->
+                tokenized.mapIndexed { index, tok ->
                     val seqLen = tok.inputIds.size.toLong()
                     val inputIdsArray = tok.inputIds.map { it.toLong() }.toLongArray()
 
@@ -193,18 +152,20 @@ class NllbTranslationEngine private constructor(
                     )
                     Log.d(TAG, "translate(): encoder inference ${System.currentTimeMillis() - tEnc}ms, seqLen=$seqLen")
 
-                    // Copy hidden states to Java heap before closing session
                     val hiddenTensor = outputs[0] as OnnxTensor
                     val hiddenShape = hiddenTensor.info.shape
                     val hiddenBuf = hiddenTensor.floatBuffer
                     val hiddenData = FloatArray(hiddenBuf.remaining())
                     hiddenBuf.get(hiddenData)
 
-                    // Close tensors (not session)
                     outputs.close()
                     inputIdsTensor.close()
                     attMaskTensor.close()
 
+                    emitProgress(
+                        TranslationProgressPhase.ENCODING,
+                        0.26f + 0.14f * ((index + 1).toFloat() / totalSentences)
+                    )
                     EncodedSentence(hiddenData, hiddenShape, tok.attentionMask)
                 }
             } finally {
@@ -219,14 +180,30 @@ class NllbTranslationEngine private constructor(
         val results: List<String> = run {
             val tLoad = System.currentTimeMillis()
             val opts = createSessionOptions()
+            emitProgress(TranslationProgressPhase.LOADING_DECODER, 0.42f)
             val decoderSession = env.createSession(decoderFile.absolutePath, opts)
             Log.d(TAG, "translate(): decoder session loaded in ${System.currentTimeMillis() - tLoad}ms")
+            emitProgress(TranslationProgressPhase.DECODING, 0.50f)
 
             try {
-                tokenized.zip(encoded).map { (tok, enc) ->
+                tokenized.zip(encoded).mapIndexed { index, (tok, enc) ->
+                    fun sentenceProgress(tokenProgress: Float) {
+                        val sentenceFraction = (index.toFloat() + tokenProgress.coerceIn(0f, 1f)) / totalSentences
+                        emitProgress(
+                            TranslationProgressPhase.DECODING,
+                            0.50f + 0.46f * sentenceFraction,
+                            completedSentences = index
+                        )
+                    }
                     val outputIds = decodeAutoregressive(
                         decoderSession, tok.decoderStartIds, enc.hiddenData,
-                        enc.hiddenShape, enc.attentionMask
+                        enc.hiddenShape, enc.attentionMask,
+                        onTokenProgress = ::sentenceProgress
+                    )
+                    emitProgress(
+                        TranslationProgressPhase.DECODING,
+                        0.50f + 0.46f * ((index + 1).toFloat() / totalSentences),
+                        completedSentences = index + 1
                     )
                     tokenizer.decode(outputIds)
                 }
@@ -237,18 +214,17 @@ class NllbTranslationEngine private constructor(
             }
         }
 
+        emitProgress(TranslationProgressPhase.FINISHING, 0.98f, totalSentences)
         results.joinToString(" ")
     }
 
-    /**
-     * Run autoregressive greedy decoding for a single sentence.
-     */
     private fun decodeAutoregressive(
         decoderSession: OrtSession,
         decoderStartIds: List<Int>,
         hiddenData: FloatArray,
         hiddenShape: LongArray,
-        encoderAttentionMask: LongArray
+        encoderAttentionMask: LongArray,
+        onTokenProgress: (Float) -> Unit = {},
     ): List<Int> {
         val generatedIds = mutableListOf<Int>()
         val decoderInputIds = decoderStartIds.toMutableList()
@@ -291,11 +267,13 @@ class NllbTranslationEngine private constructor(
 
                     if (nextTokenId == tokenizer.eosTokenId) {
                         Log.d(TAG, "decode(): EOS at step $step (${System.currentTimeMillis() - tDec}ms)")
+                        onTokenProgress(1f)
                         break
                     }
 
                     generatedIds.add(nextTokenId)
                     decoderInputIds.add(nextTokenId)
+                    onTokenProgress((step + 1).toFloat() / maxLength)
 
                     if (step % 10 == 9) {
                         val nativeHeapMB = android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024)
@@ -322,27 +300,15 @@ class NllbTranslationEngine private constructor(
         return if (parts.isEmpty()) listOf(text) else parts
     }
 
-    /**
-     * Extract logits for the last time step.
-     * Shape: [1, seq_len, vocab_size] → [vocab_size] at last position.
-     */
     private fun extractLastStepLogits(logitsTensor: OnnxTensor, decoderSeqLen: Int): FloatArray {
         @Suppress("UNCHECKED_CAST")
         val logits3d = logitsTensor.value as Array<Array<FloatArray>>
         return logits3d[0][decoderSeqLen - 1]
     }
 
-    /**
-     * Check if a FLORES language code is supported by this model.
-     */
     fun isLanguageSupported(floresCode: String): Boolean =
         tokenizer.getLangTokenId(floresCode) != null
 
-    /**
-     * No-op: sessions are created/destroyed per-phase in [translate].
-     * Kept for interface compatibility with NllbModelManager.
-     */
     fun close() {
-        // Nothing to close — no persistent ONNX sessions
     }
 }

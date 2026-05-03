@@ -4,17 +4,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.dp
 import com.example.memegram.localization.LocalStrings
 import org.koin.compose.viewmodel.koinViewModel
 import com.example.memegram.utils.sdp
@@ -114,12 +110,13 @@ fun CreateGroupScreen(
                             },
                             headlineContent = { Text(name) },
                             leadingContent = {
-                                Surface(
-                                    modifier = Modifier.size(40.sdp).clip(CircleShape),
-                                    color = MaterialTheme.colorScheme.secondaryContainer
-                                ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.padding(8.sdp))
-                                }
+                                AvatarImage(
+                                    mediaId = contact.profile?.avatarMediaId,
+                                    size = 40.sdp,
+                                    fallbackLetter = name.take(1).uppercase(),
+                                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
                             },
                             trailingContent = {
                                 Checkbox(

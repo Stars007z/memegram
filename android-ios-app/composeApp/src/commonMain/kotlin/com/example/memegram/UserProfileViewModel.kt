@@ -39,8 +39,8 @@ class UserProfileViewModel(
     private val _coverBytes = MutableStateFlow<ByteArray?>(null)
     val coverBytes: StateFlow<ByteArray?> = _coverBytes.asStateFlow()
 
-    private val _isContact = MutableStateFlow(false)
-    val isContact: StateFlow<Boolean> = _isContact.asStateFlow()
+    private val _isContact = MutableStateFlow<Boolean?>(null)
+    val isContact: StateFlow<Boolean?> = _isContact.asStateFlow()
 
     val isBlocked: StateFlow<Boolean> = combine(
         _userProfile, blockedUsersCache.blockedIds
@@ -53,6 +53,7 @@ class UserProfileViewModel(
     fun loadUser(userId: String) {
         viewModelScope.launch {
             _isLoading.value = true
+            _isContact.value = null
             try {
                 profileRepository.getCached(userId)?.let { cached ->
                     _userProfile.value = cached
@@ -70,10 +71,13 @@ class UserProfileViewModel(
                         profile.profileBackgroundMediaId?.let { fetchImage(it, "cover") }
                     }
                 }
-                try {
-                    val contacts = contactsRepository.getContacts(limit = 200, offset = 0).getOrNull()
-                    _isContact.value = contacts?.any { it.contactUserId == userId } == true
-                } catch (_: Exception) {}
+                contactsRepository.getContacts(limit = 200, offset = 0)
+                    .onSuccess { contacts ->
+                        _isContact.value = contacts.any { it.contactUserId == userId }
+                    }
+                    .onFailure {
+                        _isContact.value = false
+                    }
             } catch (e: Exception) {
                 if (_userProfile.value == null) _actionMessage.value = "Error loading profile"
             } finally {
@@ -96,12 +100,19 @@ class UserProfileViewModel(
 
     fun addToContacts() {
         val pubKey = _userProfile.value?.userPublicKey ?: return
+        val userId = _userProfile.value?.id ?: return
         viewModelScope.launch {
-            try {
-                contactsRepository.addContact(pubKey)
+            val result = contactsRepository.addContact(pubKey)
+            if (result.isSuccess) {
                 _isContact.value = true
                 _actionMessage.value = "User added to contacts"
-            } catch (e: Exception) {
+            } else {
+                contactsRepository.getContacts(limit = 200, offset = 0)
+                    .onSuccess { contacts ->
+                        if (contacts.any { it.contactUserId == userId }) {
+                            _isContact.value = true
+                        }
+                    }
                 _actionMessage.value = "Error: User already in contacts or unavailable"
             }
         }

@@ -2,18 +2,15 @@ package com.example.memegram.data.wipe
 
 import android.content.Context
 import com.example.memegram.AppContextHolder
+import com.example.memegram.database.AppDatabase
+import com.example.memegram.data.local.SecurePrefsFactory
+import com.example.memegram.getHardwareDeviceId
 import com.example.memegram.mls.MlsManager
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import androidx.core.content.edit
-
-private val PREFS_FILES = listOf(
-    "session_secure_prefs",
-    "key_manager_secure_prefs",
-    "db_secure_prefs",
-)
 
 private val FILES_SUBDIRS_TO_CLEAR = listOf(
     "translation_models",
@@ -28,13 +25,26 @@ actual class ClientDataWiper(
     private val plainSettings: Settings,
     private val secureSettings: Settings,
     private val mlsManager: MlsManager,
+    private val database: AppDatabase,
 ) {
     actual suspend fun wipeAll() {
         withContext(Dispatchers.IO) {
+            val retainedDeviceId = secureSettings.getStringOrNull("device_id")
+                ?.takeIf { it.isNotBlank() }
+                ?: runCatching { getHardwareDeviceId() }.getOrNull()
+
+            clearAuthSecrets(retainedDeviceId)
+
             runCatching {
-                val deleted = context.deleteDatabase("memegram.db")
-                println("MemegramDebug [AccountDelete] wipe.db.memegram=$deleted")
-            }.onFailure { println("MemegramDebug [AccountDelete] wipe.db.fail: ${it.message}") }
+                database.appDatabaseQueries.transaction {
+                    database.appDatabaseQueries.deleteAllMessages()
+                    database.appDatabaseQueries.deleteAllChats()
+                    database.appDatabaseQueries.clearBlockedUsers()
+                    database.appDatabaseQueries.clearUserProfiles()
+                }
+                database.appDatabaseQueries.vacuumDb()
+                println("MemegramDebug [AccountDelete] wipe.db.sql.ok")
+            }.onFailure { println("MemegramDebug [AccountDelete] wipe.db.sql.fail: ${it.message}") }
 
             runCatching {
                 context.filesDir.listFiles { f ->
@@ -64,25 +74,10 @@ actual class ClientDataWiper(
             }.onFailure { println("MemegramDebug [AccountDelete] wipe.prefs.secure.fail: ${it.message}") }
 
             runCatching {
-                val sharedPrefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
-                if (sharedPrefsDir.exists()) {
-                    sharedPrefsDir.listFiles()?.forEach { file ->
-                        val name = file.name.removeSuffix(".xml")
-                        runCatching {
-                            val sp = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-                            sp.edit(commit = true) { clear() }
-                        }
-                        runCatching { file.delete() }
-                    }
-                }
-                println("MemegramDebug [AccountDelete] wipe.prefs.all.ok")
-            }.onFailure { println("MemegramDebug [AccountDelete] wipe.prefs.all.fail: ${it.message}") }
-
-            PREFS_FILES.forEach { name ->
-                runCatching {
-                    context.getSharedPreferences(name, Context.MODE_PRIVATE).edit(commit = true) { clear() }
-                }.onFailure { println("MemegramDebug [AccountDelete] wipe.pref[$name].fail: ${it.message}") }
-            }
+                SecurePrefsFactory.create(context, "key_manager_secure_prefs")
+                    .edit(commit = true) { clear() }
+                println("MemegramDebug [AccountDelete] wipe.identity.keys.ok")
+            }.onFailure { println("MemegramDebug [AccountDelete] wipe.identity.keys.fail: ${it.message}") }
 
             runCatching {
                 context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
@@ -105,8 +100,30 @@ actual class ClientDataWiper(
                 }?.forEach { it.delete() }
             }.onFailure { println("MemegramDebug [AccountDelete] wipe.voice.fail: ${it.message}") }
 
+            restoreDeviceId(retainedDeviceId)
+
             println("MemegramDebug [AccountDelete] wipeAll: done")
         }
+    }
+
+    private fun clearAuthSecrets(retainedDeviceId: String?) {
+        runCatching {
+            secureSettings.remove("access_token")
+            secureSettings.remove("refresh_token")
+            secureSettings.remove("user_id")
+            secureSettings.remove("device_type")
+            secureSettings.remove("expires_at")
+            retainedDeviceId?.let { secureSettings.putString("device_id", it) }
+            println("MemegramDebug [AccountDelete] wipe.session.immediate.ok")
+        }.onFailure { println("MemegramDebug [AccountDelete] wipe.session.immediate.fail: ${it.message}") }
+    }
+
+    private fun restoreDeviceId(retainedDeviceId: String?) {
+        if (retainedDeviceId.isNullOrBlank()) return
+        runCatching {
+            secureSettings.putString("device_id", retainedDeviceId)
+            println("MemegramDebug [AccountDelete] wipe.device_id.restored")
+        }.onFailure { println("MemegramDebug [AccountDelete] wipe.device_id.restore.fail: ${it.message}") }
     }
 }
 
@@ -114,9 +131,11 @@ actual fun createClientDataWiper(
     plainSettings: Settings,
     secureSettings: Settings,
     mlsManager: MlsManager,
+    database: AppDatabase,
 ): ClientDataWiper = ClientDataWiper(
     context = AppContextHolder.context,
     plainSettings = plainSettings,
     secureSettings = secureSettings,
     mlsManager = mlsManager,
+    database = database,
 )

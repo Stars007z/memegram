@@ -1,6 +1,8 @@
 package com.example.memegram
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -33,11 +35,15 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
@@ -57,13 +63,18 @@ import com.example.memegram.utils.ssp
 import com.example.memegram.utils.ImageTopAppBarBox
 import com.example.memegram.utils.resolveTopBarTextColor
 
+object ChatsSwipeBackPreviewCache {
+    var chats by mutableStateOf<List<ChatModel>>(emptyList())
+    var blockedConversationIds by mutableStateOf<Set<String>>(emptySet())
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsScreen(
     topBarColor: Color,
     onStorageClick: () -> Unit,
     onChatClick: (ChatModel) -> Unit,
-    onNavigateToChat: (convId: String, chatName: String?, avatarMediaId: String?) -> Unit,
+    onNavigateToChat: (convId: String, chatName: String?, avatarMediaId: String?, messageId: Int?) -> Unit,
     onNavigateToCreateGroup: () -> Unit,
     onAppearanceClick: () -> Unit,
     onProfileClick: () -> Unit,
@@ -78,10 +89,16 @@ fun ChatsScreen(
     val topBarTextColor = resolveTopBarTextColor(topBarColor)
     val s = LocalStrings.current
     val chats by viewModel.chats.collectAsState()
+    val searchMessageResults by viewModel.searchMessageResults.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val blockedConvIds by viewModel.blockedConversationIds.collectAsState()
     val selectedIds by viewModel.selectedChatIds.collectAsState()
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
+
+    SideEffect {
+        ChatsSwipeBackPreviewCache.chats = chats
+        ChatsSwipeBackPreviewCache.blockedConversationIds = blockedConvIds
+    }
 
     var pendingMuteIds by remember { mutableStateOf<Set<String>?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -131,7 +148,7 @@ fun ChatsScreen(
             contactsVm.clearChatCreated()
             contactsVm.clearPendingChatName()
             contactsVm.clearPendingChatAvatarMediaId()
-            onNavigateToChat(id, chatName, avatarMediaId)
+            onNavigateToChat(id, chatName, avatarMediaId, null)
         }
     }
 
@@ -363,16 +380,6 @@ fun ChatsScreen(
                                             showAddKeyDialog = true
                                         },
                                         leadingIcon = { Icon(Icons.Default.Key, null) }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(s.addByQr) },
-                                        onClick = { showAddMenu = false },
-                                        leadingIcon = { Icon(Icons.Default.QrCodeScanner, null) }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(s.createChannel) },
-                                        onClick = { showAddMenu = false },
-                                        leadingIcon = { Icon(Icons.Default.Campaign, null) }
                                     )
                                 }
                             }
@@ -625,15 +632,75 @@ fun ChatsScreen(
                         .weight(1f)
                         .background(MaterialTheme.colorScheme.background)
                 ) {
-                    if (chats.isEmpty() && searchQuery.isNotBlank()) {
+                    val showSearchResults = isSearchMode && searchQuery.isNotBlank()
+                    val totalSearchResults = chats.size + searchMessageResults.size
+
+                    if (showSearchResults && totalSearchResults == 0) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(s.nothingFound, color = Color.Gray)
+                        }
+                    } else if (showSearchResults) {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            item(key = "search-summary") {
+                                SearchResultsSummary(
+                                    total = totalSearchResults
+                                )
+                            }
+
+                            if (chats.isNotEmpty()) {
+                                item(key = "chat-results-header") {
+                                    SearchSectionHeader(s.chatResults, chats.size)
+                                }
+                                items(chats, key = { "chat:${it.conversationId}" }) { chat ->
+                                    ChatItem(
+                                        chat = chat,
+                                        query = searchQuery,
+                                        isSelected = false,
+                                        isSelectionMode = false,
+                                        onClick = { onChatClick(chat) },
+                                        onLongClick = {},
+                                        onMute = {},
+                                        onDelete = {},
+                                        isBlocked = chat.conversationId in blockedConvIds,
+                                        modifier = Modifier.animateItem()
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 76.sdp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (searchMessageResults.isNotEmpty()) {
+                                item(key = "message-results-header") {
+                                    SearchSectionHeader(s.messageResults, searchMessageResults.size)
+                                }
+                                items(searchMessageResults, key = { "message:${it.chat.conversationId}:${it.message.serverId.ifBlank { it.message.id.toString() }}" }) { result ->
+                                    MessageSearchResultItem(
+                                        result = result,
+                                        query = searchQuery,
+                                        onClick = {
+                                            onNavigateToChat(
+                                                result.chat.conversationId,
+                                                result.chat.name,
+                                                result.chat.avatarMediaId,
+                                                result.message.id
+                                            )
+                                        },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
+                                item(key = "search-bottom-space") {
+                                    Spacer(Modifier.height(12.sdp))
+                                }
+                            }
                         }
                     } else {
                         LazyColumn(Modifier.fillMaxSize()) {
                             items(chats, key = { it.id }) { chat ->
                                 ChatItem(
                                     chat = chat,
+                                    query = "",
                                     isSelected = chat.conversationId in selectedIds,
                                     isSelectionMode = isSelectionMode,
                                     onClick = {
@@ -678,10 +745,244 @@ fun formatChatTime(timestampMs: Long): String {
     } catch (e: Exception) { "" }
 }
 
+private fun formatSearchResultTime(timestampMs: Long): String {
+    if (timestampMs <= 0L) return ""
+    return try {
+        val instant = Instant.fromEpochMilliseconds(timestampMs)
+        val local = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        val time = "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+        if (local.date == now.date) time
+        else "${local.day.toString().padStart(2, '0')}.${local.month.number.toString().padStart(2, '0')} $time"
+    } catch (_: Exception) { "" }
+}
+
+@Composable
+private fun highlightedText(
+    text: String,
+    query: String,
+    highlightColor: Color = Color(0xFFFFD60A),
+    highlightTextColor: Color = Color.Black,
+): AnnotatedString = buildAnnotatedString {
+    if (query.isBlank()) {
+        append(text)
+        return@buildAnnotatedString
+    }
+    val lower = text.lowercase()
+    val lowerQ = query.lowercase()
+    var pos = 0
+    while (pos < text.length) {
+        val idx = lower.indexOf(lowerQ, pos)
+        if (idx == -1) {
+            append(text.substring(pos))
+            break
+        }
+        append(text.substring(pos, idx))
+        withStyle(
+            SpanStyle(
+                background = highlightColor,
+                color = highlightTextColor,
+                fontWeight = FontWeight.SemiBold,
+            )
+        ) {
+            append(text.substring(idx, (idx + query.length).coerceAtMost(text.length)))
+        }
+        pos = idx + query.length
+    }
+}
+
+private fun searchSnippet(text: String, query: String, radius: Int = 72): String {
+    if (query.isBlank() || text.length <= radius * 2) return text
+    val idx = text.lowercase().indexOf(query.lowercase())
+    if (idx < 0) return text
+    val start = (idx - radius).coerceAtLeast(0)
+    val end = (idx + query.length + radius).coerceAtMost(text.length)
+    return buildString {
+        if (start > 0) append("...")
+        append(text.substring(start, end).trim())
+        if (end < text.length) append("...")
+    }
+}
+
+@Composable
+private fun SearchResultsSummary(
+    total: Int,
+) {
+    val s = LocalStrings.current
+    Text(
+        text = s.searchResultsCount(total),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 18.sdp, end = 18.sdp, top = 14.sdp, bottom = 4.sdp)
+    )
+}
+
+@Composable
+private fun SearchSectionHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.sdp, vertical = 8.sdp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(8.sdp))
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 8.sdp, vertical = 2.sdp),
+            )
+        }
+        Spacer(Modifier.width(10.sdp))
+        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.surfaceVariant)
+    }
+}
+
+@Composable
+private fun MessageSearchResultItem(
+    result: ChatSearchResult,
+    query: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val s = LocalStrings.current
+    var pressed by remember { mutableStateOf(false) }
+    val pressAlpha by animateFloatAsState(
+        targetValue = if (pressed) 0.12f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "searchPressAlpha"
+    )
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            delay(140)
+            pressed = false
+        }
+    }
+
+    Surface(
+        color = Color.Transparent,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.sdp, vertical = 3.sdp)
+            .clip(RoundedCornerShape(20.sdp))
+            .clickable {
+                pressed = true
+                onClick()
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = pressAlpha))
+                .padding(horizontal = 8.sdp, vertical = 9.sdp)
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                AvatarImage(
+                    mediaId = result.chat.avatarMediaId,
+                    size = 46.sdp,
+                    fallbackLetter = result.chat.name.take(1).uppercase(),
+                    backgroundColor = MaterialTheme.colorScheme.primary,
+                    textColor = MaterialTheme.colorScheme.onPrimary,
+                )
+
+                Spacer(Modifier.width(12.sdp))
+
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = highlightedText(result.chat.name, query),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val time = formatSearchResultTime(result.message.timestamp)
+                        if (time.isNotBlank()) {
+                            Spacer(Modifier.width(8.sdp))
+                            Text(
+                                text = time,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(5.sdp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (result.message.isOutgoing) {
+                            Text(
+                                text = s.you,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        } else if (!result.senderName.isNullOrBlank()) {
+                            AvatarImage(
+                                mediaId = result.senderAvatarMediaId,
+                                size = 18.sdp,
+                                fallbackLetter = result.senderName.take(1).uppercase(),
+                                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                textStyle = MaterialTheme.typography.labelSmall,
+                            )
+                            Spacer(Modifier.width(6.sdp))
+                            Text(
+                                text = result.senderName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                    }
+
+                    Spacer(Modifier.height(6.sdp))
+
+                    Text(
+                        text = highlightedText(searchSnippet(result.displayText, query), query),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Spacer(Modifier.width(8.sdp))
+                Icon(
+                    Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .padding(top = 22.sdp)
+                        .size(22.sdp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatItem(
     chat: ChatModel,
+    query: String = "",
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     onClick: () -> Unit,
@@ -696,11 +997,14 @@ fun ChatItem(
     val isMuted = chat.muteUntil > nowMs
     val rowBg = if (isSelected)
         MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    else if (query.isNotBlank())
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f)
     else Color.Transparent
 
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(if (query.isBlank()) 0.sdp else 18.sdp))
             .background(rowBg)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.sdp, vertical = 12.sdp),
@@ -736,7 +1040,7 @@ fun ChatItem(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = chat.name,
+                    text = highlightedText(chat.name, query),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -782,7 +1086,7 @@ fun ChatItem(
                 }
 
                 Text(
-                    text = chat.lastMessage,
+                    text = highlightedText(chat.lastMessage, query),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray,
                     maxLines = 1,

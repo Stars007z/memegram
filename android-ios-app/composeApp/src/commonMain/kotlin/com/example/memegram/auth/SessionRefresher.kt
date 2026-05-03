@@ -5,6 +5,7 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.LoginCompleteRequest
 import com.example.memegram.data.models.LoginInitRequest
 import com.example.memegram.data.network.ApiService
+import com.example.memegram.getDeviceModelName
 import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.getHardwareDeviceId
 import com.example.memegram.mls.MlsManager
@@ -46,8 +47,18 @@ class SessionRefresher(
     fun refreshIfNeeded() {
         if (inFlight?.isActive == true) return
         inFlight = scope.launch {
-            mutex.withLock { doRefresh() }
+            mutex.withLock { doRefresh(force = false) }
         }
+    }
+
+    suspend fun refreshIfNeededAwait(force: Boolean = false): Boolean {
+        val activeRefresh = inFlight?.takeIf { it.isActive }
+        if (activeRefresh != null) {
+            activeRefresh.join()
+            if (!force) return _state.value is SessionState.Authenticated
+        }
+
+        return mutex.withLock { doRefresh(force) }
     }
 
     fun markAuthenticated() {
@@ -59,22 +70,22 @@ class SessionRefresher(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun doRefresh() {
+    private suspend fun doRefresh(force: Boolean): Boolean {
         val hasKp = keyManager.hasKeyPair()
         val isLogged = sessionManager.isLoggedIn
         println("MemegramDebug [SessionRefresher] doRefresh: hasKeyPair=$hasKp, isLoggedIn=$isLogged")
         if (!hasKp || !isLogged) {
             _state.value = SessionState.NoCredentials
-            return
+            return false
         }
         val expired = sessionManager.isTokenExpired
-        println("MemegramDebug [SessionRefresher] tokenExpired=$expired")
-        if (!expired) {
+        println("MemegramDebug [SessionRefresher] tokenExpired=$expired, force=$force")
+        if (!expired && !force) {
             scope.launch {
                 runCatching { notificationsRepository.registerCurrentDeviceToken() }
             }
             _state.value = SessionState.Authenticated
-            return
+            return true
         }
         _state.value = SessionState.Refreshing
         try {
@@ -87,13 +98,14 @@ class SessionRefresher(
                     deviceId = deviceId,
                     challenge = initResp.challenge,
                     signature = signatureBase64,
-                    deviceName = "KMP Device",
+                    deviceName = getDeviceModelName(),
                 )
             )
             sessionManager.save(result)
             initMlsAndUploadKeys()
             notificationsRepository.registerCurrentDeviceToken()
             _state.value = SessionState.Authenticated
+            return true
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Ошибка входа"
             if (errorMsg.contains("422") ||
@@ -109,6 +121,7 @@ class SessionRefresher(
             } else {
                 _state.value = SessionState.Failed(errorMsg)
             }
+            return false
         }
     }
 

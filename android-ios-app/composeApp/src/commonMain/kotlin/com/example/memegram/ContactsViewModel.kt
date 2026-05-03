@@ -72,6 +72,13 @@ class ContactsViewModel(
     }
     fun clearChatCreated() { _chatCreated.value = null }
 
+    private suspend fun grantDirectPeerAdmin(conversationId: String, peerUserId: String) {
+        runCatching { api.updateMemberRole(conversationId, peerUserId, "admin") }
+            .onFailure { e ->
+                println("MemegramDebug [DirectRole]: peer admin grant skipped: ${e.message}")
+            }
+    }
+
     fun toggleFavorite(contactUserId: String) {
         val entry = _contacts.value.find { it.contactUserId == contactUserId } ?: return
         viewModelScope.launch {
@@ -178,15 +185,16 @@ class ContactsViewModel(
                 )
 
                 mlsManager.bindConversation(conv.id, mlsGroupId)
+                grantDirectPeerAdmin(conv.id, entry.contactUserId)
 
-                var currentEpoch = 0L
+                var serverEpoch = conv.mlsGroup?.currentEpoch ?: 0L
 
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
                         mlsManager.flushState()
 
-                        val nextEpoch = currentEpoch + 1L
+                        val nextEpoch = serverEpoch + 1L
 
                         val actualEpoch = commitGroupChangeWithRetry(
                             conv.id,
@@ -200,8 +208,10 @@ class ContactsViewModel(
                             )
                         )
                         mlsManager.mergePendingCommit(conv.id)
-                        currentEpoch = actualEpoch
-                        mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+                        serverEpoch = actualEpoch
+                        mlsManager.updateCommitCursor(conv.id, serverEpoch)
+                        val realEpoch = mlsManager.getRealMlsEpoch(conv.id)
+                        mlsManager.updateGroupEpoch(conv.id, realEpoch)
                     } catch (e: Exception) {
                         println("MemegramDebug [MLS] ❌ Ошибка добавления устройства ${kp.deviceId}: ${e.message}")
                         try { mlsManager.clearPendingCommit(conv.id) } catch (_: Exception) {}
@@ -291,14 +301,14 @@ class ContactsViewModel(
 
                 mlsManager.bindConversation(conv.id, mlsGroupId)
 
-                var currentEpoch = 0L
+                var serverEpoch = conv.mlsGroup?.currentEpoch ?: 0L
 
                 for (device in allDevicesToInvite) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, device.second.keyPackageData)
                         mlsManager.flushState()
 
-                        val nextEpoch = currentEpoch + 1L
+                        val nextEpoch = serverEpoch + 1L
 
                         val actualEpoch = commitGroupChangeWithRetry(
                             conv.id,
@@ -316,8 +326,10 @@ class ContactsViewModel(
                         )
 
                         mlsManager.mergePendingCommit(conv.id)
-                        currentEpoch = actualEpoch
-                        mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+                        serverEpoch = actualEpoch
+                        mlsManager.updateCommitCursor(conv.id, serverEpoch)
+                        val realEpoch = mlsManager.getRealMlsEpoch(conv.id)
+                        mlsManager.updateGroupEpoch(conv.id, realEpoch)
                     } catch (e: Exception) {
                         println("MemegramDebug [MLS] ❌ Ошибка добавления устройства ${device.second.deviceId}: ${e.message}")
                         try { mlsManager.clearPendingCommit(conv.id) } catch (_: Exception) {}
@@ -388,15 +400,16 @@ class ContactsViewModel(
                 )
 
                 mlsManager.bindConversation(conv.id, mlsGroupId)
+                grantDirectPeerAdmin(conv.id, userId)
 
-                var currentEpoch = 0L
+                var serverEpoch = conv.mlsGroup?.currentEpoch ?: 0L
 
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
                         mlsManager.flushState()
 
-                        val nextEpoch = currentEpoch + 1L
+                        val nextEpoch = serverEpoch + 1L
                         val actualEpoch = commitGroupChangeWithRetry(
                             conv.id,
                             CommitGroupChangeRequest(
@@ -407,8 +420,10 @@ class ContactsViewModel(
                             )
                         )
                         mlsManager.mergePendingCommit(conv.id)
-                        currentEpoch = actualEpoch
-                        mlsManager.updateGroupEpoch(conv.id, currentEpoch)
+                        serverEpoch = actualEpoch
+                        mlsManager.updateCommitCursor(conv.id, serverEpoch)
+                        val realEpoch = mlsManager.getRealMlsEpoch(conv.id)
+                        mlsManager.updateGroupEpoch(conv.id, realEpoch)
                     } catch (e: Exception) {
                         println("MemegramDebug [MLS] ❌ Ошибка добавления устройства ${kp.deviceId}: ${e.message}")
                         try { mlsManager.clearPendingCommit(conv.id) } catch (_: Exception) {}

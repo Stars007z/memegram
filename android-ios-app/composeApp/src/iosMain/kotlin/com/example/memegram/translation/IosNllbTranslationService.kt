@@ -17,7 +17,9 @@ class IosNllbTranslationService(
         text: String,
         sourceLang: String?,
         targetLang: String,
+        onProgress: (TranslationProgress) -> Unit,
     ): TranslationResult = translateMutex.withLock {
+        onProgress(TranslationProgress(0.04f, TranslationProgressPhase.IDENTIFYING_LANGUAGE))
         val detectedLang = sourceLang ?: identifyLanguage(text) ?: "und"
         println("[NLLB-iOS] translate: text='${text.take(40)}' src=$sourceLang detected=$detectedLang tgt=$targetLang")
 
@@ -37,6 +39,7 @@ class IosNllbTranslationService(
             return TranslationResult(text, detectedLang)
         }
 
+        onProgress(TranslationProgress(0.12f, TranslationProgressPhase.LOADING_MODEL))
         val engine = modelManager.getEngine()
         if (engine == null) {
             println("[NLLB-iOS] translate: engine is null (model not on disk or not enough RAM) — returning original")
@@ -45,7 +48,7 @@ class IosNllbTranslationService(
 
         return try {
             println("[NLLB-iOS] translate: starting inference srcFlores=$srcFlores tgtFlores=$tgtFlores")
-            val translated = engine.translate(text, srcFlores, tgtFlores)
+            val translated = engine.translate(text, srcFlores, tgtFlores, onProgress)
             println("[NLLB-iOS] translate: inference done, output='${translated.take(40)}'")
             if (translated.isBlank() || translated == text) {
                 TranslationResult(text, detectedLang)

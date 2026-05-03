@@ -102,3 +102,18 @@ object IosPhotoPickerBridge {
     val delegate: PhotoPickerBridgeDelegate?
         get() = ref.value
 }
+
+interface FileOpenBridgeDelegate {
+    fun open(path: String, mime: String): Boolean
+}
+
+object IosFileOpenBridge {
+    private val ref = AtomicReference<FileOpenBridgeDelegate?>(null)
+
+    fun register(delegate: FileOpenBridgeDelegate) {
+        ref.value = delegate
+    }
+
+    val delegate: FileOpenBridgeDelegate?
+        get() = ref.value
+}
