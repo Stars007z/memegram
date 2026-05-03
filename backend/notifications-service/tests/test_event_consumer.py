@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
