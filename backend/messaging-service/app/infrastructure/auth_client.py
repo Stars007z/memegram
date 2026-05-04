@@ -5,6 +5,7 @@ import grpc
 
 from app.generated import auth_pb2, auth_pb2_grpc
 
+
 class IAuthClient(ABC):
 
     @abstractmethod

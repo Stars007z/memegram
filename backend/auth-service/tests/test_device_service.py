@@ -22,6 +22,14 @@ from app.services.device_service import DeviceService
 def _make_service() -> DeviceService:
     session = MagicMock()
     session.execute = AsyncMock()
+    # `await session.execute(...)` returns a SQLAlchemy Result whose
+    # `.scalars()` and `.all()` are sync. Because AsyncMock children are
+    # AsyncMocks by default, the chain `result.scalars().all()` would yield
+    # coroutines and break callers like `_invalidate_device_session_cache`.
+    # Configure a synchronous result chain that returns an empty list.
+    _execute_result = MagicMock()
+    _execute_result.scalars.return_value.all.return_value = []
+    session.execute.return_value = _execute_result
     session.flush = AsyncMock()
     service = DeviceService.__new__(DeviceService)
     service.session = session
