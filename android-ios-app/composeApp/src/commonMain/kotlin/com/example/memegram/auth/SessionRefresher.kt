@@ -5,6 +5,7 @@ import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.LoginCompleteRequest
 import com.example.memegram.data.models.LoginInitRequest
 import com.example.memegram.data.network.ApiService
+import com.example.memegram.data.wipe.ClientDataWiper
 import com.example.memegram.getDeviceModelName
 import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.getHardwareDeviceId
@@ -36,6 +37,7 @@ class SessionRefresher(
     private val keyManager: KeyManager,
     private val mlsManager: MlsManager,
     private val notificationsRepository: NotificationsRepository,
+    private val clientDataWiper: ClientDataWiper,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
@@ -67,6 +69,18 @@ class SessionRefresher(
 
     fun markNoCredentials() {
         _state.value = SessionState.NoCredentials
+    }
+
+    fun markRevoked(message: String = "Device access was revoked") {
+        scope.launch {
+            runCatching { clientDataWiper.wipeAll() }
+                .onFailure {
+                    println("MemegramDebug [SessionRefresher] revoke wipe failed: ${it.message}")
+                    sessionManager.clearAuth()
+                    mlsManager.clearAll()
+                }
+        }
+        _state.value = SessionState.Failed(message)
     }
 
     @OptIn(ExperimentalEncodingApi::class)
@@ -143,7 +157,7 @@ class SessionRefresher(
             if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {
                 val packages = mlsManager.generateKeyPackages(MlsManager.BATCH_KEY_PACKAGES)
                 mlsManager.flushState()
-                api.uploadKeyPackages(packages)
+                api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
                 sessionManager.clearPendingKpCleanup()
             }
         }

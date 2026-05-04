@@ -48,6 +48,49 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         print("APNs registration failed: \(error)")
     }
 
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        handleRemotePayload(userInfo)
+        completionHandler(.newData)
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        let userInfo = notification.request.content.userInfo
+        let eventType = (userInfo["event_type"] as? String) ?? ""
+        handleRemotePayload(userInfo)
+        if eventType == "conversation_deleted" {
+            completionHandler([])
+        } else {
+            if #available(iOS 14.0, *) {
+                completionHandler([.banner, .list, .sound, .badge])
+            } else {
+                completionHandler([.alert, .sound, .badge])
+            }
+        }
+    }
+
+    private func handleRemotePayload(_ userInfo: [AnyHashable: Any]) {
+        let eventType = (userInfo["event_type"] as? String) ?? ""
+        let conversationId = (userInfo["conversation_id"] as? String) ?? ""
+
+        switch eventType {
+        case "conversation_deleted":
+            let reason = (userInfo["reason"] as? String) ?? ""
+            guard reason != "account_deleted" else { return }
+            guard !conversationId.isEmpty else { return }
+            IosConversationCleanerBridge.shared.purge(conversationId: conversationId)
+        default:
+            break
+        }
+    }
+
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         IosMlModelGateBridge.shared.onMemoryPressure()
     }

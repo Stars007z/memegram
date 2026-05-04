@@ -258,11 +258,11 @@ class ApiService(
             noCache()
         }.body<Map<String, Int>>().let { it["available_count"] ?: it["count"] ?: 0 }
 
-    suspend fun uploadKeyPackages(packagesB64: List<String>) {
+    suspend fun uploadKeyPackages(packagesB64: List<String>, signatureKeyB64: String? = null) {
         client.post("$baseUrl/api/v1/messaging/key-packages") {
             bearerAuth(token())
             contentType(ContentType.Application.Json)
-            setBody(mapOf("key_packages" to packagesB64))
+            setBody(UploadKeyPackagesRequest(packagesB64, signatureKeyB64?.takeIf { it.isNotBlank() }))
         }
     }
 
@@ -577,6 +577,13 @@ class ApiService(
     suspend fun revokeDevice(deviceId: String, request: RevokeDeviceRequest): RevokeDeviceResponse =
         client.delete("$baseUrl/api/v1/devices/$deviceId") {
             bearerAuth(token()); contentType(ContentType.Application.Json); setBody(request)
+        }.body()
+
+    suspend fun transferPrimary(deviceId: String): TransferPrimaryResponse =
+        client.post("$baseUrl/api/v1/devices/primary/transfer") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(TransferPrimaryRequest(targetDeviceId = deviceId))
         }.body()
 
     suspend fun getDeviceAdditionStatus(registrationId: String): DeviceAdditionStatusResponse =

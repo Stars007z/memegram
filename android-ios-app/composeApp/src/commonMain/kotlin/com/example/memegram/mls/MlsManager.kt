@@ -22,6 +22,12 @@ sealed class MlsCommitProcessResult {
     data class Skipped(val permanent: Boolean, val message: String?) : MlsCommitProcessResult()
 }
 
+data class AddMemberResult(
+    val welcomeB64: String,
+    val commitB64: String,
+    val memberSignatureKeyB64: String
+)
+
 @OptIn(ExperimentalEncodingApi::class)
 class MlsManager(
     private val sessionManager: SessionManager,
@@ -249,7 +255,10 @@ class MlsManager(
 
             for (kp in peerPackages) {
                 try {
-                    val bundle = c.addMember(groupIdBytes, kotlin.io.encoding.Base64.decode(kp.keyPackageData))
+                    val keyPackageBytes = kotlin.io.encoding.Base64.decode(kp.keyPackageData)
+                    val signatureKeyB64 = kotlin.io.encoding.Base64.encode(c.extractSignatureKey(keyPackageBytes))
+                    rememberDeviceSignatureKey(kp.deviceId, signatureKeyB64)
+                    val bundle = c.addMember(groupIdBytes, keyPackageBytes)
                     welcomes.add(
                         com.example.memegram.data.models.DeviceWelcome(
                             deviceId = kp.deviceId,
@@ -438,12 +447,14 @@ class MlsManager(
                     "members=$memberCount, realEpoch=$realEpoch")
 
             try {
-                val bundle = c.addMember(groupId, Base64.decode(keyPackageB64))
+                val keyPackageBytes = Base64.decode(keyPackageB64)
+                val memberSignatureKeyB64 = Base64.encode(c.extractSignatureKey(keyPackageBytes))
+                val bundle = c.addMember(groupId, keyPackageBytes)
                 val commitB64 = Base64.encode(bundle.commit)
                 myRecentCommits.add(normalizeB64(commitB64))
                 saveState()
                 println("MemegramDebug [MLS] ✅ addMemberToGroup: welcome=${bundle.welcome.size}b, commit=${bundle.commit.size}b")
-                AddMemberResult(Base64.encode(bundle.welcome), commitB64)
+                AddMemberResult(Base64.encode(bundle.welcome), commitB64, memberSignatureKeyB64)
             } catch (e: Exception) {
                 println("MemegramDebug [MLS] ❌ addMemberToGroup FAILED: ${e.message}")
                 println("MemegramDebug [MLS]   memberCount=$memberCount, realEpoch=$realEpoch")
@@ -457,7 +468,7 @@ class MlsManager(
         mutex.withLock {
             val c = getOrCreateClient()
 
-            val signingKeyBytes = c.exportSigningKey()
+            val signingKeyBytes = c.exportSigningPublicKey()
 
             val kpBytes = c.generateKeyPackage()
             settings[KEY_KP_COUNT] = settings.getInt(KEY_KP_COUNT, 0) + 1
@@ -516,6 +527,7 @@ class MlsManager(
             it.startsWith("mls_mapping_") ||
             it.startsWith(KEY_GROUP_PREFIX) ||
             it.startsWith(KEY_COMMIT_CURSOR_PREFIX) ||
+            it.startsWith("mls_device_sig_") ||
             it.startsWith("mls_broken_")
         }
         for (k in staleKeys) settings.remove(k)
@@ -523,6 +535,18 @@ class MlsManager(
         _client     = null
         _stateDirty = false
         println("MemegramDebug [MLS] clearAll() завершён — всё удалено (+${staleKeys.size} per-conv entries)")
+    }
+
+    suspend fun getOwnSignaturePublicKeyB64(): String = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            Base64.encode(getOrCreateClient().exportSigningPublicKey())
+        }
+    }
+
+    fun rememberDeviceSignatureKey(deviceId: String, signatureKeyB64: String) {
+        if (deviceId.isNotBlank() && signatureKeyB64.isNotBlank()) {
+            settings["mls_device_sig_$deviceId"] = signatureKeyB64
+        }
     }
 
     fun isChatMlsBroken(conversationId: String): Boolean =
@@ -606,6 +630,30 @@ class MlsManager(
             }
         }
 
+    suspend fun removeMemberDevice(conversationId: String, targetDeviceId: String, signatureKeyB64: String? = null): String =
+        withContext(Dispatchers.Default) {
+            mutex.withLock {
+                val groupId = getMlsGroupId(conversationId)
+                val c = getOrCreateClient()
+                val effectiveSignatureKey = signatureKeyB64
+                    ?: settings.getStringOrNull("mls_device_sig_$targetDeviceId")
+                    ?: throw IllegalStateException("Missing MLS signature key for device $targetDeviceId")
+
+                val epochBefore = try { c.getGroupEpoch(groupId).toLong() } catch (_: Exception) { -1L }
+                println("MemegramDebug [MLS] removeMemberDevice: conv=$conversationId, " +
+                        "device=$targetDeviceId, epochBefore=$epochBefore")
+
+                val commitBytes = c.removeMemberBySignatureKey(groupId, Base64.decode(effectiveSignatureKey))
+                val commitB64 = Base64.encode(commitBytes)
+                myRecentCommits.add(normalizeB64(commitB64))
+                settings.remove("mls_device_sig_$targetDeviceId")
+                saveState()
+
+                println("MemegramDebug [MLS] removeMemberDevice: commit created, ${commitBytes.size} bytes")
+                commitB64
+            }
+        }
+
     suspend fun mergePendingCommit(conversationId: String) = withContext(Dispatchers.Default) {
         mutex.withLock {
             val groupId = getMlsGroupId(conversationId)
@@ -635,9 +683,4 @@ data class MlsCredentials(
     val identityKeyPub: String,
     val initKeyPub: String,
     val credentialData: String
-)
-
-data class AddMemberResult(
-    val welcomeB64: String,
-    val commitB64: String
 )

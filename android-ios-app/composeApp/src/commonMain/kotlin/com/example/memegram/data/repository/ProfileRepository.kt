@@ -23,6 +23,8 @@ class ProfileRepository(
     private val settings: Settings,
 ) {
     private val staleThresholdMs: Long = 15 * 60 * 1000L
+    private val failedFetchRetryMs: Long = 60 * 1000L
+    private val failedFetches = mutableMapOf<String, Long>()
 
     private val _updates = MutableSharedFlow<UserProfileResponse>(extraBufferCapacity = 32)
     val updates: SharedFlow<UserProfileResponse> = _updates.asSharedFlow()
@@ -38,9 +40,16 @@ class ProfileRepository(
 
     suspend fun getOrFetch(userId: String, forceRefresh: Boolean = false): UserProfileResponse? {
         val cached = getCached(userId)
-        val needsFetch = forceRefresh || cached == null || isStale(userId)
+        val now = Clock.System.now().toEpochMilliseconds()
+        val lastFailure = failedFetches[userId] ?: 0L
+        val recentlyFailed = !forceRefresh && lastFailure > 0 && now - lastFailure < failedFetchRetryMs
+        val needsFetch = !recentlyFailed && (forceRefresh || cached == null || isStale(userId))
         if (needsFetch) {
-            runCatching { fetchAndCache(userId) }.getOrNull()?.let { return it }
+            runCatching { fetchAndCache(userId) }
+                .onSuccess { failedFetches.remove(userId) }
+                .onFailure { failedFetches[userId] = now }
+                .getOrNull()
+                ?.let { return it }
         }
         return cached
     }
@@ -82,6 +91,7 @@ class ProfileRepository(
             }
         }
         _updates.tryEmit(effective)
+        failedFetches.remove(effective.id)
     }
 
     suspend fun clearOtherProfiles(selfUserId: String) {

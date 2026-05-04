@@ -166,6 +166,9 @@ data class SseEventData(
     @SerialName("deleted_by") val deletedBy: String? = null,
     @SerialName("last_read_message_id") val lastReadMessageId: String? = null,
     @SerialName("read_at") val readAt: Long = 0L,
+    @SerialName("revoked_device_id") val revokedDeviceId: String? = null,
+    @SerialName("revoked_signature_key") val revokedSignatureKeyHex: String? = null,
+    @SerialName("conversation_ids") val conversationIds: List<String> = emptyList(),
     val reason: String? = null,
     @SerialName("conversation_type") val conversationType: String? = null
 )
@@ -182,6 +185,12 @@ data class SseEvent(
 data class CreateDirectConversationRequest(
     @SerialName("recipient_user_id") val recipientUserId: String,
     @SerialName("welcome_messages")  val welcomeMessages: List<DeviceWelcome> = emptyList()
+)
+
+@Serializable
+data class UploadKeyPackagesRequest(
+    @SerialName("key_packages") val keyPackages: List<String>,
+    @SerialName("signature_key") val signatureKey: String? = null
 )
 
 @Serializable

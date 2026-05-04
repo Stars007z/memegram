@@ -147,6 +147,11 @@ impl MlsClientHandle {
         g.keys.signer.tls_serialize_detached().map_err(to_err)
     }
 
+    pub fn export_signing_public_key(&self) -> Result<Vec<u8>, MlsError> {
+        let g = self.inner.lock().unwrap();
+        Ok(g.keys.signer.to_public_vec())
+    }
+
     pub fn generate_key_package(&self) -> Result<Vec<u8>, MlsError> {
         let g = self.inner.lock().unwrap();
         let bundle = KeyPackage::builder()
@@ -161,6 +166,12 @@ impl MlsClientHandle {
             .key_package()
             .tls_serialize_detached()
             .map_err(to_err)
+    }
+
+    pub fn extract_signature_key(&self, key_package_bytes: Vec<u8>) -> Result<Vec<u8>, MlsError> {
+        let kp_in: KeyPackageIn =
+            KeyPackageIn::tls_deserialize_exact_bytes(&key_package_bytes).map_err(to_err)?;
+        Ok(kp_in.unverified_credential().signature_key.as_slice().to_vec())
     }
 
     pub fn create_group_with_id(self: &Self, group_id: Vec<u8>) -> Result<(), MlsError> {
@@ -446,6 +457,37 @@ impl MlsClientHandle {
                     identity
                 ))
             })?;
+
+        let (commit, _, _) = group
+            .remove_members(&keys.provider, &keys.signer, &[leaf_index])
+            .map_err(to_err)?;
+
+        let serialized = commit.tls_serialize_detached().map_err(to_err)?;
+        Ok(serialized)
+    }
+
+    pub fn remove_member_by_signature_key(
+        &self,
+        group_id: Vec<u8>,
+        signature_key: Vec<u8>,
+    ) -> Result<Vec<u8>, MlsError> {
+        let mut g = self.inner.lock().unwrap();
+        let ClientInner { keys, groups } = &mut *g;
+
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+
+        let group = groups
+            .get_mut(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+
+        let _ = group.clear_pending_proposals(keys.provider.storage());
+        let _ = group.clear_pending_commit(keys.provider.storage());
+
+        let leaf_index = group
+            .members()
+            .find(|m| m.signature_key == signature_key)
+            .map(|m| m.index)
+            .ok_or_else(|| MlsError::General("member with signature key not found in group".into()))?;
 
         let (commit, _, _) = group
             .remove_members(&keys.provider, &keys.signer, &[leaf_index])

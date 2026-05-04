@@ -99,6 +99,18 @@ data class RevokeDeviceResponse(
 )
 
 @Serializable
+data class TransferPrimaryRequest(
+    @SerialName("target_device_id") val targetDeviceId: String
+)
+
+@Serializable
+data class TransferPrimaryResponse(
+    @SerialName("success") val success: Boolean,
+    @SerialName("new_primary_device_id") val newPrimaryDeviceId: String,
+    @SerialName("message") val message: String
+)
+
+@Serializable
 data class DeviceWelcome(
     @SerialName("device_id")    val deviceId: String,
     @SerialName("welcome_data") val welcomeData: String

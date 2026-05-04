@@ -155,6 +155,7 @@ class IMessagingGateway(ABC):
         user_id: str,
         device_id: str,
         key_packages: list[bytes],
+        signature_key: bytes | None = None,
     ) -> int: ...
 
     @abstractmethod

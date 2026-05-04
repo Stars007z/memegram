@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -240,12 +241,19 @@ fun ChatScreen(
         }
     }
 
-    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    var lastImeBottom by remember { mutableIntStateOf(0) }
     LaunchedEffect(imeBottom) {
-        if (chatItems.isEmpty()) return@LaunchedEffect
-        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
-        if (lastVisible >= chatItems.size - 3) {
-            listState.animateScrollToItem(chatItems.lastIndex)
+        if (chatItems.isEmpty()) {
+            lastImeBottom = imeBottom
+            return@LaunchedEffect
+        }
+        val delta = imeBottom - lastImeBottom
+        lastImeBottom = imeBottom
+        if (delta == 0) return@LaunchedEffect
+        if (delta > 0) {
+            runCatching { listState.scrollBy(delta.toFloat()) }
         }
     }
 
@@ -412,7 +420,6 @@ fun ChatScreen(
 
     val replyingTo by viewModel.replyingTo.collectAsState()
     val clipboardManager = LocalClipboardManager.current
-    val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
 
     val inputFocusRequester = remember { FocusRequester() }
@@ -423,7 +430,7 @@ fun ChatScreen(
             private var dismissedForCurrentDrag = false
 
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.Drag && available.y < -1f && !dismissedForCurrentDrag) {
+                if (source == NestedScrollSource.Drag && available.y > 1f && !dismissedForCurrentDrag) {
                     dismissedForCurrentDrag = true
                     keyboardController?.hide()
                     focusManager.clearFocus()
@@ -483,6 +490,12 @@ fun ChatScreen(
         errorMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.forceClose.collect {
+            onBack()
         }
     }
 

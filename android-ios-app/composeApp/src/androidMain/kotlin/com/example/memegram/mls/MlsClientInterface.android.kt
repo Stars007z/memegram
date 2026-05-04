@@ -8,6 +8,7 @@ private class AndroidMlsClient(
 
     override fun exportProviderState(): ByteArray = handle.exportProviderState()
     override fun exportSigningKey(): ByteArray = handle.exportSigningKey()
+    override fun exportSigningPublicKey(): ByteArray = handle.exportSigningPublicKey()
     override fun generateKeyPackage(): ByteArray = handle.generateKeyPackage()
     override fun createGroupWithId(groupId: ByteArray) = handle.createGroupWithId(groupId)
 
@@ -44,6 +45,12 @@ private class AndroidMlsClient(
 
     override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray =
         handle.removeMemberByIdentity(groupId, identity)
+
+    override fun removeMemberBySignatureKey(groupId: ByteArray, signatureKey: ByteArray): ByteArray =
+        handle.removeMemberBySignatureKey(groupId, signatureKey)
+
+    override fun extractSignatureKey(keyPackageBytes: ByteArray): ByteArray =
+        handle.extractSignatureKey(keyPackageBytes)
 
     override fun getGroupEpoch(groupId: ByteArray): ULong =
         handle.getGroupEpoch(groupId)

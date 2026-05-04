@@ -9,6 +9,7 @@ import com.example.memegram.BlockedUsersCache
 import com.example.memegram.MainActivity
 import com.example.memegram.MemegramApp
 import com.example.memegram.R
+import com.example.memegram.conversation.ConversationLocalCleaner
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.NotificationsRepository
 import com.example.memegram.localization.AppStrings
@@ -270,12 +271,7 @@ class MemegramFirebaseMessagingService : FirebaseMessagingService() {
             val mlsManager = runCatching { koin.get<MlsManager>() }.getOrNull()
 
             runBlocking {
-                runCatching { chatRepository.deleteMessages(conversationId) }
-                runCatching { chatRepository.deleteChat(conversationId) }
-                if (mlsManager != null) {
-                    runCatching { mlsManager.deleteLocalGroup(conversationId) }
-                    runCatching { mlsManager.flushState() }
-                }
+                ConversationLocalCleaner.purge(conversationId, chatRepository, mlsManager)
             }
             println("MemegramDebug [FCM] purged local state for conv=$conversationId")
         }.onFailure {

@@ -74,7 +74,7 @@ val appModule = module {
     single<PushTokenProvider> { createPushTokenProvider() }
     single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }
     single<AppLifecycleObserver> { createAppLifecycleObserver() }
-    single { SessionRefresher(get(), get(), get(), get(), get()) }
+    single { SessionRefresher(get(), get(), get(), get(), get(), get()) }
     single<ClientDataWiper> {
         createClientDataWiper(
             plainSettings = get(),

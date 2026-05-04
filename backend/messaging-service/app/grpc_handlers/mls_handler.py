@@ -24,6 +24,7 @@ class MlsHandler:
                     user_id=uuid.UUID(request.user_id),
                     device_id=uuid.UUID(request.device_id),
                     key_packages=list(request.key_packages),
+                    signature_key=bytes(request.signature_key) if request.signature_key else None,
                 )
                 return messaging_pb2.UploadKeyPackagesResponse(uploaded_count=count)
             except ValueError as e:

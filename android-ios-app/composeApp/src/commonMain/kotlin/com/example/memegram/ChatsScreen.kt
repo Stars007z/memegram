@@ -126,7 +126,7 @@ fun ChatsScreen(
 
     val sessionManager = koinInject<SessionManager>()
     val apiService = koinInject<ApiService>()
-    val isAdmin = remember { sessionManager.getDeviceType() == "admin" }
+    val isAdmin = remember { sessionManager.getDeviceType() in setOf("admin", "primary") }
     var showInviteDialog by remember { mutableStateOf(false) }
     var inviteDays by remember { mutableStateOf("7") }
     var isCreatingInvite by remember { mutableStateOf(false) }

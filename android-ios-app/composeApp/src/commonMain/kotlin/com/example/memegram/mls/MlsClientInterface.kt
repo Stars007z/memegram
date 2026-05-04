@@ -27,6 +27,7 @@ sealed class IncomingMessageKt {
 interface MlsPlatformClient {
     fun exportProviderState(): ByteArray
     fun exportSigningKey(): ByteArray
+    fun exportSigningPublicKey(): ByteArray
     fun generateKeyPackage(): ByteArray
     fun createGroupWithId(groupId: ByteArray)
     fun addMember(groupId: ByteArray, keyPackageBytes: ByteArray): WelcomeBundleKt
@@ -36,6 +37,8 @@ interface MlsPlatformClient {
     fun leaveGroup(groupId: ByteArray): ByteArray
     fun deleteGroup(groupId: ByteArray)
     fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray
+    fun removeMemberBySignatureKey(groupId: ByteArray, signatureKey: ByteArray): ByteArray
+    fun extractSignatureKey(keyPackageBytes: ByteArray): ByteArray
     fun getGroupEpoch(groupId: ByteArray): ULong
     fun memberCount(groupId: ByteArray): ULong
     @Throws(Exception::class)

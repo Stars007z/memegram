@@ -194,6 +194,12 @@ fun App() {
 
                 val pendingPush by PushDeepLink.pending.collectAsState()
                 val sessionStateForPush by sessionRefresher.state.collectAsState()
+                LaunchedEffect(sessionStateForPush) {
+                    if (sessionStateForPush is SessionState.NoCredentials || sessionStateForPush is SessionState.Failed) {
+                        navController.navigate(AuthRoute) { popUpTo(0) { inclusive = true } }
+                    }
+                }
+
                 LaunchedEffect(pendingPush, sessionStateForPush, navBackStackEntry) {
                     val target = pendingPush ?: return@LaunchedEffect
                     if (sessionStateForPush !is SessionState.Authenticated) return@LaunchedEffect

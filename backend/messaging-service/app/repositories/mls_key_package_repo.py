@@ -54,6 +54,31 @@ class MlsKeyPackageRepository(BaseRepository[MlsKeyPackage]):
         result = await self.session.execute(query)
         return result.scalar()
 
+    async def get_signature_key_for_device(
+        self,
+        user_id: uuid.UUID,
+        device_id: uuid.UUID,
+    ) -> Optional[bytes]:
+        """
+        Return the MLS signature_key (Ed25519 public, 32 bytes) for a device.
+
+        All KeyPackages a device uploads share the same long-lived signing
+        identity, so any non-null row is fine. Returns None if the device
+        never uploaded a KP with a signature_key (e.g. legacy rows from
+        before the column existed).
+        """
+        query = (
+            select(MlsKeyPackage.signature_key)
+            .where(
+                MlsKeyPackage.user_id == user_id,
+                MlsKeyPackage.device_id == device_id,
+                MlsKeyPackage.signature_key.is_not(None),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def delete_by_device(
         self,
         user_id: uuid.UUID,

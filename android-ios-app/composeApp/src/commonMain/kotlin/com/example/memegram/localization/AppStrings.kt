@@ -332,6 +332,9 @@ interface AppStrings {
     val revoke: String
     val revokeDeviceTitle: String
     fun revokeDeviceMessage(name: String): String
+    val makePrimary: String
+    val transferPrimaryTitle: String
+    fun transferPrimaryMessage(name: String): String
     val decline: String
     val allow: String
     val addDevice: String
@@ -723,6 +726,9 @@ object RuStrings : AppStrings {
     override val revoke = "Отозвать"
     override val revokeDeviceTitle = "Отозвать устройство?"
     override fun revokeDeviceMessage(name: String) = "'$name' будет удалено из вашего аккаунта."
+    override val makePrimary = "Сделать основным"
+    override val transferPrimaryTitle = "Передать основное устройство?"
+    override fun transferPrimaryMessage(name: String) = "'$name' сможет добавлять и отзывать устройства."
     override val decline = "Отклонить"
     override val allow = "Разрешить"
     override val addDevice = "Добавить устройство"
@@ -1119,6 +1125,9 @@ object EnStrings : AppStrings {
     override val revoke = "Revoke"
     override val revokeDeviceTitle = "Revoke device?"
     override fun revokeDeviceMessage(name: String) = "'$name' will be removed from your account."
+    override val makePrimary = "Make primary"
+    override val transferPrimaryTitle = "Transfer primary device?"
+    override fun transferPrimaryMessage(name: String) = "'$name' will be able to add and revoke devices."
     override val decline = "Decline"
     override val allow = "Allow"
     override val addDevice = "Add device"

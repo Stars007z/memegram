@@ -138,7 +138,7 @@ class AddDeviceViewModel(
     private suspend fun uploadKeyPackages() {
         try {
             val packages = mlsManager.generateKeyPackages(BATCH_KEY_PACKAGES)
-            api.uploadKeyPackages(packages)
+            api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
             println("AddDeviceVM ✅ key packages загружены")
         } catch (e: Exception) {
             println("AddDeviceVM ⚠️ ошибка загрузки key packages: ${e.message}")

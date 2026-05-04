@@ -106,7 +106,7 @@ class AuthViewModel(
             if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {
                 val packages = mlsManager.generateKeyPackages(MlsManager.BATCH_KEY_PACKAGES)
                 mlsManager.flushState()
-                api.uploadKeyPackages(packages)
+                api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
                 sessionManager.clearPendingKpCleanup()
             }
         }

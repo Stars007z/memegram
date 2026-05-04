@@ -154,12 +154,15 @@ def _event_to_proto(event: dict) -> messaging_pb2.ConversationEvent | None:
         )
 
     if event_type == "device_revoked":
+        sig_hex = event.get("revoked_signature_key", "")
+        sig_bytes = bytes.fromhex(sig_hex) if sig_hex else b""
         return messaging_pb2.ConversationEvent(
             conversation_id=conv_id,
             device_revoked=messaging_pb2.DeviceRevoked(
                 user_id=event["user_id"],
                 revoked_device_id=event["revoked_device_id"],
                 conversation_ids=event.get("conversation_ids", []),
+                revoked_signature_key=sig_bytes,
             ),
         )
 

@@ -148,7 +148,7 @@ class Container:
         if self._stream is None:
             from app.services.stream_service import StreamServiceImpl
 
-            self._stream = StreamServiceImpl(self._redis)
+            self._stream = StreamServiceImpl(self._redis, self._auth)
         return self._stream
 
     @property

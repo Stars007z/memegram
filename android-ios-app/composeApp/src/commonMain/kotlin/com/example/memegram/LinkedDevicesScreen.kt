@@ -148,7 +148,12 @@ fun LinkedDevicesScreen(
                     revokeLabel = s.revoke,
                     revokeTitle = s.revokeDeviceTitle,
                     revokeMessage = s.revokeDeviceMessage(device.name),
+                    makePrimaryLabel = s.makePrimary,
+                    transferPrimaryTitle = s.transferPrimaryTitle,
+                    transferPrimaryMessage = s.transferPrimaryMessage(device.name),
                     cancelLabel = s.cancel,
+                    canTransferPrimary = vm.canManagePrimary,
+                    onTransferPrimary = { if (!device.isCurrentDevice) vm.transferPrimary(device.serverId) },
                     onRevoke = { if (!device.isCurrentDevice) vm.revokeDevice(device.serverId) }
                 )
             }
@@ -182,9 +187,15 @@ private fun DeviceCard(
     revokeLabel: String,
     revokeTitle: String,
     revokeMessage: String,
+    makePrimaryLabel: String,
+    transferPrimaryTitle: String,
+    transferPrimaryMessage: String,
     cancelLabel: String,
+    canTransferPrimary: Boolean,
+    onTransferPrimary: () -> Unit,
     onRevoke: () -> Unit
 ) {
+    val isPrimaryLike = device.type == "primary" || device.type == "admin"
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(12.sdp),
@@ -231,12 +242,24 @@ private fun DeviceCard(
             }
             if (!device.isCurrentDevice && device.isActive) {
                 var showConfirm by remember { mutableStateOf(false) }
-                IconButton(onClick = { showConfirm = true }) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = revokeLabel,
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                var showTransferConfirm by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (canTransferPrimary && !isPrimaryLike) {
+                        IconButton(onClick = { showTransferConfirm = true }) {
+                            Icon(
+                                Icons.Default.AdminPanelSettings,
+                                contentDescription = makePrimaryLabel,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showConfirm = true }) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = revokeLabel,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
                 if (showConfirm) {
                     AlertDialog(
@@ -250,6 +273,21 @@ private fun DeviceCard(
                         },
                         dismissButton = {
                             TextButton(onClick = { showConfirm = false }) { Text(cancelLabel) }
+                        }
+                    )
+                }
+                if (showTransferConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showTransferConfirm = false },
+                        title   = { Text(transferPrimaryTitle) },
+                        text    = { Text(transferPrimaryMessage) },
+                        confirmButton = {
+                            TextButton(onClick = { showTransferConfirm = false; onTransferPrimary() }) {
+                                Text(makePrimaryLabel)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showTransferConfirm = false }) { Text(cancelLabel) }
                         }
                     )
                 }

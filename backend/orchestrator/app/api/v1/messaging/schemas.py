@@ -10,6 +10,16 @@ def b64_to_bytes(s: str) -> bytes:
 
 class UploadKeyPackagesRequestSchema(BaseModel):
     key_packages: List[str] = Field(..., min_length=1, description="base64-encoded KeyPackages")
+    signature_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "base64-encoded public Ed25519 signature key (32 bytes) of this device. "
+            "Extracted by the client from any of the uploaded KeyPackages. "
+            "Required for the device-revocation flow to evict the device's leaf "
+            "from the MLS group on every member's side. Optional for backwards "
+            "compatibility with older clients."
+        ),
+    )
 
 
 class UploadKeyPackagesResponseSchema(BaseModel):

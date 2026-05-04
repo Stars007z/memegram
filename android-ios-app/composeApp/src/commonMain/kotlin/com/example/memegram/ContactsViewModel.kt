@@ -192,6 +192,7 @@ class ContactsViewModel(
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
+                        mlsManager.rememberDeviceSignatureKey(kp.deviceId, addResult.memberSignatureKeyB64)
                         mlsManager.flushState()
 
                         val nextEpoch = serverEpoch + 1L
@@ -306,6 +307,7 @@ class ContactsViewModel(
                 for (device in allDevicesToInvite) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, device.second.keyPackageData)
+                        mlsManager.rememberDeviceSignatureKey(device.second.deviceId, addResult.memberSignatureKeyB64)
                         mlsManager.flushState()
 
                         val nextEpoch = serverEpoch + 1L
@@ -407,6 +409,7 @@ class ContactsViewModel(
                 for (kp in allPackagesToAdd) {
                     try {
                         val addResult = mlsManager.addMemberToGroup(conv.id, kp.keyPackageData)
+                        mlsManager.rememberDeviceSignatureKey(kp.deviceId, addResult.memberSignatureKeyB64)
                         mlsManager.flushState()
 
                         val nextEpoch = serverEpoch + 1L

@@ -47,6 +47,9 @@ class LinkedDevicesViewModel(
 
     private var pollingJob: Job? = null
 
+    val canManagePrimary: Boolean
+        get() = sessionManager.getDeviceType() in setOf("primary", "admin")
+
     init {
         load()
         startPendingPolling()
@@ -56,8 +59,11 @@ class LinkedDevicesViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val currentClientDeviceId = sessionManager.getDeviceId()
-                _devices.value = api.getDevices().map { it.toUiModel(currentClientDeviceId) }
+                val currentDeviceId = sessionManager.getDeviceId()
+                val loadedDevices = api.getDevices().map { it.toUiModel(currentDeviceId) }
+                loadedDevices.firstOrNull { it.isCurrentDevice }
+                    ?.let { sessionManager.updateDeviceType(it.type) }
+                _devices.value = loadedDevices
                 refreshPending()
             } catch (e: Exception) {
                 _error.value = "Ошибка загрузки устройств"
@@ -171,6 +177,7 @@ class LinkedDevicesViewModel(
 
                 try {
                     val addResult = mlsManager.addMemberToGroup(convId, keyPackageData)
+                    mlsManager.rememberDeviceSignatureKey(newDeviceId, addResult.memberSignatureKeyB64)
                     mlsManager.flushState()
                     val serverEpoch = mlsManager.getCommitCursor(convId)
                         ?: runCatching { api.getConversation(convId).mlsGroup?.currentEpoch }.getOrNull()
@@ -253,6 +260,25 @@ class LinkedDevicesViewModel(
         }
     }
 
+    fun transferPrimary(deviceId: String) {
+        viewModelScope.launch {
+            try {
+                val response = api.transferPrimary(deviceId)
+                if (!response.success) {
+                    _error.value = response.message
+                    return@launch
+                }
+                if (sessionManager.getDeviceType() != "admin") {
+                    sessionManager.updateDeviceType("secondary")
+                }
+                _successMessage.value = "Основное устройство передано"
+                load()
+            } catch (e: Exception) {
+                _error.value = "Ошибка передачи основного устройства: ${e.message}"
+            }
+        }
+    }
+
     fun clearError()   { _error.value = null }
     fun clearSuccess() { _successMessage.value = null }
 
@@ -270,13 +296,13 @@ class LinkedDevicesViewModel(
         pollingJob?.cancel()
     }
 
-    private fun DeviceInfoResponse.toUiModel(currentClientDeviceId: String?) = DeviceUiModel(
+    private fun DeviceInfoResponse.toUiModel(currentDeviceId: String?) = DeviceUiModel(
         serverId          = id,
         clientDeviceId    = clientDeviceId,
         name              = deviceName,
         type              = deviceType,
         isActive          = isActive,
-        isCurrentDevice   = id == currentClientDeviceId,
+        isCurrentDevice   = id == currentDeviceId,
         lastSeen          = lastSeen
     )
 }

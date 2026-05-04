@@ -158,6 +158,7 @@ class GroupProfileViewModel(
 
 
                     val addResult = mlsManager.addMemberToGroup(conversationId, kp.keyPackageData)
+                    mlsManager.rememberDeviceSignatureKey(kp.deviceId, addResult.memberSignatureKeyB64)
                     mlsManager.flushState()
 
                     val nextServerEpoch = (serverEpochCounter + 1).toInt()

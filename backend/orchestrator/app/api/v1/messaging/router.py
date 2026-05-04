@@ -153,6 +153,7 @@ async def upload_key_packages(
         user_id=session.user_id,
         device_id=session.device_id,
         key_packages=[b64_to_bytes(kp) for kp in body.key_packages],
+        signature_key=b64_to_bytes(body.signature_key) if body.signature_key else None,
     )
     return UploadKeyPackagesResponseSchema(uploaded_count=count)
 

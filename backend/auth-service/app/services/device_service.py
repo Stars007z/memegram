@@ -9,7 +9,9 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database.redis import RedisClient
 from app.logging_config import get_logger
+from app.models.session import Session as SessionModel
 from app.repositories.device_registration_repo import DeviceRegistrationRepository
 from app.repositories.device_repo import DeviceRepository
 from app.repositories.session_repo import SessionRepository
@@ -18,6 +20,13 @@ from app.services.auth_service import AuthService
 logger = get_logger(__name__)
 
 REGISTRATION_TTL_MINUTES = 10
+
+
+PRIMARY_LIKE_DEVICE_TYPES = {"primary", "admin"}
+
+
+def _is_primary_like(device_type: str | None) -> bool:
+    return device_type in PRIMARY_LIKE_DEVICE_TYPES
 
 
 class DeviceService:
@@ -34,7 +43,7 @@ class DeviceService:
             raise ValueError("Device not found")
         if str(device.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
-        if device.device_type != "primary":
+        if not _is_primary_like(device.device_type):
             raise PermissionError("Only primary device can initiate device addition")
         if not device.is_active:
             raise ValueError("Device is inactive")
@@ -140,7 +149,7 @@ class DeviceService:
             raise ValueError("Device not found")
         if str(device.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
-        if device.device_type != "primary":
+        if not _is_primary_like(device.device_type):
             raise PermissionError("Only primary device can view pending additions")
 
         registrations = await self.registration_repo.get_pending_by_user(uuid.UUID(user_id))
@@ -171,7 +180,7 @@ class DeviceService:
             raise ValueError("Requesting device not found")
         if str(requesting_device.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
-        if requesting_device.device_type != "primary":
+        if not _is_primary_like(requesting_device.device_type):
             raise PermissionError("Only primary device can confirm additions")
 
         reg = await self.registration_repo.get_active_registration(uuid.UUID(registration_id))
@@ -291,7 +300,7 @@ class DeviceService:
             raise ValueError("Requesting device not found")
         if str(requesting.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
-        if requesting.device_type != "primary":
+        if not _is_primary_like(requesting.device_type):
             raise PermissionError("Only primary device can revoke other devices")
 
         target = await self.device_repo.get_by_device_id(target_device_id)
@@ -299,7 +308,7 @@ class DeviceService:
             raise ValueError("Target device not found")
         if str(target.user_id) != user_id:
             raise PermissionError("Target device does not belong to user")
-        if target.device_type == "primary":
+        if _is_primary_like(target.device_type):
             raise ValueError("Cannot revoke primary device")
         if not target.is_active:
             raise ValueError("Device is already revoked")
@@ -383,7 +392,7 @@ class DeviceService:
         if str(target.user_id) != user_id:
             raise PermissionError("Target device does not belong to user")
 
-        can_rename = requesting_device_id == target_device_id or requesting.device_type == "primary"
+        can_rename = requesting_device_id == target_device_id or _is_primary_like(requesting.device_type)
         if not can_rename:
             raise PermissionError("Only the device itself or the primary device can rename")
 
@@ -422,7 +431,7 @@ class DeviceService:
             raise ValueError("Requesting device not found")
         if str(requesting.user_id) != user_id:
             raise PermissionError("Device does not belong to user")
-        if requesting.device_type != "primary":
+        if not _is_primary_like(requesting.device_type):
             raise PermissionError("Only primary device can transfer primary status")
 
         target = await self.device_repo.get_by_device_id(target_device_id)
@@ -435,8 +444,13 @@ class DeviceService:
         if target.id == requesting.id:
             raise ValueError("Cannot transfer primary to the same device")
 
-        await self.device_repo.update(requesting, {"device_type": "secondary"})
+        if _is_primary_like(target.device_type):
+            raise ValueError("Target device is already primary")
+
+        if requesting.device_type != "admin":
+            await self.device_repo.update(requesting, {"device_type": "secondary"})
         await self.device_repo.update(target, {"device_type": "primary"})
+        await self._invalidate_device_session_cache([requesting.id, target.id])
 
         logger.info(
             "device.primary_transferred",
@@ -470,7 +484,7 @@ class DeviceService:
                 raise ValueError("Requesting device not found")
             if str(requesting.user_id) != user_id:
                 raise PermissionError("Device does not belong to user")
-            if requesting.device_type != "primary":
+            if not _is_primary_like(requesting.device_type):
                 raise PermissionError("Only primary device can bulk revoke")
 
         revoked_ids = []
@@ -485,7 +499,7 @@ class DeviceService:
                 continue
             # In system purge we DO want to revoke the primary device too,
             # because the user is being deleted entirely.
-            if not is_system_purge and target.device_type == "primary":
+            if not is_system_purge and _is_primary_like(target.device_type):
                 continue
             if not target.is_active and not is_system_purge:
                 continue
@@ -538,7 +552,7 @@ class DeviceService:
     async def _revoke_device_sessions(self, device_id: uuid.UUID) -> None:
         from sqlalchemy import update as sa_update
 
-        from app.models.session import Session as SessionModel
+        await self._invalidate_device_session_cache([device_id])
 
         stmt = (
             sa_update(SessionModel)
@@ -546,6 +560,27 @@ class DeviceService:
             .values(is_revoked=True, last_used=datetime.utcnow())
         )
         await self.session.execute(stmt)
+
+    async def _invalidate_device_session_cache(self, device_ids: list[uuid.UUID]) -> None:
+        if not device_ids:
+            return
+
+        result = await self.session.execute(
+            select(SessionModel.access_token).where(SessionModel.device_id.in_(device_ids))
+        )
+        tokens = list(result.scalars().all())
+        if not tokens:
+            return
+
+        try:
+            redis = await RedisClient.get_instance()
+            await redis.delete(*(f"session:valid:{token}" for token in tokens))
+        except Exception as exc:
+            logger.warning(
+                "device.session_cache_invalidate_failed",
+                device_ids=[str(d) for d in device_ids],
+                error=str(exc),
+            )
 
     async def _release_client_device_id(self, existing) -> None:
         if existing is None:

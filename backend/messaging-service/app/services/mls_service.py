@@ -55,6 +55,7 @@ class MlsServiceImpl(IMlsService):
         user_id: uuid.UUID,
         device_id: uuid.UUID,
         key_packages: list[bytes],
+        signature_key: Optional[bytes] = None,
     ) -> int:
 
         purged = await self._key_packages.delete_by_device(
@@ -70,6 +71,12 @@ class MlsServiceImpl(IMlsService):
                 purged=purged,
             )
 
+        # signature_key is the public Ed25519 identity key of the device.
+        # All KeyPackages a device uploads share the same signing identity,
+        # so we store the same value on every row. Empty/None means the
+        # client is on an old build — revoke flow will fall back gracefully.
+        sig_key = signature_key if signature_key else None
+
         items = []
         for kp_data in key_packages:
             kp_ref = hashlib.sha256(kp_data).digest()
@@ -79,6 +86,7 @@ class MlsServiceImpl(IMlsService):
                     "device_id": device_id,
                     "key_package_data": kp_data,
                     "key_package_ref": kp_ref,
+                    "signature_key": sig_key,
                     "cipher_suite": DEFAULT_CIPHER_SUITE,
                 }
             )
@@ -89,6 +97,7 @@ class MlsServiceImpl(IMlsService):
             user_id=str(user_id),
             device_id=str(device_id),
             count=len(created),
+            has_signature_key=sig_key is not None,
         )
         return len(created)
 
@@ -323,6 +332,15 @@ class MlsServiceImpl(IMlsService):
         if not conv_ids:
             return 0
 
+        # Look up the revoked device's MLS public signature key BEFORE
+        # purging its key packages. Subscribers use this to call
+        # removeMemberBySignatureKey and evict the device's leaf node.
+        sig_key = await self._key_packages.get_signature_key_for_device(
+            user_id=user_id,
+            device_id=revoked_device_id,
+        )
+        sig_key_hex = sig_key.hex() if sig_key else ""
+
         for cid in conv_ids:
             await self._stream.publish_event(
                 cid,
@@ -331,6 +349,7 @@ class MlsServiceImpl(IMlsService):
                     "user_id": str(user_id),
                     "revoked_device_id": str(revoked_device_id),
                     "conversation_ids": [str(c) for c in conv_ids],
+                    "revoked_signature_key": sig_key_hex,
                 },
             )
 
@@ -339,6 +358,7 @@ class MlsServiceImpl(IMlsService):
             user_id=str(user_id),
             revoked_device_id=str(revoked_device_id),
             conversation_count=len(conv_ids),
+            has_signature_key=sig_key is not None,
         )
 
         return len(conv_ids)

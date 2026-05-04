@@ -22,8 +22,29 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.russhwolf.settings.Settings
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 
+private fun hexToBytes(hex: String): ByteArray {
+    val s = if (hex.length % 2 == 1) "0$hex" else hex
+    val out = ByteArray(s.length / 2)
+    for (i in out.indices) {
+        val hi = hexNibble(s[2 * i])
+        val lo = hexNibble(s[2 * i + 1])
+        out[i] = ((hi shl 4) or lo).toByte()
+    }
+    return out
+}
+
+private fun hexNibble(c: Char): Int = when (c) {
+    in '0'..'9' -> c - '0'
+    in 'a'..'f' -> c - 'a' + 10
+    in 'A'..'F' -> c - 'A' + 10
+    else -> throw IllegalArgumentException("Invalid hex char: $c")
+}
+
+@OptIn(ExperimentalEncodingApi::class)
 class ChatsViewModel(
     private val sessionManager: SessionManager,
     private val api: ApiService,
@@ -212,7 +233,7 @@ class ChatsViewModel(
             mlsManager.initialize()
             if (mlsManager.needsKeyPackages()) {
                 val packages = mlsManager.generateKeyPackages(BATCH_KEY_PACKAGES)
-                api.uploadKeyPackages(packages)
+                api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
             }
             processPendingWelcomes()
         } catch (_: Exception) {
@@ -406,6 +427,18 @@ class ChatsViewModel(
                     mlsManager.updateGroupEpoch(convId, realEpoch)
                     println("MemegramDebug [Welcome]: Новичку установлена реальная MLS-эпоха = $realEpoch")
 
+                    val myUserId = sessionManager.getUserId()
+                    runCatching {
+                        val convResp = api.getConversation(convId)
+                        convResp.members
+                            .map { it.userId }
+                            .filter { it.isNotBlank() && it != myUserId }
+                            .forEach { peerId ->
+                                runCatching { profileRepository.getOrFetch(peerId, forceRefresh = true) }
+                                    .onFailure { println("MemegramDebug [Welcome]: prefetch profile failed peer=$peerId: ${it.message}") }
+                            }
+                    }.onFailure { println("MemegramDebug [Welcome]: prefetch members failed conv=$convId: ${it.message}") }
+
                     hasNew = true
                 } catch (e: Exception) {
                     if (mlsManager.isChatMlsBroken(convId)) {
@@ -573,6 +606,20 @@ class ChatsViewModel(
                     syncGroupCommitsQuietly(convId)
                 }
             }
+            "device_revoked" -> {
+                val revokedDeviceId = event.data?.revokedDeviceId ?: return
+                if (revokedDeviceId == sessionManager.getDeviceId()) {
+                    sessionRefresher.markRevoked("Доступ этого устройства отозван")
+                    sseJob?.cancel()
+                    pollingJob?.cancel()
+                    return
+                }
+                handleDeviceRevoked(
+                    revokedDeviceId,
+                    event.data.conversationIds,
+                    event.data.revokedSignatureKeyHex
+                )
+            }
             "member_left" -> {
                 val leftUserId = event.data?.userId
                 val myUserId = sessionManager.getUserId()
@@ -727,6 +774,48 @@ class ChatsViewModel(
                 println("MemegramDebug [ChatsVM]: ✅ Self-kick cleanup done for conv=$conversationId")
             } catch (e: Exception) {
                 println("MemegramDebug [ChatsVM]: handleSelfKicked error: ${e.message}")
+            }
+        }
+    }
+
+    private fun handleDeviceRevoked(
+        revokedDeviceId: String,
+        conversationIds: List<String>,
+        revokedSignatureKeyHex: String? = null
+    ) {
+        viewModelScope.launch {
+            val sigKeyB64: String? = revokedSignatureKeyHex
+                ?.takeIf { it.isNotBlank() }
+                ?.let { hex ->
+                    runCatching { Base64.encode(hexToBytes(hex)) }.getOrNull()
+                }
+            val targetConversationIds = conversationIds.ifEmpty { listOfNotNull(ActiveChatCoordinator.conversationId) }
+            targetConversationIds.forEach { conversationId ->
+                if (conversationId.isBlank() || !mlsManager.hasGroup(conversationId, log = false)) return@forEach
+                try {
+                    syncGroupCommitsQuietly(conversationId)
+                    val commitB64 = mlsManager.removeMemberDevice(conversationId, revokedDeviceId, sigKeyB64)
+                    val serverEpoch = mlsManager.getCommitCursor(conversationId)
+                        ?: runCatching { api.getConversation(conversationId).mlsGroup?.currentEpoch }.getOrNull()
+                        ?: mlsManager.getGroupEpoch(conversationId)
+                    val nextEpoch = (serverEpoch + 1).toInt()
+                    api.commitGroupChange(
+                        conversationId,
+                        CommitGroupChangeRequest(
+                            commitData = commitB64,
+                            newEpoch = nextEpoch,
+                            removedDeviceIds = listOf(revokedDeviceId)
+                        )
+                    )
+                    mlsManager.mergePendingCommit(conversationId)
+                    mlsManager.updateCommitCursor(conversationId, nextEpoch.toLong())
+                    val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                    mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                    mlsManager.flushState()
+                } catch (e: Exception) {
+                    try { mlsManager.clearPendingCommit(conversationId) } catch (_: Exception) {}
+                    println("MemegramDebug [DeviceRevoked]: remove device failed conv=$conversationId: ${e.message}")
+                }
             }
         }
     }
