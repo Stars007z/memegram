@@ -182,20 +182,16 @@ fun ChatScreen(
         }
     }
 
-    val isLoading by viewModel.isLoading.collectAsState()
-
-    LaunchedEffect(lastVisibleIncomingServerId, isLoading) {
-        if (isLoading) return@LaunchedEffect
+    LaunchedEffect(lastVisibleIncomingServerId) {
         lastVisibleIncomingServerId?.let(viewModel::markMessagesRead)
     }
 
     var scrollRestored by remember { mutableStateOf(false) }
     val initialUnreadCount by viewModel.initialUnreadCount.collectAsState()
 
-    LaunchedEffect(chatItems.size, isLoading) {
+    LaunchedEffect(chatItems.size) {
         if (chatItems.isEmpty()) return@LaunchedEffect
         if (!scrollRestored) {
-            if (isLoading) return@LaunchedEffect
             val target = pendingScrollToMessageId
             val targetIdx = target?.let { targetId ->
                 chatItems.indexOfFirst { item -> item.allMessages.any { it.id == targetId } }

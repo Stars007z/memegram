@@ -31,7 +31,6 @@ import com.example.memegram.utils.ssp
 fun AuthScreen(
     onLoginSuccess: () -> Unit,
     viewModel: AuthViewModel,
-    onAddDevice: () -> Unit,
     languageViewModel: LanguageViewModel,
     themeViewModel: ThemeViewModel,
 ) {
@@ -264,20 +263,6 @@ fun AuthScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.sdp))
-
-            TextButton(
-                onClick = onAddDevice,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.QrCode,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.sdp)
-                )
-                Spacer(Modifier.width(8.sdp))
-                Text(s.loginFromOtherDevice)
-            }
             Spacer(modifier = Modifier.height(24.sdp))
             Spacer(
                 modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars)

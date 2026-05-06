@@ -186,7 +186,6 @@ class ChatViewModel(
     private var typingJob: Job? = null
     private var sseJob: Job? = null
     private var dbObserveJob: Job? = null
-    private var pollingJob: Job? = null
 
     private val decryptMutex = Mutex()
 
@@ -244,7 +243,6 @@ class ChatViewModel(
         if (currentConversationId == conversationId) return
         currentConversationId = conversationId
         _myRole.value = null
-        _isLoading.value = true
         myUserId = sessionManager.getUserId()
         myDeviceId = sessionManager.getDeviceId()
         ActiveChatCoordinator.conversationId = conversationId
@@ -256,7 +254,6 @@ class ChatViewModel(
             ?.let { peerUserId = it }
 
         sseJob?.cancel()
-        pollingJob?.cancel()
         dbObserveJob?.cancel()
 
         dbObserveJob = viewModelScope.launch {
@@ -293,82 +290,83 @@ class ChatViewModel(
             }
         }
 
+        subscribeToEvents(conversationId)
+
         viewModelScope.launch {
             val cachedChat = runCatching { chatRepository.getChatById(conversationId) }.getOrNull()
             cachedChat?.let { _muteUntil.value = it.muteUntil }
             cachedChat?.peerUserId?.takeIf { it.isNotBlank() && peerUserId == null }
                 ?.let { peerUserId = it }
-            try {
-                val conv = api.getConversation(conversationId)
-                _initialUnreadCount.value = conv.unreadCount ?: 0
-                val isGroup = conv.type != "direct"
-                _isGroupChat.value = isGroup
-                _isBlockedByPeer.value = !isGroup && conv.isBlockedByPeer
-                _myRole.value = conv.members.find { it.userId == myUserId }?.role
 
-                if (isGroup) {
-                    _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+            val convInfoJob = launch {
+                try {
+                    val conv = api.getConversation(conversationId)
+                    _initialUnreadCount.value = conv.unreadCount ?: 0
+                    val isGroup = conv.type != "direct"
+                    _isGroupChat.value = isGroup
+                    _isBlockedByPeer.value = !isGroup && conv.isBlockedByPeer
+                    _myRole.value = conv.members.find { it.userId == myUserId }?.role
 
-                    conv.members.forEach { member ->
-                        if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
+                    if (isGroup) {
+                        _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+
+                        conv.members.forEach { member ->
+                            if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
+                                launch {
+                                    try {
+                                        val profile = profileRepository.getOrFetch(member.userId) ?: return@launch
+                                        _memberProfiles.update { it + (member.userId to profile) }
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                    } else {
+                        val peer = conv.members.find { it.userId != myUserId }
+                        val existingPeerId = peerUserId
+                        val resolvedPeerId = peer?.userId ?: existingPeerId
+                        peerUserId = resolvedPeerId
+                        if (DeletedPeerStore.isConversationDeleted(settings, conversationId)) {
+                            _isPeerDeleted.value = true
+                            _peerAvatarMediaId.value = null
+                            resolvedPeerId?.let { DeletedPeerStore.markConversationDeleted(settings, conversationId, it) }
+                        }
+                        resolvedPeerId?.let { peerId ->
+                            if (_myRole.value == "owner" || _myRole.value == "admin") {
+                                launch {
+                                    runCatching { api.updateMemberRole(conversationId, peerId, "admin") }
+                                        .onFailure { e ->
+                                            println("MemegramDebug [DirectRole]: peer admin grant skipped: ${e.message}")
+                                        }
+                                }
+                            }
                             launch {
                                 try {
-                                    val profile = profileRepository.getOrFetch(member.userId) ?: return@launch
-                                    _memberProfiles.update { it + (member.userId to profile) }
+                                    val profile = profileRepository.getOrFetch(peerId) ?: return@launch
+                                    val deleted = profile.isDeleted || DeletedPeerStore.isDeleted(settings, conversationId, peerId)
+                                    _peerAvatarMediaId.value = if (deleted) null else profile.avatarMediaId
+                                    _isPeerDeleted.value = deleted
+                                    _peerDisplayName.value = profile.username
+                                    if (deleted) DeletedPeerStore.markConversationDeleted(settings, conversationId, peerId)
                                 } catch (_: Exception) {}
                             }
                         }
-                    }
-                } else {
-                    val peer = conv.members.find { it.userId != myUserId }
-                    val existingPeerId = peerUserId
-                    val resolvedPeerId = peer?.userId ?: existingPeerId
-                    peerUserId = resolvedPeerId
-                    if (DeletedPeerStore.isConversationDeleted(settings, conversationId)) {
-                        _isPeerDeleted.value = true
-                        _peerAvatarMediaId.value = null
-                        resolvedPeerId?.let { DeletedPeerStore.markConversationDeleted(settings, conversationId, it) }
-                    }
-                    resolvedPeerId?.let { peerId ->
-                        if (_myRole.value == "owner" || _myRole.value == "admin") {
+                        conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
                             launch {
-                                runCatching { api.updateMemberRole(conversationId, peerId, "admin") }
-                                    .onFailure { e ->
-                                        println("MemegramDebug [DirectRole]: peer admin grant skipped: ${e.message}")
-                                    }
-                            }
-                        }
-                        launch {
-                            try {
-                                val profile = profileRepository.getOrFetch(peerId, forceRefresh = true) ?: return@launch
-                                val deleted = profile.isDeleted || DeletedPeerStore.isDeleted(settings, conversationId, peerId)
-                                _peerAvatarMediaId.value = if (deleted) null else profile.avatarMediaId
-                                _isPeerDeleted.value = deleted
-                                _peerDisplayName.value = profile.username
-                                if (deleted) DeletedPeerStore.markConversationDeleted(settings, conversationId, peerId)
-                            } catch (_: Exception) {}
-                        }
-                    }
-                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
-                        launch {
-                            runCatching {
-                                chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                                runCatching {
+                                    chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                                }
                             }
                         }
                     }
-                }
-            } catch (_: Exception) { }
+                } catch (_: Exception) { }
+            }
 
             val mlsReady = syncMlsPending(conversationId)
             if (!mlsReady) {
-                _error.value = S.current.mlsNotReady
-                _isLoading.value = false
                 return@launch
             }
 
             loadMessages(conversationId)
-            subscribeToEvents(conversationId)
-            startMessagePolling(conversationId)
         }
     }
 
@@ -573,7 +571,6 @@ class ChatViewModel(
                 if (revokedDeviceId == myDeviceId) {
                     sessionRefresher.markRevoked("Доступ этого устройства отозван")
                     sseJob?.cancel()
-                    pollingJob?.cancel()
                     dbObserveJob?.cancel()
                     return
                 }
@@ -650,113 +647,6 @@ class ChatViewModel(
             type = "system"
         )
         chatRepository.saveMessage(systemMsg, convId)
-    }
-
-    private fun startMessagePolling(conversationId: String) {
-        pollingJob?.cancel()
-        pollingJob = viewModelScope.launch {
-            while (isActive) {
-                delay(3_000)
-                pollNewMessages(conversationId)
-            }
-        }
-    }
-
-    private suspend fun pollNewMessages(conversationId: String) {
-        try {
-            val myId = myUserId ?: return
-            if (!_isGroupChat.value && peerUserId != null) {
-                try {
-                    val profile = profileRepository.getOrFetch(peerUserId!!, forceRefresh = true)
-                    if (profile != null) {
-                        val deleted = profile.isDeleted || DeletedPeerStore.isDeleted(settings, conversationId, peerUserId)
-                        _isPeerDeleted.value = deleted
-                        if (deleted) {
-                            _peerAvatarMediaId.value = null
-                            DeletedPeerStore.markConversationDeleted(settings, conversationId, peerUserId)
-                        } else if (profile.avatarMediaId != _peerAvatarMediaId.value) {
-                            _peerAvatarMediaId.value = profile.avatarMediaId
-                        }
-                    }
-                } catch (_: Exception) {}
-                try {
-                    val conv = api.getConversation(conversationId)
-                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
-                        runCatching {
-                            chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
-                        }
-                    }
-                } catch (_: Exception) {}
-            } else if (_isGroupChat.value) {
-                try {
-                    val conv = api.getConversation(conversationId)
-                    val serverAvatar = conv.avatarMediaId?.takeIf { it.isNotBlank() }
-                    if (serverAvatar != _peerAvatarMediaId.value) {
-                        _peerAvatarMediaId.value = serverAvatar
-                    }
-                } catch (_: Exception) {}
-            }
-
-            val serverMessages = api.getMessages(conversationId)
-            val localMessages  = chatRepository.getMessagesOnce(conversationId)
-            val localServerIds = localMessages.map { it.serverId }.toSet()
-
-            if (serverMessages.isNotEmpty()) {
-                val serverIdSet = serverMessages.map { it.id }.toSet()
-                val oldestServerTs = serverMessages.minOf { it.createdAt } * 1000L
-                localMessages.forEach { local ->
-                    val sid = local.serverId
-                    if (sid.isNotBlank()
-                        && !sid.startsWith("temp_")
-                        && !sid.startsWith("system_")
-                        && local.timestamp >= oldestServerTs
-                        && sid !in serverIdSet
-                    ) {
-                        chatRepository.deleteMessageByServerId(sid)
-                    }
-                }
-            }
-
-            val newMessages = serverMessages
-                .filter { it.id !in localServerIds }
-                .also { msgs ->
-                    msgs.forEach { msg ->
-                        val sender = msg.effectiveSenderId
-                        if (sender != myId && blockedUsersCache.isBlocked(sender)) {
-                            viewModelScope.launch {
-                                runCatching { api.markAsRead(conversationId, MarkAsReadRequest(msg.id)) }
-                            }
-                        }
-                    }
-                }
-                .sortedBy { it.createdAt }
-
-            if (newMessages.isEmpty()) return
-
-            println("MemegramDebug [Poll]: найдено ${newMessages.size} новых сообщений")
-
-            val newSenders = mutableMapOf<String, String>()
-            val newReplyCtx = mutableMapOf<String, String>()
-            for (msg in newMessages) {
-                newSenders[msg.id] = msg.effectiveSenderId
-                if (!msg.replyToMessageId.isNullOrBlank()) {
-                    newReplyCtx[msg.id] = msg.replyToMessageId
-                }
-                decryptAndSave(
-                    convId        = conversationId,
-                    msgId         = msg.id,
-                    ciphertextB64 = msg.mlsCiphertextB64,
-                    createdAt     = msg.createdAt,
-                    isOutgoing    = msg.effectiveSenderId == myId,
-                    senderUserId  = msg.effectiveSenderId,
-                    replyToServerId = msg.replyToMessageId?.takeIf { it.isNotBlank() }
-                )
-            }
-            _messageSenders.update { it + newSenders }
-            if (newReplyCtx.isNotEmpty()) {
-                _replyContext.update { it + newReplyCtx }
-            }
-        } catch (_: Exception) { }
     }
 
     private suspend fun decryptAndSave(
@@ -902,7 +792,7 @@ class ChatViewModel(
 
     private suspend fun findWelcomeWithRetry(
         conversationId: String,
-        maxAttempts: Int = 3,
+        maxAttempts: Int = 1,
         delayMs: Long = 4_000L
     ): WelcomeResponse? {
         repeat(maxAttempts) { attempt ->
@@ -917,7 +807,32 @@ class ChatViewModel(
         return null
     }
 
-    private suspend fun syncMlsPending(conversationId: String): Boolean {
+    private fun retryWelcomeInBackground(conversationId: String) {
+        viewModelScope.launch {
+            val delays = longArrayOf(3_000L, 6_000L, 12_000L)
+            for ((idx, d) in delays.withIndex()) {
+                delay(d)
+                if (currentConversationId != conversationId) return@launch
+                if (mlsManager.hasGroup(conversationId)) return@launch
+                println("MemegramDebug [MLS]: background welcome retry ${idx + 1}/${delays.size} for conv=$conversationId")
+                val ready = syncMlsPending(conversationId, allowBackgroundRetry = false)
+                if (ready && mlsManager.hasGroup(conversationId)) {
+                    loadMessages(conversationId)
+                    return@launch
+                }
+            }
+            if (!mlsManager.hasGroup(conversationId) && currentConversationId == conversationId) {
+                println("MemegramDebug [MLS]: background retries exhausted, mark mls_broken conv=$conversationId")
+                mlsManager.markChatMlsBroken(conversationId)
+                _isMlsBroken.value = true
+            }
+        }
+    }
+
+    private suspend fun syncMlsPending(
+        conversationId: String,
+        allowBackgroundRetry: Boolean = true,
+    ): Boolean {
         if (mlsManager.isChatMlsBroken(conversationId)) {
             ackBrokenConversationWelcome(conversationId)
             _isMlsBroken.value = true
@@ -946,9 +861,10 @@ class ChatViewModel(
                     return false
                 }
             } else {
-                println("MemegramDebug [MLS]: No Welcome for conv=$conversationId after retries, marking mls_broken")
-                mlsManager.markChatMlsBroken(conversationId)
-                _isMlsBroken.value = true
+                if (allowBackgroundRetry) {
+                    println("MemegramDebug [MLS]: No Welcome for conv=$conversationId on first try, scheduling background retries")
+                    retryWelcomeInBackground(conversationId)
+                }
                 return false
             }
         }
@@ -1844,7 +1760,6 @@ class ChatViewModel(
             ActiveChatCoordinator.conversationId = null
         }
         sseJob?.cancel()
-        pollingJob?.cancel()
         typingJob?.cancel()
         dbObserveJob?.cancel()
     }

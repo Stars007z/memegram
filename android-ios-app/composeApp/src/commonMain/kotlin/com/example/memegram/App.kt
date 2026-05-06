@@ -74,8 +74,6 @@ import org.koin.compose.viewmodel.koinViewModel
     val chatName: String,
     val avatarMediaId: String = ""
 )
-@Serializable object LinkedDevicesRoute
-@Serializable object AddDeviceRoute
 @Serializable object CreateGroupRoute
 @Serializable data class UserProfileRoute(val userId: String, val username: String)
 @Serializable data class GroupProfileRoute(val conversationId: String, val groupName: String)
@@ -283,9 +281,6 @@ fun App() {
                                     popUpTo<AuthRoute> { inclusive = true }
                                 }
                             },
-                            onAddDevice = {
-                                navController.navigate(AddDeviceRoute)
-                            },
                             viewModel = viewModel,
                             languageViewModel = languageViewModel,
                             themeViewModel = themeViewModel
@@ -326,7 +321,6 @@ fun App() {
                             profileViewModel = profileViewModel,
                             onContactsClick = { navController.navigate(ContactsRoute) { launchSingleTop = true } },
                             onStorageClick = { navController.navigate(StorageRoute) { launchSingleTop = true } },
-                            onLinkedDevicesClick = { navController.navigate(LinkedDevicesRoute) { launchSingleTop = true } },
                             viewModel = viewModel
                         )
                     }
@@ -540,22 +534,6 @@ fun App() {
                             avatarMediaId = route.avatarMediaId,
                             onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
                             viewModel = viewModel
-                        )
-                    }
-                    composable<LinkedDevicesRoute> {
-                        LinkedDevicesScreen(
-                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
-                            onNavigateToScanQr = { navController.navigate(AddDeviceRoute) }
-                        )
-                    }
-                    composable<AddDeviceRoute> {
-                        AddDeviceScreen(
-                            onBack = { navController.popBackStack() },
-                            onSuccess = {
-                                navController.navigate(ChatsRoute) {
-                                    popUpTo(AuthRoute) { inclusive = true }
-                                }
-                            }
                         )
                     }
                     composable<CreateGroupRoute> {

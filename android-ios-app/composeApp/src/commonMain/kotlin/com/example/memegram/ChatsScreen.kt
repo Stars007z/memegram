@@ -83,7 +83,6 @@ fun ChatsScreen(
     onPrivacyClick: () -> Unit,
     viewModel: ChatsViewModel,
     onContactsClick: () -> Unit,
-    onLinkedDevicesClick: () -> Unit,
     profileViewModel: ProfileViewModel
 ) {
     val topBarTextColor = resolveTopBarTextColor(topBarColor)
@@ -242,13 +241,6 @@ fun ChatsScreen(
                     icon = { Icon(Icons.Default.People, null) },
                     selected = false,
                     onClick = { scope.launch { drawerState.close() }; onContactsClick() },
-                    modifier = Modifier.padding(horizontal = 12.sdp)
-                )
-                NavigationDrawerItem(
-                    label   = { Text(s.settingsLinkedDevices) },
-                    icon    = { Icon(Icons.Default.Devices, null) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() }; onLinkedDevicesClick() },
                     modifier = Modifier.padding(horizontal = 12.sdp)
                 )
                 NavigationDrawerItem(

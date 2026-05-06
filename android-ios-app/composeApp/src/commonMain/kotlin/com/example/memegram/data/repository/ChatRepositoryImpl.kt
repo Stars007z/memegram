@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import com.russhwolf.settings.Settings
@@ -150,9 +151,6 @@ class ChatRepositoryImpl(
     }
 
     override fun getMessagesFlow(conversationId: String): Flow<List<Message>> {
-        val now = Clock.System.now().toEpochMilliseconds()
-        chatQueries.updateMessageAccessStats(now, conversationId)
-
         return chatQueries.selectMessagesByConversation(conversationId)
             .asFlow()
             .mapToList(ioDispatcher)
@@ -184,6 +182,12 @@ class ChatRepositoryImpl(
                         replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() }
                     )
 
+                }
+            }
+            .onStart {
+                withContext(ioDispatcher) {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    runCatching { chatQueries.updateMessageAccessStats(now, conversationId) }
                 }
             }
     }
@@ -256,8 +260,8 @@ class ChatRepositoryImpl(
                     message.replyToServerId?.takeIf { it.isNotBlank() },
                     realId
                 )
-                runGarbageCollector(conversationId)
             }
+            runCatching { runGarbageCollector(conversationId) }
         }
     }
 
@@ -305,8 +309,8 @@ class ChatRepositoryImpl(
                         realId
                     )
                 }
-                runGarbageCollector(conversationId)
             }
+            runCatching { runGarbageCollector(conversationId) }
         }
     }
 
