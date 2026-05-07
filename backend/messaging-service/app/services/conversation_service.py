@@ -146,12 +146,16 @@ class ConversationServiceImpl(IConversationService):
         name: str,
         members: list[tuple[uuid.UUID, list[tuple[uuid.UUID, bytes]]]],
     ) -> ConversationResult:
-        welcomes_by_user = {member_user_id: [device_id for device_id, _ in welcomes] for member_user_id, welcomes in members}
+        welcomes_by_user = {
+            member_user_id: [device_id for device_id, _ in welcomes] for member_user_id, welcomes in members
+        }
         if self._auth is not None:
             users_to_validate = set(welcomes_by_user) | {creator_user_id}
             for user_id in users_to_validate:
                 active_device_ids = await self._auth.get_active_device_ids(user_id)
-                expected_device_ids = {d for d in active_device_ids if d != creator_device_id or user_id != creator_user_id}
+                expected_device_ids = {
+                    d for d in active_device_ids if d != creator_device_id or user_id != creator_user_id
+                }
                 provided_device_ids = set(welcomes_by_user.get(user_id, []))
                 missing_device_ids = expected_device_ids - provided_device_ids
                 if missing_device_ids:
