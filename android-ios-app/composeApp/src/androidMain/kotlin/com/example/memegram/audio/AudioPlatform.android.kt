@@ -15,6 +15,13 @@ import java.io.File
 actual fun createAudioRecorder(): AudioRecorder = AudioRecorderAndroid()
 actual fun createAudioPlayer(): AudioPlayer = AudioPlayerAndroid()
 
+actual fun readLocalAudioFile(path: String): ByteArray? {
+    return try {
+        val f = File(path)
+        if (!f.exists() || !f.canRead()) null else f.readBytes()
+    } catch (_: Throwable) { null }
+}
+
 class AudioRecorderAndroid : AudioRecorder {
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
@@ -41,6 +48,7 @@ class AudioRecorderAndroid : AudioRecorder {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1)
                 setAudioEncodingBitRate(64000)
                 setAudioSamplingRate(44100)
                 setOutputFile(outputFile!!.absolutePath)

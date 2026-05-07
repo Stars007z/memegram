@@ -9,6 +9,7 @@ import com.example.memegram.Message
 import com.example.memegram.MessageStatus
 import com.example.memegram.StoredChatMessage
 import com.example.memegram.StorageTypeStat
+import com.example.memegram.TranscriptionStatus
 import com.example.memegram.data.models.MarkAsReadRequest
 import com.example.memegram.database.AppDatabase
 import kotlinx.coroutines.Dispatchers
@@ -179,7 +180,11 @@ class ChatRepositoryImpl(
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
                         localFilePath      = entity.localFilePath,
-                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() }
+                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                        transcribedText    = entity.transcribedText,
+                        transcribedLang    = entity.transcribedLang,
+                        transcriptionStatus = entity.transcriptionStatus
+                            ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
                     )
 
                 }
@@ -223,7 +228,11 @@ class ChatRepositoryImpl(
                             fileSize           = entity.fileSize,
                             fileMime           = entity.fileMime,
                             localFilePath      = entity.localFilePath,
-                            replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() }
+                            replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                            transcribedText    = entity.transcribedText,
+                            transcribedLang    = entity.transcribedLang,
+                            transcriptionStatus = entity.transcriptionStatus
+                                ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
                         )
                     )
                 }
@@ -392,7 +401,11 @@ class ChatRepositoryImpl(
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
                         localFilePath      = entity.localFilePath,
-                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() }
+                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                        transcribedText    = entity.transcribedText,
+                        transcribedLang    = entity.transcribedLang,
+                        transcriptionStatus = entity.transcriptionStatus
+                            ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
                     )
                 }
         }
@@ -426,6 +439,33 @@ class ChatRepositoryImpl(
     override suspend fun showCachedTranslation(serverId: String) {
         withContext(ioDispatcher) {
             chatQueries.showCachedTranslation(serverId)
+        }
+    }
+
+    // ── Voice transcription ──────────────────────────────────────────
+
+    override suspend fun updateMessageTranscription(
+        serverId: String,
+        transcribedText: String,
+        transcribedLang: String?
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageTranscription(transcribedText, transcribedLang, serverId)
+        }
+    }
+
+    override suspend fun setTranscriptionStatus(
+        serverId: String,
+        status: TranscriptionStatus?
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.setTranscriptionStatus(status?.name, serverId)
+        }
+    }
+
+    override suspend fun clearTranscription(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.clearTranscription(serverId)
         }
     }
 

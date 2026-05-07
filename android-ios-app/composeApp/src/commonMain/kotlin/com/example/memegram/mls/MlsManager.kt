@@ -1,6 +1,8 @@
 package com.example.memegram.mls
 
 import com.example.memegram.data.local.SessionManager
+import com.example.memegram.data.models.DeviceWelcome
+import com.example.memegram.data.models.UserDeviceKeyPackage
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.set
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,11 @@ data class AddMemberResult(
     val welcomeB64: String,
     val commitB64: String,
     val memberSignatureKeyB64: String
+)
+
+data class InitialGroupResult(
+    val welcomeMessages: List<DeviceWelcome>,
+    val deviceSignatureKeys: Map<String, String>
 )
 
 @OptIn(ExperimentalEncodingApi::class)
@@ -109,20 +116,29 @@ class MlsManager(
 
     suspend fun initialize() = withContext(Dispatchers.Default) {
         mutex.withLock {
-            val hadState   = settings.getStringOrNull(KEY_PROVIDER_STATE) != null
-            val kpCount    = settings.getInt(KEY_KP_COUNT, 0)
+            val stateB64 = settings.getStringOrNull(KEY_PROVIDER_STATE)
+            val keyB64   = settings.getStringOrNull(KEY_SIGNING_KEY)
+            val hadState = stateB64 != null && keyB64 != null
+            val kpCount  = settings.getInt(KEY_KP_COUNT, 0)
             println("MemegramDebug [MLS] ───── initialize() ─────")
             println("MemegramDebug [MLS]   identity   = $identity")
             println("MemegramDebug [MLS]   hadState   = $hadState")
             println("MemegramDebug [MLS]   kpCount    = $kpCount (MIN=$MIN_KEY_PACKAGES)")
             println("MemegramDebug [MLS]   _client    = ${if (_client != null) "уже создан (reuse)" else "null (создаём)"}")
-            getOrCreateClient()
-            saveState()
-            if (!hadState) {
+            if (_client != null) {
+                println("MemegramDebug [MLS] ✅ initialize(): клиент уже готов, повторное сохранение state не требуется")
+                println("MemegramDebug [MLS] ────────────────────────")
+                return@withLock
+            }
+
+            _client = loadClient()
+            if (hadState) {
+                _stateDirty = false
+                println("MemegramDebug [MLS] ✅ initialize(): клиент восстановлен из state")
+            } else {
+                saveState()
                 println("MemegramDebug [MLS] ⚠️ initialize(): создан НОВЫЙ клиент. " +
                         "Необходимо сгенерировать и загрузить key packages!")
-            } else {
-                println("MemegramDebug [MLS] ✅ initialize(): клиент восстановлен из state")
             }
             println("MemegramDebug [MLS] ────────────────────────")
         }
@@ -207,6 +223,61 @@ class MlsManager(
             println("MemegramDebug [MLS] ────────────────────────")
         }
     }
+
+    suspend fun prepareInitialGroup(
+        mlsGroupId: String,
+        packages: List<UserDeviceKeyPackage>
+    ): InitialGroupResult = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val uniquePackages = packages.distinctBy { it.deviceId }
+            if (uniquePackages.isEmpty()) {
+                throw IllegalArgumentException("No key packages for initial MLS group")
+            }
+
+            println("MemegramDebug [MLS] ───── prepareInitialGroup() ─────")
+            println("MemegramDebug [MLS]   mlsGroupId=${mlsGroupId.take(20)}...")
+            println("MemegramDebug [MLS]   devices=${uniquePackages.map { it.deviceId }}")
+
+            val groupIdBytes = mlsGroupId.encodeToByteArray()
+            val c = getOrCreateClient()
+            c.createGroupWithId(groupIdBytes)
+
+            val decodedPackages = uniquePackages.map { kp ->
+                kp to Base64.decode(kp.keyPackageData)
+            }
+            val signatureKeys = decodedPackages.associate { (kp, bytes) ->
+                kp.deviceId to Base64.encode(c.extractSignatureKey(bytes))
+            }
+
+            val bundle = c.addMembers(groupIdBytes, decodedPackages.map { it.second })
+            val welcomeB64 = Base64.encode(bundle.welcome)
+            saveState()
+
+            println("MemegramDebug [MLS] ✅ prepareInitialGroup: devices=${uniquePackages.size}, " +
+                    "welcome=${bundle.welcome.size}b, commit=${bundle.commit.size}b")
+            println("MemegramDebug [MLS] ────────────────────────")
+
+            InitialGroupResult(
+                welcomeMessages = uniquePackages.map { kp ->
+                    DeviceWelcome(deviceId = kp.deviceId, welcomeData = welcomeB64)
+                },
+                deviceSignatureKeys = signatureKeys
+            )
+        }
+    }
+
+    suspend fun deleteUnboundGroup(mlsGroupId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            try {
+                getOrCreateClient().deleteGroup(mlsGroupId.encodeToByteArray())
+                saveState()
+                println("MemegramDebug [MLS] deleteUnboundGroup: ${mlsGroupId.take(20)}... removed")
+            } catch (e: Exception) {
+                println("MemegramDebug [MLS] deleteUnboundGroup skipped: ${e.message}")
+            }
+        }
+    }
+
     suspend fun createGroup(
         mlsGroupId: String,
         peerKeyPackageB64: String
@@ -669,6 +740,14 @@ class MlsManager(
             getOrCreateClient().clearPendingCommit(groupId)
             saveState()
             println("MemegramDebug [MLS] ⚠️ Pending commit отменен (ошибка сети)")
+        }
+    }
+
+    suspend fun clearPendingCommitForGroupId(mlsGroupId: String) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            getOrCreateClient().clearPendingCommit(mlsGroupId.encodeToByteArray())
+            saveState()
+            println("MemegramDebug [MLS] ⚠️ Pending commit отменен для unbound group")
         }
     }
 }

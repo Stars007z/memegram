@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import gobley.gradle.cargo.dsl.*
+import gobley.gradle.cargo.tasks.CargoBuildTask
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -15,6 +18,64 @@ plugins {
 
 cargo {
     packageDirectory = layout.projectDirectory.dir("../mls-rust")
+
+    builds.android {
+        dynamicLibraries.add("c++_shared")
+    }
+}
+
+val whisperNdkVersion = "30.0.14904198"
+val whisperIsWindows: Boolean =
+    System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+val whisperHostTriplet: String = when {
+    whisperIsWindows -> "windows-x86_64"
+    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) ->
+        "darwin-x86_64"
+    else -> "linux-x86_64"
+}
+val whisperNdkRoot: String? = run {
+    val localProps = Properties()
+    val f = rootProject.file("local.properties")
+    if (f.exists()) {
+        f.inputStream().use { stream -> localProps.load(stream) }
+    }
+    val pinnedNdk: String? = localProps.getProperty("ndk.dir")
+    if (pinnedNdk != null) return@run pinnedNdk
+    val sdkDir: String? = localProps.getProperty("sdk.dir")
+    if (sdkDir != null) return@run "$sdkDir/ndk/$whisperNdkVersion"
+    System.getenv("ANDROID_NDK_ROOT") ?: System.getenv("ANDROID_NDK_HOME")
+}
+val whisperToolchainBin: String? = whisperNdkRoot?.let {
+    "$it/toolchains/llvm/prebuilt/$whisperHostTriplet/bin"
+}
+val whisperBuildEnv: Map<String, String> = if (whisperToolchainBin == null) emptyMap() else {
+    val ext = if (whisperIsWindows) ".cmd" else ""
+    val arExt = if (whisperIsWindows) ".exe" else ""
+    val apiLevel = "24"
+    buildMap {
+        put("LIBCLANG_PATH", whisperToolchainBin)
+        put("CMAKE_GENERATOR", "Ninja")
+        listOf(
+            "aarch64-linux-android"   to "aarch64-linux-android",
+            "armv7-linux-androideabi" to "armv7a-linux-androideabi",
+            "x86_64-linux-android"    to "x86_64-linux-android",
+            "i686-linux-android"      to "i686-linux-android",
+        ).forEach { (rustTriplet, ndkPrefix) ->
+            val envSafe = rustTriplet.replace('-', '_')
+            put("CC_$envSafe",  "$whisperToolchainBin/${ndkPrefix}${apiLevel}-clang$ext")
+            put("CXX_$envSafe", "$whisperToolchainBin/${ndkPrefix}${apiLevel}-clang++$ext")
+            put("AR_$envSafe",  "$whisperToolchainBin/llvm-ar$arExt")
+        }
+    }
+}
+val whisperBuildEnvPath: List<File> = buildList {
+    add(layout.projectDirectory.dir("../mls-rust/.tools").asFile)
+    if (whisperToolchainBin != null) add(file(whisperToolchainBin))
+}
+
+tasks.withType<CargoBuildTask>().configureEach {
+    whisperBuildEnv.forEach { (k, v) -> additionalEnvironment.put(k, v) }
+    whisperBuildEnvPath.forEach { additionalEnvironmentPath.add(it) }
 }
 
 uniffi {
@@ -126,13 +187,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-
-    sourceSets["main"].jniLibs.srcDirs(
-        "build/intermediates/rust/aarch64-linux-android/debug",
-        "build/intermediates/rust/armv7-linux-androideabi/debug",
-        "build/intermediates/rust/i686-linux-android/debug",
-        "build/intermediates/rust/x86_64-linux-android/debug",
-    )
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

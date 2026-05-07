@@ -47,6 +47,8 @@ fun LanguageScreen(
     val blacklistedLanguages by viewModel.blacklistedLanguages.collectAsState()
     val modelState by viewModel.modelState.collectAsState()
     val modelSize by viewModel.modelSize.collectAsState()
+    val whisperState by viewModel.whisperState.collectAsState()
+    val whisperSize by viewModel.whisperSize.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
 
     var showTargetLangDialog by remember { mutableStateOf(false) }
@@ -330,6 +332,29 @@ fun LanguageScreen(
                 }
             }
 
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.sdp)
+                    .padding(top = 8.sdp, bottom = 8.sdp),
+                shape = RoundedCornerShape(12.sdp),
+                tonalElevation = 2.sdp
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ModelDownloadRow(
+                        state = whisperState,
+                        modelSize = whisperSize,
+                        accent = topBarColor,
+                        strings = s,
+                        onDownload = viewModel::downloadWhisperModel,
+                        onCancel = viewModel::cancelWhisperDownload,
+                        onDelete = viewModel::deleteWhisperModel,
+                        title = s.transcriptionModel,
+                        description = s.transcriptionModelDescription,
+                    )
+                }
+            }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.sdp))
 
             LazyColumn(
@@ -398,6 +423,8 @@ private fun ModelDownloadRow(
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
+    title: String = strings.translationModel,
+    description: String = strings.translationModelDescription,
 ) {
     Column(
         modifier = Modifier
@@ -405,12 +432,12 @@ private fun ModelDownloadRow(
             .padding(horizontal = 16.sdp, vertical = 12.sdp)
     ) {
         Text(
-            text = strings.translationModel,
+            text = title,
             fontSize = 14.ssp,
             fontWeight = FontWeight.Medium,
         )
         Text(
-            text = strings.translationModelDescription,
+            text = description,
             fontSize = 12.ssp,
             color = Color.Gray,
         )

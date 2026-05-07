@@ -322,6 +322,15 @@ interface AppStrings {
     val modelNotDownloaded: String
     val modelDownloadFailed: String
 
+    val transcriptionModel: String
+    val transcriptionModelDescription: String
+    val transcribe: String
+    val transcribing: String
+    val showTranscription: String
+    val hideTranscription: String
+    val transcriptionFailed: String
+    val transcriptionNoSpeech: String
+
     val linkedDevicesTitle: String
     val refresh: String
     val addDeviceByQr: String
@@ -716,6 +725,14 @@ object RuStrings : AppStrings {
     override val modelReady = "Модель готова"
     override val modelNotDownloaded = "Модель не загружена"
     override val modelDownloadFailed = "Не удалось загрузить модель"
+    override val transcriptionModel = "Модель распознавания речи"
+    override val transcriptionModelDescription = "Whisper Small. Скачивается один раз с серверов Memegram."
+    override val transcribe = "Распознать речь"
+    override val transcribing = "Распознавание…"
+    override val showTranscription = "Показать текст"
+    override val hideTranscription = "Скрыть текст"
+    override val transcriptionFailed = "Не удалось распознать"
+    override val transcriptionNoSpeech = "В голосовом нет слов"
     override val linkedDevicesTitle = "Связанные устройства"
     override val refresh = "Обновить"
     override val addDeviceByQr = "Добавить устройство по QR"
@@ -1115,6 +1132,14 @@ object EnStrings : AppStrings {
     override val modelReady = "Model ready"
     override val modelNotDownloaded = "Model not downloaded"
     override val modelDownloadFailed = "Model download failed"
+    override val transcriptionModel = "Voice recognition model"
+    override val transcriptionModelDescription = "Whisper Small. Downloaded once from Memegram servers."
+    override val transcribe = "Transcribe"
+    override val transcribing = "Transcribing…"
+    override val showTranscription = "Show transcription"
+    override val hideTranscription = "Hide transcription"
+    override val transcriptionFailed = "Transcription failed"
+    override val transcriptionNoSpeech = "No speech in this voice message"
     override val linkedDevicesTitle = "Linked Devices"
     override val refresh = "Refresh"
     override val addDeviceByQr = "Add device via QR"

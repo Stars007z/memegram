@@ -21,6 +21,11 @@ class ApiService(
     private val sessionManager: SessionManager,
     private val baseUrl: String
 ) {
+    private val eventJson = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
     private fun token() = sessionManager.getAccessToken() ?: ""
 
     private fun HttpRequestBuilder.noCache() {
@@ -309,7 +314,7 @@ class ApiService(
                                 ?: continue
                             val data = dataLine.removePrefix("data:").trim()
                             if (data.isNotEmpty()) {
-                                try { emit(Json.decodeFromString<SseEvent>(data)) }
+                                try { emit(eventJson.decodeFromString<SseEvent>(data)) }
                                 catch (_: Exception) {}
                             }
                         }
@@ -318,7 +323,7 @@ class ApiService(
                     line.startsWith("data:") && eventBuffer.isEmpty() -> {
                         val data = line.removePrefix("data:").trim()
                         if (data.isNotEmpty()) {
-                            try { emit(Json.decodeFromString<SseEvent>(data)) }
+                            try { emit(eventJson.decodeFromString<SseEvent>(data)) }
                             catch (_: Exception) { eventBuffer.appendLine(line) }
                         }
                     }

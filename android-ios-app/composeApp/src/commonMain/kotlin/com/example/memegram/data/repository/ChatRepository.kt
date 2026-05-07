@@ -40,6 +40,11 @@ interface ChatRepository {
     suspend fun revertMessageTranslation(serverId: String)
     suspend fun showCachedTranslation(serverId: String)
 
+    // ── Voice transcription ──────────────────────────────────────────
+    suspend fun updateMessageTranscription(serverId: String, transcribedText: String, transcribedLang: String?)
+    suspend fun setTranscriptionStatus(serverId: String, status: com.example.memegram.TranscriptionStatus?)
+    suspend fun clearTranscription(serverId: String)
+
     // ── Storage analytics ────────────────────────────────────────────
     suspend fun getStorageByType(): List<StorageTypeStat>
     suspend fun getStoragePerConversationPerType(): List<ChatStorageStat>

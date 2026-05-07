@@ -31,6 +31,7 @@ interface MlsPlatformClient {
     fun generateKeyPackage(): ByteArray
     fun createGroupWithId(groupId: ByteArray)
     fun addMember(groupId: ByteArray, keyPackageBytes: ByteArray): WelcomeBundleKt
+    fun addMembers(groupId: ByteArray, keyPackageBytes: List<ByteArray>): WelcomeBundleKt
     fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray
     fun encryptMessage(groupId: ByteArray, plaintext: ByteArray): ByteArray
     fun processMessage(groupId: ByteArray, msgBytes: ByteArray): IncomingMessageKt

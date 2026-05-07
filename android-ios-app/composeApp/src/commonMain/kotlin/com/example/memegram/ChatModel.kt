@@ -38,8 +38,13 @@ data class Message(
     val fileSize: Long? = null,
     val fileMime: String? = null,
     val localFilePath: String? = null,
-    val replyToServerId: String? = null
+    val replyToServerId: String? = null,
+    val transcribedText: String? = null,
+    val transcribedLang: String? = null,
+    val transcriptionStatus: TranscriptionStatus? = null
 )
+
+enum class TranscriptionStatus { IN_PROGRESS, DONE, FAILED }
 
 data class StoredChatMessage(
     val conversationId: String,

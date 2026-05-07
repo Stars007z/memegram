@@ -3,10 +3,12 @@ package com.example.memegram
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.data.models.UpdateSettingsRequest
+import com.example.memegram.data.network.ApiException
 import com.example.memegram.data.repository.UserRepository
 import com.example.memegram.translation.ModelDownloadProgress
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationSettings
+import com.example.memegram.transcription.TranscriptionService
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +36,7 @@ class LanguageViewModel(
     private val userRepository: UserRepository,
     private val translationSettings: TranslationSettings,
     private val translationService: TranslationService,
+    private val transcriptionService: TranscriptionService,
 ) : ViewModel() {
 
     companion object {
@@ -58,6 +61,62 @@ class LanguageViewModel(
 
     private var downloadJob: Job? = null
 
+    // ── Whisper (voice transcription) model ──────────────────────────
+
+    private val _whisperState = MutableStateFlow<ModelDownloadState>(
+        if (transcriptionService.isModelAvailable()) ModelDownloadState.Ready
+        else ModelDownloadState.Idle
+    )
+    val whisperState: StateFlow<ModelDownloadState> = _whisperState.asStateFlow()
+
+    private val _whisperSize = MutableStateFlow(transcriptionService.getModelSize())
+    val whisperSize: StateFlow<Long> = _whisperSize.asStateFlow()
+
+    private var whisperDownloadJob: Job? = null
+
+    fun downloadWhisperModel() {
+        if (whisperDownloadJob?.isActive == true) return
+        if (transcriptionService.isModelAvailable()) {
+            _whisperState.value = ModelDownloadState.Ready
+            _whisperSize.value = transcriptionService.getModelSize()
+            return
+        }
+        _whisperState.value = ModelDownloadState.Downloading(0, -1)
+        whisperDownloadJob = viewModelScope.launch {
+            transcriptionService.downloadModel()
+                .catch { e ->
+                    _whisperState.value = ModelDownloadState.Failed(formatDownloadError(e))
+                }
+                .onEach { p: ModelDownloadProgress ->
+                    _whisperState.value = ModelDownloadState.Downloading(p.bytesDownloaded, p.totalBytes)
+                }
+                .collect {}
+            if (transcriptionService.isModelAvailable()) {
+                _whisperSize.value = transcriptionService.getModelSize()
+                _whisperState.value = ModelDownloadState.Ready
+            } else if (_whisperState.value is ModelDownloadState.Downloading) {
+                _whisperState.value = ModelDownloadState.Failed("Download incomplete")
+            }
+        }
+    }
+
+    fun cancelWhisperDownload() {
+        whisperDownloadJob?.cancel()
+        whisperDownloadJob = null
+        _whisperState.value =
+            if (transcriptionService.isModelAvailable()) ModelDownloadState.Ready
+            else ModelDownloadState.Idle
+        _whisperSize.value = transcriptionService.getModelSize()
+    }
+
+    fun deleteWhisperModel() {
+        viewModelScope.launch {
+            transcriptionService.deleteModel()
+            _whisperSize.value = 0
+            _whisperState.value = ModelDownloadState.Idle
+        }
+    }
+
     fun downloadModel() {
         if (downloadJob?.isActive == true) return
         if (translationService.isModelAvailable()) {
@@ -69,7 +128,7 @@ class LanguageViewModel(
         downloadJob = viewModelScope.launch {
             translationService.downloadModel()
                 .catch { e ->
-                    _modelState.value = ModelDownloadState.Failed(e.message ?: "Download failed")
+                    _modelState.value = ModelDownloadState.Failed(formatDownloadError(e))
                 }
                 .onEach { p: ModelDownloadProgress ->
                     _modelState.value = ModelDownloadState.Downloading(p.bytesDownloaded, p.totalBytes)
@@ -149,5 +208,18 @@ class LanguageViewModel(
                 }
             }
         }
+    }
+
+    private fun formatDownloadError(e: Throwable): String {
+        if (e is ApiException) {
+            return "HTTP ${e.status.value}: ${e.status.description}"
+        }
+        return e.message
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.trim()
+            ?.take(240)
+            ?.takeIf { it.isNotBlank() }
+            ?: "Download failed"
     }
 }

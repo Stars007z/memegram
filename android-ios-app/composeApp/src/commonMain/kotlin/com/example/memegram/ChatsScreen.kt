@@ -115,10 +115,14 @@ fun ChatsScreen(
     var isSearchMode by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    val contactsVm: ContactsViewModel = koinViewModel()
-    val createdChatId by contactsVm.chatCreated.collectAsState()
+    var contactsVmReady by remember { mutableStateOf(false) }
+    val contactsVm: ContactsViewModel? = if (contactsVmReady) koinViewModel() else null
+    val createdChatId by contactsVm
+        ?.chatCreated
+        ?.collectAsState()
+        ?: remember { mutableStateOf<String?>(null) }
 
-    BlockedByPeerDialog(contactsVm)
+    contactsVm?.let { BlockedByPeerDialog(it) }
 
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var newKeyInput by remember { mutableStateOf("") }
@@ -132,21 +136,18 @@ fun ChatsScreen(
     var createdInviteCode by remember { mutableStateOf<String?>(null) }
     var inviteError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        profileViewModel.loadProfile()
-    }
-
     LaunchedEffect(isSearchMode) {
         if (isSearchMode) focusRequester.requestFocus()
         else viewModel.setSearchQuery("")
     }
-    LaunchedEffect(createdChatId) {
+    LaunchedEffect(createdChatId, contactsVm) {
         createdChatId?.let { id ->
-            val chatName = contactsVm.getPendingChatName()
-            val avatarMediaId = contactsVm.getPendingChatAvatarMediaId()
-            contactsVm.clearChatCreated()
-            contactsVm.clearPendingChatName()
-            contactsVm.clearPendingChatAvatarMediaId()
+            val vm = contactsVm ?: return@let
+            val chatName = vm.getPendingChatName()
+            val avatarMediaId = vm.getPendingChatAvatarMediaId()
+            vm.clearChatCreated()
+            vm.clearPendingChatName()
+            vm.clearPendingChatAvatarMediaId()
             onNavigateToChat(id, chatName, avatarMediaId, null)
         }
     }
@@ -369,6 +370,7 @@ fun ChatsScreen(
                                         text = { Text(s.addByKey) },
                                         onClick = {
                                             showAddMenu = false
+                                            contactsVmReady = true
                                             showAddKeyDialog = true
                                         },
                                         leadingIcon = { Icon(Icons.Default.Key, null) }
@@ -405,7 +407,7 @@ fun ChatsScreen(
                                 onClick = {
                                     showAddKeyDialog = false
                                     if (newKeyInput.isNotBlank()) {
-                                        contactsVm.addAndStartChat(newKeyInput.trim())
+                                        contactsVm?.addAndStartChat(newKeyInput.trim())
                                     }
                                     newKeyInput = ""
                                 }

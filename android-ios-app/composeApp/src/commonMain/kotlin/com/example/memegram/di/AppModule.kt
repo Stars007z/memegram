@@ -31,6 +31,8 @@ import com.example.memegram.push.createPushTokenProvider
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationSettings
 import com.example.memegram.translation.createTranslationService
+import com.example.memegram.transcription.TranscriptionService
+import com.example.memegram.transcription.createTranscriptionService
 import com.russhwolf.settings.Settings
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
@@ -62,6 +64,14 @@ val appModule = module {
     single { BlockedUsersCache(get(), get()) }
     single<TranslationService> {
         val service = createTranslationService(
+            httpClient = get(),
+            modelBaseUrl = "https://models.memegram.win/memegram-models",
+        )
+        com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
+        service
+    }
+    single<TranscriptionService> {
+        val service = createTranscriptionService(
             httpClient = get(),
             modelBaseUrl = "https://models.memegram.win/memegram-models",
         )

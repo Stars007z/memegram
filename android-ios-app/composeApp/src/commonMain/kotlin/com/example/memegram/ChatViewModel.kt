@@ -44,6 +44,7 @@ class ChatViewModel(
     private val settings: Settings,
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
+    private val transcriptionService: com.example.memegram.transcription.TranscriptionService,
     private val blockedUsersCache: BlockedUsersCache,
     private val profileRepository: com.example.memegram.data.repository.ProfileRepository,
     private val appearance: AppearanceRepository,
@@ -194,6 +195,11 @@ class ChatViewModel(
 
     private val _translationProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val translationProgress: StateFlow<Map<String, Float>> = _translationProgress.asStateFlow()
+
+    val transcriptionProgress: StateFlow<Map<String, Float>> = TranscriptionProgressTracker.progress
+
+    private val _visibleTranscriptions = MutableStateFlow<Set<String>>(emptySet())
+    val visibleTranscriptions: StateFlow<Set<String>> = _visibleTranscriptions.asStateFlow()
 
     private fun updateTranslationProgress(messageId: String, progress: TranslationProgress) {
         _translationProgress.update { current ->
@@ -1340,7 +1346,8 @@ class ChatViewModel(
                         timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                         mediaId            = initResp.mediaId,
                         encryptionMetadata = encrypted.encryptionMetadataB64,
-                        text               = "${recordResult.durationMs}|${recordResult.waveform}"
+                        text               = "${recordResult.durationMs}|${recordResult.waveform}",
+                        localPreviewBytes  = recordResult.bytes
                     ),
                     convId
                 )
@@ -1627,6 +1634,102 @@ class ChatViewModel(
         }
     }
 
+    // ── Voice transcription (Whisper) ────────────────────────────────
+
+    fun toggleTranscriptionVisibility(serverId: String) {
+        if (serverId.isBlank()) return
+        _visibleTranscriptions.update { current ->
+            if (serverId in current) current - serverId else current + serverId
+        }
+    }
+
+    fun transcribeMessage(message: Message) {
+        val serverId = message.serverId
+        println("MemegramDebug [Transcribe]: click serverId=$serverId type=${message.type} mediaId=${message.mediaId}")
+        if (serverId.isBlank()) {
+            println("MemegramDebug [Transcribe]: skip, blank serverId")
+            return
+        }
+        if (message.type != "voice") {
+            println("MemegramDebug [Transcribe]: skip, not a voice message")
+            return
+        }
+
+        if (!message.transcribedText.isNullOrBlank() &&
+            message.transcriptionStatus == TranscriptionStatus.DONE) {
+            _visibleTranscriptions.update { it + serverId }
+            return
+        }
+
+        if (!TranscriptionProgressTracker.tryQueue(serverId)) return
+
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.Default) {
+                    message.localPreviewBytes
+                        ?: message.mediaId?.let { _mediaCache.value[it] }
+                        ?: message.localFilePath?.takeIf { it.isNotBlank() }?.let {
+                            com.example.memegram.audio.readLocalAudioFile(it)
+                        }
+                }
+                if (bytes == null || bytes.isEmpty()) {
+                    println("MemegramDebug [Transcribe]: no local audio bytes for serverId=$serverId")
+                    chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                    _error.value = S.current.transcriptionFailed
+                    return@launch
+                }
+                println("MemegramDebug [Transcribe]: start Whisper bytes=${bytes.size} serverId=$serverId")
+
+                val result = com.example.memegram.ml.MlModelGate.withModel(
+                    priority = com.example.memegram.ml.MlModelGate.Priority.USER,
+                    onStarted = { TranscriptionProgressTracker.markStarted(serverId) }
+                ) {
+                    try {
+                        chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.IN_PROGRESS)
+                        val transcriptionResult = transcriptionService.transcribe(
+                            audioBytes = bytes,
+                            language = null,
+                            onProgress = { p -> TranscriptionProgressTracker.update(serverId, p.fraction) }
+                        )
+                        chatRepository.updateMessageTranscription(
+                            serverId = serverId,
+                            transcribedText = transcriptionResult.text.trim().ifBlank { S.current.transcriptionNoSpeech },
+                            transcribedLang = transcriptionResult.language.takeIf { it.isNotBlank() }
+                        )
+                        transcriptionResult
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                        throw e
+                    } finally {
+                        TranscriptionProgressTracker.finish(serverId)
+                    }
+                }
+
+                _visibleTranscriptions.update { it + serverId }
+            } catch (e: CancellationException) {
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    withContext(NonCancellable) {
+                        TranscriptionProgressTracker.clear(serverId)
+                    }
+                }
+                throw e
+            } catch (e: Exception) {
+                println("MemegramDebug [Transcribe]: error ${e.message}")
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                }
+                _error.value = S.current.transcriptionFailed
+            } finally {
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    withContext(NonCancellable) {
+                        TranscriptionProgressTracker.clear(serverId)
+                    }
+                }
+            }
+        }
+    }
+
     fun deleteMessage(message: Message) {
         val convId = currentConversationId ?: return
         if (message.serverId.isBlank()) return
@@ -1666,62 +1769,8 @@ class ChatViewModel(
         }
     }
 
-    private data class ParsedMlsPayload(
-        val type: String,
-        val mediaId: String,
-        val content: String,
-        val groupId: String? = null,
-        val fileName: String? = null,
-        val fileSize: Long? = null,
-        val fileMime: String? = null
-    )
-
-    private fun parseMlsPayload(payload: String): ParsedMlsPayload {
-        if (payload.startsWith("[image:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-            val metaInfo = payload.substring(7, closeIdx).split(":")
-            val mediaId = metaInfo[0]
-            val groupId = if (metaInfo.size > 1) metaInfo[1] else null
-            val caption = payload.substring(closeIdx + 1).trim()
-            return ParsedMlsPayload("image", mediaId, caption, groupId)
-        }
-        if (payload.startsWith("[voice:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-
-            val metaInfo = payload.substring(7, closeIdx).split(":")
-            val mediaId = metaInfo[0]
-            val waveform = if (metaInfo.size > 1) metaInfo[1] else ""
-            val durationMs = payload.substring(closeIdx + 1).trim()
-
-            return ParsedMlsPayload("voice", mediaId, "$durationMs|$waveform")
-        }
-        if (payload.startsWith("[file:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-            val metaInfo = payload.substring(6, closeIdx).split(":")
-            if (metaInfo.size < 3) return ParsedMlsPayload("text", "", payload)
-            val mediaId  = metaInfo[0]
-            val sizeBytes = metaInfo[1].toLongOrNull() ?: 0L
-            val mime      = runCatching { decodeBase64Utf8(metaInfo[2]) }.getOrDefault("application/octet-stream")
-            val tail      = payload.substring(closeIdx + 1)
-            val parts     = tail.split(":", limit = 2)
-            val fileName  = runCatching { decodeBase64Utf8(parts[0]) }.getOrDefault(parts[0])
-            val caption   = if (parts.size > 1) runCatching { decodeBase64Utf8(parts[1]) }.getOrDefault("") else ""
-            return ParsedMlsPayload(
-                type = "file", mediaId = mediaId, content = caption,
-                fileName = fileName, fileSize = sizeBytes, fileMime = mime
-            )
-        }
-        return ParsedMlsPayload("text", "", payload)
-    }
-
     private fun encodeBase64Utf8(s: String): String =
         kotlin.io.encoding.Base64.encode(s.encodeToByteArray())
-
-    private fun decodeBase64Utf8(s: String): String =
-        kotlin.io.encoding.Base64.decode(s).decodeToString()
 
     fun blockPeer() {
         val peerId = peerUserId ?: return

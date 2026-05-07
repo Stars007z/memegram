@@ -37,7 +37,10 @@ CREATE TABLE messageEntity (
     fileSize             INTEGER,
     fileMime             TEXT,
     localFilePath        TEXT,
-    replyToServerId      TEXT
+    replyToServerId      TEXT,
+    transcribedText      TEXT,
+    transcribedLang      TEXT,
+    transcriptionStatus  TEXT
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -205,6 +208,25 @@ showCachedTranslation:
 UPDATE messageEntity
 SET text = translatedText, isTranslated = 1
 WHERE serverId = ? AND translatedText IS NOT NULL;
+
+updateMessageTranscription:
+UPDATE messageEntity
+SET transcribedText = ?,
+    transcribedLang = ?,
+    transcriptionStatus = 'DONE'
+WHERE serverId = ?;
+
+setTranscriptionStatus:
+UPDATE messageEntity
+SET transcriptionStatus = ?
+WHERE serverId = ?;
+
+clearTranscription:
+UPDATE messageEntity
+SET transcribedText = NULL,
+    transcribedLang = NULL,
+    transcriptionStatus = NULL
+WHERE serverId = ?;
 
 storageByType:
 WITH normalized AS (

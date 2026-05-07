@@ -21,6 +21,14 @@ private class IosMlsClient(
         return WelcomeBundleKt(commit = bundle.commit, welcome = bundle.welcome)
     }
 
+    override fun addMembers(
+        groupId: ByteArray,
+        keyPackageBytes: List<ByteArray>
+    ): WelcomeBundleKt {
+        val bundle = handle.addMembers(groupId, keyPackageBytes)
+        return WelcomeBundleKt(commit = bundle.commit, welcome = bundle.welcome)
+    }
+
     override fun joinFromWelcome(welcomeBytes: ByteArray): ByteArray =
         handle.joinFromWelcome(welcomeBytes)
 

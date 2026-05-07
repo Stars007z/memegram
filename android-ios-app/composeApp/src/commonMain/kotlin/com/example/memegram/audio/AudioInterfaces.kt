@@ -28,3 +28,4 @@ interface AudioPlayer {
 
 expect fun createAudioRecorder(): AudioRecorder
 expect fun createAudioPlayer(): AudioPlayer
+expect fun readLocalAudioFile(path: String): ByteArray?

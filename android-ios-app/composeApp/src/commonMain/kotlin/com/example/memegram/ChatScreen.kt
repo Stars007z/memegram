@@ -157,6 +157,8 @@ fun ChatScreen(
     val mediaCache by viewModel.mediaCache.collectAsState()
     val downloadingFiles by viewModel.downloadingFiles.collectAsState()
     val translationProgress by viewModel.translationProgress.collectAsState()
+    val transcriptionProgress by viewModel.transcriptionProgress.collectAsState()
+    val visibleTranscriptions by viewModel.visibleTranscriptions.collectAsState()
     val topBarTextColor = topBarTextOverride
         ?: if (topBarColor.luminance() > 0.5f) Color.Black else Color.White
 
@@ -1467,6 +1469,10 @@ fun ChatScreen(
                                                     onPhotoClick     = onPhotoClick,
                                                     isHighlighted    = (message.id == highlightedMessageId),
                                                     translationProgress = translationProgress[message.serverId],
+                                                    transcriptionProgress = transcriptionProgress[message.serverId],
+                                                    isTranscriptionVisible = message.serverId in visibleTranscriptions,
+                                                    onTranscribeClick = { viewModel.transcribeMessage(message) },
+                                                    onToggleTranscription = { viewModel.toggleTranscriptionVisibility(message.serverId) },
                                                     transparentBubbles = transparentBubbles,
                                                     bubbleTransparency = bubbleTransparency,
                                                     myBubbleTextColor = myBubbleTextOverride,
@@ -1524,6 +1530,10 @@ fun ChatScreen(
                                                 onPhotoClick     = onPhotoClick,
                                                 isHighlighted    = (message.id == highlightedMessageId),
                                                 translationProgress = translationProgress[message.serverId],
+                                                transcriptionProgress = transcriptionProgress[message.serverId],
+                                                isTranscriptionVisible = message.serverId in visibleTranscriptions,
+                                                onTranscribeClick = { viewModel.transcribeMessage(message) },
+                                                onToggleTranscription = { viewModel.toggleTranscriptionVisibility(message.serverId) },
                                                 transparentBubbles = transparentBubbles,
                                                 bubbleTransparency = bubbleTransparency,
                                                 myBubbleTextColor = myBubbleTextOverride,
@@ -2181,6 +2191,10 @@ fun MessageBubble(
     onPhotoClick: (Int) -> Unit = {},
     isHighlighted: Boolean = false,
     translationProgress: Float? = null,
+    transcriptionProgress: Float? = null,
+    isTranscriptionVisible: Boolean = false,
+    onTranscribeClick: () -> Unit = {},
+    onToggleTranscription: () -> Unit = {},
     transparentBubbles: Boolean = false,
     bubbleTransparency: Float = ThemePreferences.DEFAULT_BUBBLE_TRANSPARENCY,
     myBubbleTextColor: Color? = null,
@@ -2193,8 +2207,6 @@ fun MessageBubble(
     val glassEnabled = transparentBubbles && !isCurrentMatch
     val glassTransparency = bubbleTransparency.coerceIn(0f, 1f)
     val bubbleVisibility = if (glassEnabled) (1f - glassTransparency) else 1f
-    // Solid background only when glass is OFF; otherwise we draw the
-    // LiquidGlassSurface ourselves and skip the plain fill.
     val bubbleColor = if (glassEnabled) Color.Transparent else bubbleBaseColor
     val bubbleImageBytes = if (isCurrentMatch) null
     else if (isOut) myBubbleImage else theirBubbleImage
@@ -2362,9 +2374,10 @@ fun MessageBubble(
                         totalText
                     }
 
+                    Column(modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(220.sdp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.sdp, vertical = 8.sdp).width(200.sdp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Box(
                             modifier = Modifier
@@ -2412,6 +2425,80 @@ fun MessageBubble(
                             Spacer(modifier = Modifier.height(4.sdp))
                             Text(displayTime, color = textColor.copy(alpha = 0.7f), fontSize = 11.ssp)
                         }
+
+                        if (cachedBytes != null) {
+                            Spacer(modifier = Modifier.width(6.sdp))
+                            val hasCached = !message.transcribedText.isNullOrBlank() &&
+                                message.transcriptionStatus == TranscriptionStatus.DONE
+                            val isInProgress = transcriptionProgress != null
+                            Box(
+                                modifier = Modifier
+                                    .size(32.sdp)
+                                    .clip(CircleShape)
+                                    .background(textColor.copy(alpha = 0.12f))
+                                    .clickable(enabled = !isInProgress) {
+                                        if (hasCached) onToggleTranscription() else onTranscribeClick()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    isInProgress -> {
+                                        val shownTranscriptionProgress by animateFloatAsState(
+                                            targetValue = (transcriptionProgress ?: 0f).coerceIn(0.03f, 1f),
+                                            animationSpec = tween(durationMillis = 260),
+                                            label = "voiceTranscriptionProgress"
+                                        )
+                                        val percent = (shownTranscriptionProgress * 100)
+                                            .roundToInt()
+                                            .coerceIn(1, 99)
+                                        Box(contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(
+                                                progress = { shownTranscriptionProgress },
+                                                modifier = Modifier.size(28.sdp),
+                                                color = textColor,
+                                                trackColor = textColor.copy(alpha = 0.13f),
+                                                strokeWidth = 2.4.sdp,
+                                            )
+                                            Text(
+                                                text = percent.toString(),
+                                                color = textColor,
+                                                fontSize = 7.ssp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
+                                    else -> Icon(
+                                        Icons.Default.Subtitles,
+                                        contentDescription = if (isTranscriptionVisible) s.hideTranscription else s.transcribe,
+                                        tint = if (hasCached && isTranscriptionVisible) textColor
+                                               else textColor.copy(alpha = 0.75f),
+                                        modifier = Modifier.size(18.sdp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    val showPanel = isTranscriptionVisible &&
+                        !message.transcribedText.isNullOrBlank() &&
+                        message.transcriptionStatus == TranscriptionStatus.DONE
+                    if (showPanel) {
+                        Spacer(Modifier.height(6.sdp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.sdp))
+                                .background(textColor.copy(alpha = 0.08f))
+                                .padding(horizontal = 10.sdp, vertical = 8.sdp)
+                        ) {
+                            Text(
+                                text = message.transcribedText.orEmpty(),
+                                color = textColor,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                     }
                 } else if (isFileMsg) {
                     val mid = message.mediaId

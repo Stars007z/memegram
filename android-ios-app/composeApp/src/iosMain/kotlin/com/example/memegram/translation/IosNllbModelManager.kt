@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.onDownload
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.isSuccess
 import io.ktor.utils.io.readRemaining
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -25,21 +26,6 @@ import platform.posix.fclose
 import platform.posix.fopen
 import platform.posix.fwrite
 
-/**
- * iOS port of NllbModelManager. Uses Application Support directory for
- * model storage, Ktor for streaming download, and Swift `ZIPFoundation`
- * (via [IosZipBridge]) for extraction.
- *
- * Storage layout (Application Support is excluded from iCloud backups by
- * default for transient caches; we use it because Documents would expose
- * the model in iTunes file sharing):
- *
- *   {appSupport}/translation_models/nllb-200-distilled-600M/
- *     - encoder_model.onnx
- *     - decoder_model.onnx
- *     - tokenizer.json
- *     - config.json (optional)
- */
 @OptIn(ExperimentalForeignApi::class)
 class IosNllbModelManager(
     private val httpClient: HttpClient,
@@ -164,6 +150,9 @@ class IosNllbModelManager(
                     }
                 }
             }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    error("HTTP ${response.status.value}: ${response.status.description}")
+                }
                 val channel = response.bodyAsChannel()
                 val file = fopen(tmpZip, "wb") ?: error("Cannot open $tmpZip for writing")
                 try {

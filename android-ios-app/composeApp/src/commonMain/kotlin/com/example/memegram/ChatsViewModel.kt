@@ -161,7 +161,7 @@ class ChatsViewModel(
 
             val displayText = searchDisplayText(msg)
             val searchableText = buildString {
-                if (msg.text.isNotBlank()) append(msg.text) else append(displayText)
+                if (msg.type == "text" && msg.text.isNotBlank()) append(msg.text) else append(displayText)
                 append('\n')
                 msg.fileName?.let { append('\n').append(it) }
             }
@@ -193,14 +193,7 @@ class ChatsViewModel(
         results
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    private fun searchDisplayText(message: Message): String = when {
-        message.type == "voice" -> if (message.text.isNotBlank()) message.text else "🎤 ${S.current.voiceMessage}"
-        message.type == "file" -> if (message.text.isNotBlank()) message.text else "📎 ${message.fileName ?: S.current.file}"
-        message.type == "image" && message.text.isBlank() -> "📸 ${S.current.photo}"
-        message.type == "image" -> message.text
-        message.text.isNotBlank() -> message.text
-        else -> S.current.messageDeleted
-    }
+    private fun searchDisplayText(message: Message): String = messagePreviewText(message)
 
     private var sseJob: Job? = null
     private var pollingJob: Job? = null
@@ -230,13 +223,21 @@ class ChatsViewModel(
     private suspend fun initMls() {
         try {
             if (!ensureFreshSession()) return
+            println("MemegramDebug [ChatsVM]: initMls initialize start")
             mlsManager.initialize()
+            println("MemegramDebug [ChatsVM]: initMls initialize done")
             if (mlsManager.needsKeyPackages()) {
                 val packages = mlsManager.generateKeyPackages(BATCH_KEY_PACKAGES)
+                mlsManager.flushState()
                 api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
             }
+            println("MemegramDebug [ChatsVM]: initMls welcomes start")
             processPendingWelcomes()
-        } catch (_: Exception) {
+            println("MemegramDebug [ChatsVM]: initMls done")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            println("MemegramDebug [ChatsVM]: initMls failed: ${e::class.simpleName}: ${e.message}")
             _error.value = "Ошибка инициализации шифрования"
         }
     }
@@ -351,11 +352,9 @@ class ChatsViewModel(
                 }
 
                 val displayLastMessage = when {
-                    localLastMessage?.type == "voice" -> "🎤 Голосовое сообщение"
-                    localLastMessage?.type == "image" && localLastMessage.text.isBlank() -> "📸 Фото"
-                    localLastMessage != null && localLastMessage.text.isNotBlank() -> localLastMessage.text
-                    conv.lastMessageType == "voice" -> "🎤 Голосовое сообщение"
-                    conv.lastMessageType == "image" -> "📸 Фото"
+                    localLastMessage != null -> messagePreviewText(localLastMessage)
+                    conv.lastMessageType == "voice" -> "🎤 ${S.current.voiceMessage}"
+                    conv.lastMessageType == "image" -> "📸 ${S.current.photo}"
                     conv.lastMessageType == "text" -> "Сообщение"
                     else -> "Новый чат"
                 }
@@ -553,16 +552,23 @@ class ChatsViewModel(
                 }
 
                 mlsManager.flushState()
+                val parsed = parseMlsPayload(decryptedText)
                 chatRepository.saveMessage(
                     Message(
                         id           = event.data?.id.hashCode(),
                         serverId     = event.data?.id ?: "",
-                        text         = decryptedText,
+                        text         = parsed.content,
                         isOutgoing   = isMine,
                         timestamp    = (event.data?.createdAt?.let { it * 1000L })
                             ?: Clock.System.now().toEpochMilliseconds(),
                         status       = MessageStatus.SENT,
+                        type         = parsed.type,
+                        mediaId      = parsed.mediaId.takeIf { it.isNotBlank() },
                         senderUserId = event.data?.senderUserId,
+                        groupId      = parsed.groupId,
+                        fileName     = parsed.fileName,
+                        fileSize     = parsed.fileSize,
+                        fileMime     = parsed.fileMime,
                         replyToServerId = event.data?.replyToMessageId?.takeIf { it.isNotBlank() }
                     ),
                     convId
@@ -589,7 +595,7 @@ class ChatsViewModel(
                     }
                     chatRepository.saveChat(
                         chat.copy(
-                            lastMessage             = decryptedText,
+                            lastMessage             = parsedPayloadPreviewText(parsed),
                             timestamp               = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
                             unreadCount             = if (isMine) chat.unreadCount else chat.unreadCount + 1,
                             isLastMessageMine       = isMine,

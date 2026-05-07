@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -59,6 +60,7 @@ class AuthViewModel(
     fun register(username: String, inviteCode: String) {
         viewModelScope.launch {
             _localOverride.value = AuthState.Loading
+            var sessionSaved = false
             try {
                 mlsManager.clearAll()
                 keyManager.getOrCreateKeyPair()
@@ -75,11 +77,19 @@ class AuthViewModel(
                 )
                 val result = api.register(req)
                 sessionManager.save(result)
+                sessionSaved = true
                 initMlsAndUploadKeys()
                 notificationsRepository.registerCurrentDeviceToken()
                 sessionRefresher.markAuthenticated()
                 _localOverride.value = null
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (sessionSaved) {
+                    sessionManager.clearAuth()
+                    mlsManager.clearAll()
+                    sessionRefresher.markNoCredentials()
+                }
                 _localOverride.value = AuthState.Error(e.message ?: "Ошибка регистрации")
             }
         }
