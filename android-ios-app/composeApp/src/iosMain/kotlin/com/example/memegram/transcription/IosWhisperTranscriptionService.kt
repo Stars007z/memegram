@@ -1,5 +1,6 @@
 package com.example.memegram.transcription
 
+import com.example.memegram.ml.MlModelGate
 import com.example.memegram.translation.ModelDownloadProgress
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
@@ -52,5 +53,7 @@ class IosWhisperTranscriptionService(
     override fun isModelAvailable(): Boolean = modelManager.isModelAvailable()
     override fun getModelSize(): Long = modelManager.getModelSize()
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 }

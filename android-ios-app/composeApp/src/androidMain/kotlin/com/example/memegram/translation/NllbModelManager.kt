@@ -103,11 +103,13 @@ class NllbModelManager(
         if (dir.exists()) dir.deleteRecursively()
     }
 
-    fun release() {
-        val hadEngine = cachedEngine != null
-        cachedEngine?.close()
-        cachedEngine = null
-        Log.d(TAG, "release(): hadEngine=$hadEngine")
+    suspend fun release() {
+        loadMutex.withLock {
+            val hadEngine = cachedEngine != null
+            cachedEngine?.close()
+            cachedEngine = null
+            Log.d(TAG, "release(): hadEngine=$hadEngine")
+        }
     }
 
     fun canLoadModel(): Boolean = isModelAvailable() && hasEnoughMemory()

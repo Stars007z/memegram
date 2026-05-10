@@ -25,6 +25,8 @@ import com.example.memegram.mls.MlsDecryptResult
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
 import com.example.memegram.localization.S
+import com.example.memegram.nsfw.NsfwService
+import com.example.memegram.nsfw.NsfwSettings
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationProgress
 import com.example.memegram.translation.TranslationSettings
@@ -45,6 +47,8 @@ class ChatViewModel(
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
     private val transcriptionService: com.example.memegram.transcription.TranscriptionService,
+    private val nsfwSettings: NsfwSettings,
+    private val nsfwService: NsfwService,
     private val blockedUsersCache: BlockedUsersCache,
     private val profileRepository: com.example.memegram.data.repository.ProfileRepository,
     private val appearance: AppearanceRepository,
@@ -265,25 +269,42 @@ class ChatViewModel(
         dbObserveJob = viewModelScope.launch {
             combine(
                 chatRepository.getMessagesFlow(conversationId),
-                blockedUsersCache.blockedIds
-            ) { msgs, blockedIds ->
-                msgs.asSequence()
+                blockedUsersCache.blockedIds,
+                nsfwSettings.filterRevision,
+            ) { msgs, blockedIds, revision ->
+                revision to msgs.asSequence()
                     .filterNot { m ->
                         val sender = m.senderUserId
                         sender != null && sender != myUserId && sender in blockedIds
                     }
                     .sortedBy { it.timestamp }
                     .toList()
-            }.collect { msgs ->
-                val warm = mutableMapOf<String, ByteArray>()
+            }.collect { (_, msgs) ->
+                val warm = LinkedHashMap<String, ByteArray>()
                 val current = _mediaCache.value
                 val localReplyCtx = mutableMapOf<String, String>()
+                val displayMessages = mutableListOf<Message>()
+                val filterEnabled = nsfwSettings.filterEnabled.value
+                val nsfwModelAvailable = nsfwService.isModelAvailable()
                 msgs.forEach { m ->
                     val mid = m.mediaId
                     val bytes = m.localPreviewBytes
-                    if (mid != null && bytes != null && mid !in current && mid !in warm) {
+                    val imageMediaId = mid?.takeIf { !m.isOutgoing && m.type == "image" }
+                    val refreshIncomingImage = imageMediaId != null &&
+                        ((filterEnabled && nsfwModelAvailable && !nsfwSettings.hasProcessedMedia(imageMediaId)) ||
+                            (!filterEnabled && nsfwSettings.hasProcessedMedia(imageMediaId)))
+                    if (mid != null && bytes != null && mid !in current && mid !in warm && !refreshIncomingImage) {
                         warm[mid] = bytes
+                    } else if (imageMediaId != null && refreshIncomingImage) {
+                        loadMedia(
+                            mediaId = imageMediaId,
+                            encryptionMetadata = m.encryptionMetadata,
+                            forceReload = true,
+                            knownMessage = m,
+                            mlPriority = com.example.memegram.ml.MlModelGate.Priority.AUTO,
+                        )
                     }
+                    displayMessages += if (refreshIncomingImage) m.copy(localPreviewBytes = null) else m
                     val sid = m.serverId
                     val replySid = m.replyToServerId
                     if (sid.isNotBlank() && !replySid.isNullOrBlank()) {
@@ -292,7 +313,7 @@ class ChatViewModel(
                 }
                 if (warm.isNotEmpty()) _mediaCache.value = current + warm
                 if (localReplyCtx.isNotEmpty()) _replyContext.update { it + localReplyCtx }
-                _messages.value = msgs
+                _messages.value = displayMessages
             }
         }
 
@@ -1237,12 +1258,22 @@ class ChatViewModel(
             val plain = decryptMediaBytes(bytes, metadata)
             val name  = message.fileName ?: "file_$mediaId"
             val mime  = message.fileMime ?: "application/octet-stream"
-            val saved = saveDownloadedFile(plain, name, mime)
+            val finalPlain = censorIncomingImageIfNeeded(
+                mediaId = mediaId,
+                imageBytes = plain,
+                message = message,
+                mime = mime,
+                mlPriority = com.example.memegram.ml.MlModelGate.Priority.USER,
+            )
+            if (isImageForNsfw(message, mime)) {
+                _mediaCache.update { it + (mediaId to finalPlain) }
+            }
+            val saved = saveDownloadedFile(finalPlain, name, mime)
             if (saved == null) {
                 throw IllegalStateException("FileSaver returned null (write failed)")
             }
             if (message.serverId.isNotBlank()) {
-                val inlineBlob = if (plain.size <= INLINE_BLOB_LIMIT_BYTES) plain else null
+                val inlineBlob = if (finalPlain.size <= INLINE_BLOB_LIMIT_BYTES) finalPlain else null
                 chatRepository.updateMessageLocalFile(message.serverId, saved, inlineBlob)
             }
             saved
@@ -1461,22 +1492,78 @@ class ChatViewModel(
 
     private val _mediaCache = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaCache: StateFlow<Map<String, ByteArray>> = _mediaCache.asStateFlow()
+    private val mediaLoadsInFlight = mutableSetOf<String>()
 
-    fun loadMedia(mediaId: String, encryptionMetadata: String?) {
-        if (_mediaCache.value.containsKey(mediaId)) return
+    fun loadMedia(
+        mediaId: String,
+        encryptionMetadata: String?,
+        forceReload: Boolean = false,
+        knownMessage: Message? = null,
+        mlPriority: com.example.memegram.ml.MlModelGate.Priority = com.example.memegram.ml.MlModelGate.Priority.USER,
+    ) {
+        if (forceReload) _mediaCache.update { it - mediaId }
+        if (!forceReload && _mediaCache.value.containsKey(mediaId)) return
+        if (!mediaLoadsInFlight.add(mediaId)) return
         viewModelScope.launch {
             try {
                 val resp           = api.getMediaDownloadUrl(mediaId)
                 val encryptedBytes = api.downloadBytesFromUrl(resp.downloadUrl)
                 val meta           = resp.encryptionMetadata.takeIf { it.isNotBlank() } ?: encryptionMetadata
+                val msg = knownMessage ?: _messages.value.firstOrNull { it.mediaId == mediaId }
                 val decryptedBytes = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
-                _mediaCache.value += (mediaId to decryptedBytes)
-                val msg = _messages.value.firstOrNull { it.mediaId == mediaId }
+                val finalBytes = censorIncomingImageIfNeeded(
+                    mediaId = mediaId,
+                    imageBytes = decryptedBytes,
+                    message = msg,
+                    mime = null,
+                    mlPriority = mlPriority,
+                )
+                _mediaCache.value += (mediaId to finalBytes)
                 if (msg != null && (msg.type == "image" || msg.type == "voice") && msg.serverId.isNotBlank()) {
-                    chatRepository.updateMessageLocalPreview(msg.serverId, decryptedBytes)
+                    chatRepository.updateMessageLocalPreview(msg.serverId, finalBytes)
                 }
             } catch (_: Exception) { }
+            finally { mediaLoadsInFlight.remove(mediaId) }
         }
+    }
+
+    private suspend fun censorIncomingImageIfNeeded(
+        mediaId: String,
+        imageBytes: ByteArray,
+        message: Message?,
+        mime: String?,
+        mlPriority: com.example.memegram.ml.MlModelGate.Priority,
+    ): ByteArray {
+        if (message == null || message.isOutgoing || !isImageForNsfw(message, mime)) return imageBytes
+        if (!nsfwSettings.filterEnabled.value) {
+            nsfwSettings.unmarkMediaProcessed(mediaId)
+            return imageBytes
+        }
+        if (!nsfwService.isModelAvailable()) {
+            return imageBytes
+        }
+
+        val result = runCatching {
+            com.example.memegram.ml.MlModelGate.withModel(
+                mlPriority
+            ) {
+                nsfwService.censorImageIfNeeded(imageBytes, mime)
+            }
+        }.onSuccess { result ->
+            if (result.processed) nsfwSettings.markMediaProcessed(mediaId)
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            println("MemegramDebug [NSFW]: censor failed for media=$mediaId: ${it.message}")
+            throw it
+        }
+        return result.bytes
+    }
+
+    private fun isImageForNsfw(message: Message, mime: String?): Boolean {
+        if (message.type == "image") return true
+        if (message.type != "file") return false
+        return mime?.startsWith("image/", ignoreCase = true) == true
+            || message.fileMime?.startsWith("image/", ignoreCase = true) == true
     }
 
     fun markMessagesRead(lastVisibleServerId: String) {

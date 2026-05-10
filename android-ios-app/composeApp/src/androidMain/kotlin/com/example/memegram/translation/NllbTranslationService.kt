@@ -2,6 +2,7 @@ package com.example.memegram.translation
 
 import android.content.Context
 import android.util.Log
+import com.example.memegram.ml.MlModelGate
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import io.ktor.client.HttpClient
@@ -113,7 +114,6 @@ class NllbTranslationService(
     }
 
     override fun close() {
-        modelManager.release()
         languageIdentifier.close()
     }
 
@@ -123,7 +123,9 @@ class NllbTranslationService(
 
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
 
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 
     override suspend fun releaseModel() {
         modelManager.release()

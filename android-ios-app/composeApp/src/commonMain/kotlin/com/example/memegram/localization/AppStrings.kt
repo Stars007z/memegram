@@ -188,6 +188,10 @@ interface AppStrings {
     val privacySection: String
     val autoDeleteSection: String
     val deleteAccountAction: String
+    val nsfwFilter: String
+    val nsfwFilterDescription: String
+    val nsfwModel: String
+    val nsfwModelDescription: String
 
     val visEverybody: String
     val visContacts: String
@@ -593,6 +597,10 @@ object RuStrings : AppStrings {
     override val privacySection = "Приватность"
     override val autoDeleteSection = "Авто-удаление"
     override val deleteAccountAction = "Удалить аккаунт"
+    override val nsfwFilter = "Фильтр NSFW"
+    override val nsfwFilterDescription = "Пропускает входящие фото через модель до показа на экране."
+    override val nsfwModel = "Модель цензуры изображений"
+    override val nsfwModelDescription = "CLIP + NudeNet + anime detector. Скачиваются один раз с серверов Memegram."
 
     override val visEverybody = "Все"
     override val visContacts = "Контакты"
@@ -1000,6 +1008,10 @@ object EnStrings : AppStrings {
     override val privacySection = "Privacy"
     override val autoDeleteSection = "Auto-delete"
     override val deleteAccountAction = "Delete account"
+    override val nsfwFilter = "NSFW filter"
+    override val nsfwFilterDescription = "Runs incoming photos through the model before showing them."
+    override val nsfwModel = "Image censorship model"
+    override val nsfwModelDescription = "CLIP + NudeNet + anime detector. Downloaded once from Memegram servers."
 
     override val visEverybody = "Everybody"
     override val visContacts = "Contacts"

@@ -26,6 +26,9 @@ import com.example.memegram.lifecycle.AppLifecycleObserver
 import com.example.memegram.lifecycle.createAppLifecycleObserver
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.notifications.NotificationPrefs
+import com.example.memegram.nsfw.NsfwService
+import com.example.memegram.nsfw.NsfwSettings
+import com.example.memegram.nsfw.createNsfwService
 import com.example.memegram.push.PushTokenProvider
 import com.example.memegram.push.createPushTokenProvider
 import com.example.memegram.translation.TranslationService
@@ -78,7 +81,16 @@ val appModule = module {
         com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
         service
     }
+    single<NsfwService> {
+        val service = createNsfwService(
+            httpClient = get(),
+            modelBaseUrl = "https://models.memegram.win/memegram-models",
+        )
+        com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
+        service
+    }
     single { TranslationSettings(get()) }
+    single { NsfwSettings(get()) }
     single { NotificationPrefs(get()) }
 
     single<PushTokenProvider> { createPushTokenProvider() }

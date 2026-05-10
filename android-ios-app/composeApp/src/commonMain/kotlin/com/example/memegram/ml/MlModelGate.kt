@@ -37,20 +37,22 @@ object MlModelGate {
 
     @Volatile
     private var releaseHooks: List<suspend () -> Unit> = emptyList()
-    private val hooksLock = Mutex()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var workerJob: Job? = null
     private var idleJob: Job? = null
     private val activeModelLock = Mutex()
+    @Volatile
+    private var activityGeneration: Long = 0L
 
     init { startWorker() }
 
     fun setReleaseHook(hook: suspend () -> Unit) {
-        scope.launch {
-            hooksLock.withLock { releaseHooks = releaseHooks + hook }
-        }
+        releaseHooks = releaseHooks + hook
     }
+
+    suspend fun <R> withExclusiveModelAccess(block: suspend () -> R): R =
+        activeModelLock.withLock { block() }
 
     suspend fun <R> withModel(
         priority: Priority = Priority.USER,
@@ -101,8 +103,9 @@ object MlModelGate {
         }
     }
 
-    private suspend fun triggerRelease() {
+    private suspend fun triggerRelease(expectedGeneration: Long? = null) {
         activeModelLock.withLock {
+            if (expectedGeneration != null && expectedGeneration != activityGeneration) return@withLock
             val hooks = releaseHooks
             for (hook in hooks) {
                 try { hook.invoke() } catch (_: Throwable) { /* swallow */ }
@@ -116,9 +119,10 @@ object MlModelGate {
                 val task: Task<*> = pickNextTask()
                 idleJob?.cancel()
                 runTask(task)
+                val idleGeneration = activityGeneration
                 idleJob = scope.launch {
                     delay(IDLE_TIMEOUT_MS)
-                    triggerRelease()
+                    triggerRelease(idleGeneration)
                 }
             }
         }
@@ -144,8 +148,13 @@ object MlModelGate {
         try {
             val result = activeModelLock.withLock {
                 if (task.deferred.isCancelled) throw CancellationException("Cancelled before model start")
-                task.onStarted?.invoke()
-                task.block()
+                activityGeneration += 1L
+                try {
+                    task.onStarted?.invoke()
+                    task.block()
+                } finally {
+                    activityGeneration += 1L
+                }
             }
             task.deferred.complete(result)
         } catch (ce: CancellationException) {

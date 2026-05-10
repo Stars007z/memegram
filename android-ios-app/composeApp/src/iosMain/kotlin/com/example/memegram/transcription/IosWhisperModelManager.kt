@@ -115,9 +115,11 @@ class IosWhisperModelManager(
         Unit
     }
 
-    fun release() {
-        cachedEngine?.close()
-        cachedEngine = null
+    suspend fun release() {
+        loadMutex.withLock {
+            cachedEngine?.close()
+            cachedEngine = null
+        }
     }
 
     fun downloadModel(): Flow<ModelDownloadProgress> = channelFlow {

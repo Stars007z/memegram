@@ -129,7 +129,7 @@ fun ChatsScreen(
 
     val sessionManager = koinInject<SessionManager>()
     val apiService = koinInject<ApiService>()
-    val isAdmin = remember { sessionManager.getDeviceType() in setOf("admin", "primary") }
+    val isAdminDevice = remember { sessionManager.getDeviceType() == "admin" }
     var showInviteDialog by remember { mutableStateOf(false) }
     var inviteDays by remember { mutableStateOf("7") }
     var isCreatingInvite by remember { mutableStateOf(false) }
@@ -251,7 +251,7 @@ fun ChatsScreen(
                     onClick = { scope.launch { drawerState.close(); onLanguageClick() } },
                     modifier = Modifier.padding(horizontal = 12.sdp)
                 )
-                if (isAdmin) {
+                if (isAdminDevice) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.sdp))
                     NavigationDrawerItem(
                         label = { Text(s.createInvite) },
@@ -422,7 +422,7 @@ fun ChatsScreen(
                         }
                     )
                 }
-                if (showInviteDialog) {
+                if (showInviteDialog && isAdminDevice) {
                     val clipboardManager = LocalClipboardManager.current
                     var inviteCopied by remember { mutableStateOf(false) }
                     LaunchedEffect(createdInviteCode) { inviteCopied = false }
@@ -504,6 +504,7 @@ fun ChatsScreen(
                                         inviteError = null
                                         scope.launch {
                                             try {
+                                                if (!isAdminDevice) return@launch
                                                 val resp = apiService.createInvite(CreateInviteRequest(days))
                                                 createdInviteCode = resp.code
                                             } catch (e: Exception) {

@@ -37,6 +37,10 @@ fun PrivacyScreen(
     val accountDeleted        by viewModel.accountDeleted.collectAsState()
     val isLoading             by viewModel.isLoading.collectAsState()
     val error                 by viewModel.error.collectAsState()
+    val nsfwFilterEnabled     by viewModel.nsfwFilterEnabled.collectAsState()
+    val nsfwModelState        by viewModel.nsfwModelState.collectAsState()
+    val nsfwModelSize         by viewModel.nsfwModelSize.collectAsState()
+    val nsfwSupported         = viewModel.nsfwSupported
 
     LaunchedEffect(accountDeleted) { if (accountDeleted) onAccountDeleted() }
 
@@ -122,6 +126,62 @@ fun PrivacyScreen(
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteAccDialog = true }
             )
+
+            if (nsfwSupported) {
+                SectionLabel(s.privacySection)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.sdp),
+                    tonalElevation = 2.sdp
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = s.nsfwFilter,
+                                    fontSize = 15.ssp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    text = s.nsfwFilterDescription,
+                                    fontSize = 12.ssp,
+                                    color = Color.Gray,
+                                )
+                            }
+                            Spacer(Modifier.width(12.sdp))
+                            Switch(
+                                checked = nsfwFilterEnabled,
+                                enabled = nsfwModelState == ModelDownloadState.Ready,
+                                onCheckedChange = viewModel::setNsfwFilterEnabled,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = topBarColor,
+                                    checkedTrackColor = topBarColor.copy(alpha = 0.4f)
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.sdp))
+
+                        ModelDownloadRow(
+                            state = nsfwModelState,
+                            modelSize = nsfwModelSize,
+                            accent = topBarColor,
+                            strings = s,
+                            onDownload = viewModel::downloadNsfwModel,
+                            onCancel = viewModel::cancelNsfwDownload,
+                            onDelete = viewModel::deleteNsfwModel,
+                            title = s.nsfwModel,
+                            description = s.nsfwModelDescription,
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(12.sdp))
 

@@ -2,6 +2,7 @@ package com.example.memegram.transcription
 
 import android.content.Context
 import android.util.Log
+import com.example.memegram.ml.MlModelGate
 import com.example.memegram.translation.ModelDownloadProgress
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
@@ -73,5 +74,7 @@ class WhisperTranscriptionService(
 
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
 
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 }

@@ -1,5 +1,6 @@
 package com.example.memegram.translation
 
+import com.example.memegram.ml.MlModelGate
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
@@ -87,14 +88,14 @@ class IosNllbTranslationService(
         modelManager.isModelAvailable()
     }
 
-    override fun close() {
-        modelManager.release()
-    }
+    override fun close() = Unit
 
     override fun isModelAvailable(): Boolean = modelManager.isModelAvailable()
     override fun getModelSize(): Long = modelManager.getModelSize()
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 
     override suspend fun releaseModel() {
         modelManager.release()
