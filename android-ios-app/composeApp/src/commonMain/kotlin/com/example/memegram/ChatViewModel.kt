@@ -8,6 +8,7 @@ import com.example.memegram.audio.createAudioRecorder
 import com.example.memegram.auth.SessionRefresher
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
+import com.example.memegram.data.network.ApiException
 import com.example.memegram.data.network.ApiService
 import com.russhwolf.settings.Settings
 import kotlin.io.encoding.Base64
@@ -30,6 +31,7 @@ import com.example.memegram.nsfw.NsfwSettings
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationProgress
 import com.example.memegram.translation.TranslationSettings
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -191,6 +193,7 @@ class ChatViewModel(
     private var typingJob: Job? = null
     private var sseJob: Job? = null
     private var dbObserveJob: Job? = null
+    private var pollingJob: Job? = null
 
     private val decryptMutex = Mutex()
 
@@ -264,6 +267,7 @@ class ChatViewModel(
             ?.let { peerUserId = it }
 
         sseJob?.cancel()
+        pollingJob?.cancel()
         dbObserveJob?.cancel()
 
         dbObserveJob = viewModelScope.launch {
@@ -291,8 +295,8 @@ class ChatViewModel(
                     val bytes = m.localPreviewBytes
                     val imageMediaId = mid?.takeIf { !m.isOutgoing && m.type == "image" }
                     val refreshIncomingImage = imageMediaId != null &&
-                        ((filterEnabled && nsfwModelAvailable && !nsfwSettings.hasProcessedMedia(imageMediaId)) ||
-                            (!filterEnabled && nsfwSettings.hasProcessedMedia(imageMediaId)))
+                            ((filterEnabled && nsfwModelAvailable && !nsfwSettings.hasProcessedMedia(imageMediaId)) ||
+                                    (!filterEnabled && nsfwSettings.hasProcessedMedia(imageMediaId)))
                     if (mid != null && bytes != null && mid !in current && mid !in warm && !refreshIncomingImage) {
                         warm[mid] = bytes
                     } else if (imageMediaId != null && refreshIncomingImage) {
@@ -316,8 +320,6 @@ class ChatViewModel(
                 _messages.value = displayMessages
             }
         }
-
-        subscribeToEvents(conversationId)
 
         viewModelScope.launch {
             val cachedChat = runCatching { chatRepository.getChatById(conversationId) }.getOrNull()
@@ -394,6 +396,8 @@ class ChatViewModel(
             }
 
             loadMessages(conversationId)
+            subscribeToEvents(conversationId)
+            startMessagePolling(conversationId)
         }
     }
 
@@ -517,6 +521,11 @@ class ChatViewModel(
             var backoffMs = 1_000L
             while (isActive) {
                 try {
+                    if (!ensureFreshSession()) {
+                        delay(backoffMs)
+                        backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
+                        continue
+                    }
                     api.subscribeToConversation(conversationId).collect { event ->
                         handleEvent(conversationId, event)
                         backoffMs = 1_000L
@@ -524,6 +533,9 @@ class ChatViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    if (e.isUnauthorized() && ensureFreshSession(force = true)) {
+                        backoffMs = 1_000L
+                    }
                     val isExpectedClose = e.message?.contains("timeout", ignoreCase = true) == true
                             || e.message?.contains("ClosedByteChannelException") == true
                     if (isExpectedClose) {
@@ -598,6 +610,7 @@ class ChatViewModel(
                 if (revokedDeviceId == myDeviceId) {
                     sessionRefresher.markRevoked("Доступ этого устройства отозван")
                     sseJob?.cancel()
+                    pollingJob?.cancel()
                     dbObserveJob?.cancel()
                     return
                 }
@@ -675,6 +688,121 @@ class ChatViewModel(
         )
         chatRepository.saveMessage(systemMsg, convId)
     }
+
+    private fun startMessagePolling(conversationId: String) {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(3_000)
+                if (currentConversationId != conversationId) return@launch
+                pollNewMessages(conversationId)
+            }
+        }
+    }
+
+    private suspend fun pollNewMessages(conversationId: String) {
+        try {
+            val myId = myUserId ?: return
+            if (!ensureFreshSession()) return
+
+            refreshConversationState(conversationId)
+
+            val serverMessages = api.getMessages(conversationId)
+            val localMessages = chatRepository.getMessagesOnce(conversationId)
+            val localServerIds = localMessages.map { it.serverId }.toSet()
+
+            if (serverMessages.isNotEmpty()) {
+                val serverIdSet = serverMessages.map { it.id }.toSet()
+                val oldestServerTs = serverMessages.minOf { it.createdAt } * 1000L
+                localMessages.forEach { local ->
+                    val sid = local.serverId
+                    if (sid.isNotBlank()
+                        && !sid.startsWith("temp_")
+                        && !sid.startsWith("system_")
+                        && local.timestamp >= oldestServerTs
+                        && sid !in serverIdSet
+                    ) {
+                        chatRepository.deleteMessageByServerId(sid)
+                    }
+                }
+            }
+
+            val newMessages = serverMessages
+                .filter { it.id !in localServerIds }
+                .sortedBy { it.createdAt }
+
+            if (newMessages.isEmpty()) return
+
+            val newSenders = mutableMapOf<String, String>()
+            val newReplyCtx = mutableMapOf<String, String>()
+            for (msg in newMessages) {
+                val senderId = msg.effectiveSenderId
+                val isFromBlocked = senderId != myId && blockedUsersCache.isBlocked(senderId)
+                if (isFromBlocked) {
+                    viewModelScope.launch {
+                        runCatching { api.markAsRead(conversationId, MarkAsReadRequest(msg.id)) }
+                    }
+                }
+                newSenders[msg.id] = senderId
+                if (!msg.replyToMessageId.isNullOrBlank()) {
+                    newReplyCtx[msg.id] = msg.replyToMessageId
+                }
+                decryptAndSave(
+                    convId = conversationId,
+                    msgId = msg.id,
+                    ciphertextB64 = msg.mlsCiphertextB64,
+                    createdAt = msg.createdAt,
+                    isOutgoing = senderId == myId,
+                    senderUserId = senderId,
+                    replyToServerId = msg.replyToMessageId?.takeIf { it.isNotBlank() }
+                )
+            }
+            _messageSenders.update { it + newSenders }
+            if (newReplyCtx.isNotEmpty()) {
+                _replyContext.update { it + newReplyCtx }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (e.isUnauthorized()) {
+                ensureFreshSession(force = true)
+            } else {
+                handlePossibleNotMemberError(e)
+            }
+        }
+    }
+
+    private suspend fun refreshConversationState(conversationId: String) {
+        val conv = runCatching { api.getConversation(conversationId) }.getOrNull()
+        if (conv != null) {
+            if (_isGroupChat.value) {
+                val serverAvatar = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+                if (serverAvatar != _peerAvatarMediaId.value) {
+                    _peerAvatarMediaId.value = serverAvatar
+                }
+            } else {
+                conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                    chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                }
+            }
+        }
+
+        if (!_isGroupChat.value) {
+            val peerId = peerUserId ?: return
+            val profile = runCatching { profileRepository.getOrFetch(peerId, forceRefresh = true) }.getOrNull()
+            if (profile != null && profile.avatarMediaId != _peerAvatarMediaId.value) {
+                _peerAvatarMediaId.value = profile.avatarMediaId
+            }
+        }
+    }
+
+    private suspend fun ensureFreshSession(force: Boolean = false): Boolean {
+        if (!force && !sessionManager.isTokenExpired) return true
+        return sessionRefresher.refreshIfNeededAwait(force = force)
+    }
+
+    private fun Throwable.isUnauthorized(): Boolean =
+        this is ApiException && status == HttpStatusCode.Unauthorized
 
     private suspend fun decryptAndSave(
         convId: String,
@@ -1414,7 +1542,7 @@ class ChatViewModel(
                     0
                 } else {
                     val ratio = (kotlin.math.log10(amp.toFloat()) - kotlin.math.log10(300f)) /
-                        (kotlin.math.log10(32767f) - kotlin.math.log10(300f))
+                            (kotlin.math.log10(32767f) - kotlin.math.log10(300f))
                     (ratio * 9f).toInt().coerceIn(0, 9)
                 }
                 rawAmplitudes.add(normalized)
@@ -1563,7 +1691,7 @@ class ChatViewModel(
         if (message.type == "image") return true
         if (message.type != "file") return false
         return mime?.startsWith("image/", ignoreCase = true) == true
-            || message.fileMime?.startsWith("image/", ignoreCase = true) == true
+                || message.fileMime?.startsWith("image/", ignoreCase = true) == true
     }
 
     fun markMessagesRead(lastVisibleServerId: String) {
@@ -1829,7 +1957,7 @@ class ChatViewModel(
             }
         }
     }
-    
+
     fun deleteFailedMessage(message: Message) {
         if (message.status != MessageStatus.FAILED) return
         viewModelScope.launch {
@@ -1896,6 +2024,7 @@ class ChatViewModel(
             ActiveChatCoordinator.conversationId = null
         }
         sseJob?.cancel()
+        pollingJob?.cancel()
         typingJob?.cancel()
         dbObserveJob?.cancel()
     }

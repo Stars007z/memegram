@@ -6,6 +6,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -151,7 +153,7 @@ class NsfwCensorEngine private constructor(
     }
 
     private val sessionCache = mutableMapOf<String, CachedSession>()
-    private val sessionCacheLock = Any()
+    private val sessionCacheLock = SynchronizedObject()
 
     suspend fun censorImageIfNeeded(
         imageBytes: ByteArray,
@@ -458,9 +460,9 @@ class NsfwCensorEngine private constructor(
         for (y in 0 until modelSize) {
             for (x in 0 until modelSize) {
                 val inside = x.toFloat() >= padX &&
-                    y.toFloat() >= padY &&
-                    x.toFloat() < padX + scaledW &&
-                    y.toFloat() < padY + scaledH
+                        y.toFloat() >= padY &&
+                        x.toFloat() < padX + scaledW &&
+                        y.toFloat() < padY + scaledH
                 val rgb = if (inside) {
                     val sx = ((x + 0.5f - padX) / scale) - 0.5f
                     val sy = ((y + 0.5f - padY) / scale) - 0.5f
@@ -809,8 +811,8 @@ class NsfwCensorEngine private constructor(
         val src = IntArray(pixelCount) { idx ->
             val base = idx * 4
             ((source.pixels[base].toInt() and 0xFF) shl 16) or
-                ((source.pixels[base + 1].toInt() and 0xFF) shl 8) or
-                (source.pixels[base + 2].toInt() and 0xFF)
+                    ((source.pixels[base + 1].toInt() and 0xFF) shl 8) or
+                    (source.pixels[base + 2].toInt() and 0xFF)
         }
         val tmp = IntArray(pixelCount)
         val out = IntArray(pixelCount)
@@ -859,8 +861,8 @@ class NsfwCensorEngine private constructor(
                     b += (color and 0xFF) * w
                 }
                 dst[row + x] = (r.toInt().coerceIn(0, 255) shl 16) or
-                    (g.toInt().coerceIn(0, 255) shl 8) or
-                    b.toInt().coerceIn(0, 255)
+                        (g.toInt().coerceIn(0, 255) shl 8) or
+                        b.toInt().coerceIn(0, 255)
             }
         }
     }
@@ -880,8 +882,8 @@ class NsfwCensorEngine private constructor(
                     b += (color and 0xFF) * w
                 }
                 dst[y * width + x] = (r.toInt().coerceIn(0, 255) shl 16) or
-                    (g.toInt().coerceIn(0, 255) shl 8) or
-                    b.toInt().coerceIn(0, 255)
+                        (g.toInt().coerceIn(0, 255) shl 8) or
+                        b.toInt().coerceIn(0, 255)
             }
         }
     }
@@ -971,8 +973,8 @@ class NsfwCensorEngine private constructor(
     private fun pixelRgb(image: ImagePixels, x: Int, y: Int): Int {
         val base = (y.coerceIn(0, image.height - 1) * image.width + x.coerceIn(0, image.width - 1)) * 4
         return ((image.pixels[base].toInt() and 0xFF) shl 16) or
-            ((image.pixels[base + 1].toInt() and 0xFF) shl 8) or
-            (image.pixels[base + 2].toInt() and 0xFF)
+                ((image.pixels[base + 1].toInt() and 0xFF) shl 8) or
+                (image.pixels[base + 2].toInt() and 0xFF)
     }
 
     private fun setPixelRgb(image: ImagePixels, x: Int, y: Int, rgb: Int) {

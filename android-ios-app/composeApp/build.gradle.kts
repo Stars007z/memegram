@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import gobley.gradle.cargo.dsl.*
 import gobley.gradle.cargo.tasks.CargoBuildTask
+import gobley.gradle.rust.targets.RustAppleMobileTarget
 import java.util.Properties
 
 plugins {
@@ -45,16 +46,17 @@ val whisperNdkRoot: String? = run {
     if (sdkDir != null) return@run "$sdkDir/ndk/$whisperNdkVersion"
     System.getenv("ANDROID_NDK_ROOT") ?: System.getenv("ANDROID_NDK_HOME")
 }
-val whisperToolchainBin: String? = whisperNdkRoot?.let {
-    "$it/toolchains/llvm/prebuilt/$whisperHostTriplet/bin"
+val whisperNdkToolchainRoot: String? = whisperNdkRoot?.let {
+    "$it/toolchains/llvm/prebuilt/$whisperHostTriplet"
 }
-val whisperBuildEnv: Map<String, String> = if (whisperToolchainBin == null) emptyMap() else {
+val whisperNdkToolchainBin: String? = whisperNdkToolchainRoot?.let { "$it/bin" }
+val whisperNdkLibclangPath: String? = whisperNdkToolchainRoot?.let { "$it/lib" }
+val whisperAndroidBuildEnv: Map<String, String> = if (whisperNdkToolchainBin == null || whisperNdkLibclangPath == null) emptyMap() else {
     val ext = if (whisperIsWindows) ".cmd" else ""
     val arExt = if (whisperIsWindows) ".exe" else ""
     val apiLevel = "24"
     buildMap {
-        put("LIBCLANG_PATH", whisperToolchainBin)
-        put("CMAKE_GENERATOR", "Ninja")
+        put("LIBCLANG_PATH", whisperNdkLibclangPath)
         listOf(
             "aarch64-linux-android"   to "aarch64-linux-android",
             "armv7-linux-androideabi" to "armv7a-linux-androideabi",
@@ -62,25 +64,66 @@ val whisperBuildEnv: Map<String, String> = if (whisperToolchainBin == null) empt
             "i686-linux-android"      to "i686-linux-android",
         ).forEach { (rustTriplet, ndkPrefix) ->
             val envSafe = rustTriplet.replace('-', '_')
-            put("CC_$envSafe",  "$whisperToolchainBin/${ndkPrefix}${apiLevel}-clang$ext")
-            put("CXX_$envSafe", "$whisperToolchainBin/${ndkPrefix}${apiLevel}-clang++$ext")
-            put("AR_$envSafe",  "$whisperToolchainBin/llvm-ar$arExt")
+            put("CC_$envSafe",  "$whisperNdkToolchainBin/${ndkPrefix}${apiLevel}-clang$ext")
+            put("CXX_$envSafe", "$whisperNdkToolchainBin/${ndkPrefix}${apiLevel}-clang++$ext")
+            put("AR_$envSafe",  "$whisperNdkToolchainBin/llvm-ar$arExt")
         }
+    }
+}
+val whisperXcodeToolchainRoot = "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr"
+val whisperIphoneOsSdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+val whisperIphoneSimulatorSdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk"
+val whisperAppleBuildEnv: Map<String, String> = buildMap {
+    put("LIBCLANG_PATH", "$whisperXcodeToolchainRoot/lib")
+    listOf(
+        "aarch64-apple-ios" to "--target=arm64-apple-ios -isysroot $whisperIphoneOsSdk",
+        "aarch64-apple-ios-sim" to "--target=arm64-apple-ios-simulator -isysroot $whisperIphoneSimulatorSdk",
+        "x86_64-apple-ios" to "--target=x86_64-apple-ios-simulator -isysroot $whisperIphoneSimulatorSdk",
+    ).forEach { (rustTriplet, clangArgs) ->
+        val envSafe = rustTriplet.replace('-', '_')
+        put("CC_$envSafe", "/usr/bin/clang")
+        put("CXX_$envSafe", "/usr/bin/clang++")
+        put("AR_$envSafe", "/usr/bin/ar")
+        put("BINDGEN_EXTRA_CLANG_ARGS_$envSafe", clangArgs)
     }
 }
 val whisperBuildEnvPath: List<File> = buildList {
     add(layout.projectDirectory.dir("../mls-rust/.tools").asFile)
-    if (whisperToolchainBin != null) add(file(whisperToolchainBin))
+    add(file("/Applications/CLion.app/Contents/bin/cmake/mac/aarch64/bin"))
+    add(file("/Applications/CLion.app/Contents/bin/cmake/mac/x64/bin"))
+    add(file("/Applications/CLion.app/Contents/bin/ninja/mac/aarch64"))
+    add(file("/Applications/CLion.app/Contents/bin/ninja/mac/x64"))
 }
+val whisperNinja: String? = listOf(
+    "/Applications/CLion.app/Contents/bin/ninja/mac/aarch64/ninja",
+    "/Applications/CLion.app/Contents/bin/ninja/mac/x64/ninja",
+).firstOrNull { file(it).exists() }
 
 tasks.withType<CargoBuildTask>().configureEach {
-    whisperBuildEnv.forEach { (k, v) -> additionalEnvironment.put(k, v) }
+    if (name.contains("Android")) {
+        additionalEnvironment.put("CMAKE_GENERATOR", "Ninja")
+        whisperNinja?.let { additionalEnvironment.put("CMAKE_MAKE_PROGRAM", it) }
+        whisperAndroidBuildEnv.forEach { (k, v) -> additionalEnvironment.put(k, v) }
+    }
+    if (name.contains("Ios")) {
+        additionalEnvironment.put("CMAKE_GENERATOR", if (whisperIsWindows) "Ninja" else "Unix Makefiles")
+        whisperAppleBuildEnv.forEach { (k, v) -> additionalEnvironment.put(k, v) }
+    }
     whisperBuildEnvPath.forEach { additionalEnvironmentPath.add(it) }
+}
+
+val xcodeRustTarget = when {
+    System.getenv("SDK_NAME")?.startsWith("iphoneos") == true -> RustAppleMobileTarget.IosArm64
+    System.getenv("SDK_NAME")?.startsWith("iphonesimulator") == true &&
+            System.getenv("ARCHS")?.split(' ')?.contains("arm64") == true -> RustAppleMobileTarget.IosSimulatorArm64
+    System.getenv("SDK_NAME")?.startsWith("iphonesimulator") == true -> RustAppleMobileTarget.IosX64
+    else -> null
 }
 
 uniffi {
     generateFromLibrary {
         namespace = "mls_core"
+        xcodeRustTarget?.let { build.set(it) }
     }
 }
 

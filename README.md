@@ -1,195 +1,245 @@
 # Memegram
 
-> Защищённый кроссплатформенный мессенджер с end-to-end шифрованием на базе протокола **MLS** (RFC 9420), регистрацией по инвайт-кодам и интеллектуальными функциями обработки контента на устройстве пользователя.
-
-Memegram спроектирован вокруг принципа **Zero-Access**: серверная сторона никогда не видит ни содержимого сообщений, ни приватных ключей. Все криптографические операции выполняются на клиенте, бэкенд работает только с зашифрованными блобами и метаданными, минимально необходимыми для маршрутизации.
-
-Проект разрабатывается в рамках курсового проекта по направлению 09.03.04 «Программная инженерия» НИУ ВШЭ.
+> A secure cross-platform messenger with **MLS (RFC 9420)** end-to-end encryption, invite-code registration, and on-device machine learning — speech-to-text, neural translation, and NSFW content filtering. All intelligence runs locally; your chats never leave the device unencrypted.
 
 ---
 
-## Содержание
+## Featured Capabilities
 
-- [Ключевые свойства](#ключевые-свойства)
-- [Возможности](#возможности)
-- [Архитектура](#архитектура)
-  - [Высокоуровневая схема](#высокоуровневая-схема)
-  - [Серверные сервисы](#серверные-сервисы)
-  - [Поток сообщений](#поток-сообщений)
-- [Технологический стек](#технологический-стек)
-- [Структура репозитория](#структура-репозитория)
-- [Документация](#документация)
-- [Команда](#команда)
+- **On-device speech-to-text** — Whisper (`whisper.cpp`, `ggml-small-q5_1.bin` ~500 MB) transcribes voice messages RU/EN, running on a Rust engine bridged to Kotlin/Swift via UniFFI. No cloud dependency.
+- **On-device neural translation** — NLLB-200 distilled (600M params, ONNX ~1.2 GB) translates text between 200 languages. Encoder-decoder inference via ONNX Runtime on Android and Swift-native ONNX bridge on iOS.
+- **On-device NSFW filtering** — Four specialized ONNX models (~1 GB total) classify and blur explicit imagery: a general classifier, NudeNet body-part detector, anime-content detector, and OWLv2 swastika symbol detector. Runs entirely offline.
+- **MLS end-to-end encryption** — Group E2EE via RFC 9420, with forward secrecy and post-compromise security. Crypto core written in Rust on top of OpenMLS. Ciphersuite: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
+- **Zero-Access design** — Private keys never leave the device. The server handles only encrypted blobs and routing metadata.
+- **Kotlin Multiplatform + Compose Multiplatform** — Single codebase targeting Android and iOS. Shared UI, ViewModels, DI (Koin), persistence (SQLDelight + SQLCipher), and ML service interfaces with platform-specific inference backends.
+- **Invite-only registration** — No phone number, no email. Accounts are created via single-use invite codes.
 
 ---
 
-## Ключевые свойства
-
-- **MLS (RFC 9420)** — групповое сквозное шифрование с прямой и постфактум секретностью; криптоядро на Rust на базе [OpenMLS](https://github.com/openmls/openmls), подключаемое к мобильному клиенту через UniFFI-биндинги.
-- **Zero-Access Encryption** — приватные ключи не покидают устройство; на сервере хранятся только зашифрованные `commit`/`welcome`/`application` сообщения и публичные key-package'и.
-- **Регистрация по инвайтам** — никаких номеров телефона и email; учётная запись создаётся по одноразовому коду от другого пользователя.
-- **Микросервисная архитектура** — 7 доменных gRPC-сервисов и внешний REST-шлюз (оркестратор), каждый со своей базой данных (pattern *database-per-service*).
-- **On-device интеллект** — расшифровка голосовых сообщений (Whisper через JNI и `whisper.cpp`) и машинный перевод (NLLB-200 distilled через ONNX Runtime) выполняются прямо на устройстве; содержимое переписки никогда не уходит во внешние сервисы.
-- **Кроссплатформенный клиент** — единая кодовая база на Kotlin Multiplatform + Compose Multiplatform со сборками под Android и iOS.
-
-## Возможности
-
-**Для пользователя**
-
-- Регистрация по инвайт-коду, авторизация по криптографическим ключам устройства; поддержка нескольких устройств у одного пользователя.
-- Личные диалоги и групповые чаты поверх MLS.
-- Отправка текста, изображений, аудио и голосовых сообщений; редактирование и удаление своих сообщений.
-- Контакты, избранное, чёрный список; поиск по username.
-- Presence (online/offline), индикатор набора текста, отметки о прочтении.
-- Push-уведомления (FCM для Android, APNs для iOS) с гибкими настройками — режим тишины, приоритет, отключение по чату.
-- On-device расшифровка голосовых сообщений (RU/EN) и перевод текста на язык пользователя.
-- Оффлайн-режим: чтение истории и просмотр профилей без сети; локальная БД зашифрована SQLCipher.
-- Заявленная функция автоматической фильтрации NSFW-контента в изображениях.
-
-**Для администратора инфраструктуры**
-
-- Развёртывание в Kubernetes (локально через minikube, в проде — на GKE), Kustomize-оверлеи `dev`/`prod`.
-- Структурированные логи (`structlog`), мониторинг через Kubernetes-средства, healthcheck-эндпоинты.
-- Управление инвайт-кодами через сервис авторизации.
-
-## Архитектура
-
-### Высокоуровневая схема
+## Client Architecture
 
 ```
-                   ┌─────────────────────────────────────────────────┐
-                   │   Mobile client (Kotlin Multiplatform + KMP)    │
-                   │   ┌─────────────────────────────────────────┐   │
-                   │   │  MLS core (Rust + OpenMLS, UniFFI)      │   │
-                   │   │  SQLDelight + SQLCipher  │  Keystore /  │   │
-                   │   │  on-device ML (Whisper, NLLB-200)       │   │
-                   │   └─────────────────────────────────────────┘   │
-                   └────────────────┬────────────────────────────────┘
-                                    │ HTTPS (REST + JSON)
-                                    ▼
-                   ┌─────────────────────────────────────────────────┐
-                   │   Orchestrator  (FastAPI, Python 3.12)          │
-                   │   AuthN, rate limit, validation, routing        │
-                   └────────────────┬────────────────────────────────┘
-                                    │ gRPC (Protocol Buffers)
-   ┌────────────┬─────────────┬─────┴─────┬──────────────┬────────────┬──────────────┐
-   ▼            ▼             ▼           ▼              ▼            ▼              ▼
-┌──────┐  ┌──────────┐  ┌──────────┐ ┌──────────┐  ┌──────────┐ ┌──────────┐  ┌────────────┐
-│ auth │  │  users   │  │ contacts │ │messaging │  │  media   │ │   item   │  │notifications│
-│      │  │          │  │          │ │  (MLS)   │  │          │ │ storage  │  │  (consumer) │
-└──┬───┘  └────┬─────┘  └────┬─────┘ └────┬─────┘  └────┬─────┘ └────┬─────┘  └──────┬─────┘
-   │           │             │            │             │            │               │
-   ▼           ▼             ▼            ▼             ▼            ▼               ▼
-┌──────────────────────── PostgreSQL 15 (database-per-service) ─────────────────────────┐
-                                            │                                          │
-                                            ▼                                          │
-                        ┌────────────────────────────────────┐                         │
-                        │  Redis 7  (cache, presence,        │◀────────────────────────┘
-                        │            Redis Streams events)   │   notifications-cg
-                        └────────────────────────────────────┘
-                                            │
-                                            ▼
-                            ┌─────────────────────────────┐
-                            │   S3 (encrypted blobs)      │
-                            └─────────────────────────────┘
-                                            │
-                                            ▼
-                                   FCM  /  APNs
+┌─────────────────────────────────────────────────────────────────┐
+│                    Kotlin Multiplatform Client                   │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                   commonMain (shared)                      │  │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │  │
+│  │  │  Screens +   │  │  Repositories │  │  ML Services      │  │  │
+│  │  │  ViewModels  │  │  + API (ktor) │  │  (expect/actual)  │  │  │
+│  │  │  (Compose MP)│  │  + SQLDelight │  │  Translation      │  │  │
+│  │  │              │  │               │  │  Transcription    │  │  │
+│  │  │              │  │               │  │  NSFW Censorship  │  │  │
+│  │  └──────┬───────┘  └──────┬────────┘  └────────┬─────────┘  │  │
+│  └─────────┼──────────────────┼────────────────────┼───────────┘  │
+│            │                  │                    │               │
+│  ┌─────────┼──────────────────┼────────────────────┼───────────┐  │
+│  │         ▼                  ▼                    ▼           │  │
+│  │                 androidMain  │  iosMain                      │  │
+│  │  ┌────────────────────────┐ │ ┌────────────────────────┐    │  │
+│  │  │ WhisperTranscription   │ │ │ IosWhisperTranscription│    │  │
+│  │  │ Service (UniFFI→Rust) │ │ │ Service (UniFFI→Rust)  │    │  │
+│  │  ├────────────────────────┤ │ ├────────────────────────┤    │  │
+│  │  │ NllbTranslationEngine  │ │ │ IosNllbTranslationEn- │    │  │
+│  │  │ (ONNX Runtime Java)    │ │ │ gine (IosOnnxBridge)   │    │  │
+│  │  ├────────────────────────┤ │ ├────────────────────────┤    │  │
+│  │  │ NsfwCensorEngine       │ │ │ NsfwCensorEngine       │    │  │
+│  │  │ (ONNX Runtime Java)    │ │ │ (IosOnnxBridge)        │    │  │
+│  │  ├────────────────────────┤ │ ├────────────────────────┤    │  │
+│  │  │ ModelManagers          │ │ │ ModelManagers          │    │  │
+│  │  │ (download, cache, RAM) │ │ │ (download, cache, RAM) │    │  │
+│  │  └────────────────────────┘ │ └────────────────────────┘    │  │
+│  │                             │                                │  │
+│  │  ┌────────────────────────┐ │ ┌────────────────────────┐    │  │
+│  │  │ MlsClientHandle.UniFFI │ │ │ MlsClientHandle.UniFFI │    │  │
+│  │  │ ← MLS Crypto (Rust)    │ │ │ ← MLS Crypto (Rust)    │    │  │
+│  │  └────────────────────────┘ │ └────────────────────────┘    │  │
+│  └──────────────────────────────┴──────────────────────────────┘  │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                     Model Gate                             │  │
+│  │  Serialized access (PriorityQueue), 60 s idle timeout,    │  │
+│  │  memory-pressure handling, release hooks                   │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Серверные сервисы
+### Key Technologies
 
-| Сервис | Транспорт | Порт | Назначение |
+| Layer | Technology |
+|---|---|
+| UI | Compose Multiplatform, Material 3 |
+| State | MVVM, Kotlin Coroutines + Flow |
+| DI | Koin |
+| Persistence | SQLDelight + SQLCipher (encrypted local DB) |
+| Network | Ktor HTTP client, REST/JSON |
+| Crypto | MLS core (Rust + OpenMLS → UniFFI), libsodium |
+| Key Storage | Android Keystore (AES-256-GCM), iOS Keychain |
+| Localization | EnStrings / RuStrings, runtime switch |
+
+### On-Device ML Models
+
+| Model | Format | Size | Engine | Purpose |
+|---|---|---|---|---|
+| **Whisper Small** | GGML q5_1 | ~500 MB | whisper.cpp (Rust) | Speech-to-text, RU+EN |
+| **NLLB-200 600M** | ONNX | ~1.2 GB | ONNX Runtime | Neural MT, 200 languages |
+| **NSFW Classifier** | ONNX fp16 | ~620 MB | ONNX Runtime | 6-class image filter |
+| **NudeNet** | ONNX | ~12 MB | ONNX Runtime | Body-part localization |
+| **Anime Detector** | ONNX | ~45 MB | ONNX Runtime | Anime explicit content |
+| **OWLv2 Swastika** | ONNX | ~365 MB | ONNX Runtime | Hate-symbol detection |
+
+Models are downloaded on-demand from a dedicated model CDN and stored locally. RAM checks gate model loading (≥700 MB for Whisper, ≥512 MB for NLLB, ≥1.5 GB for NSFW on Android).
+
+### MLS Crypto Core (`mls-rust/`)
+
+Written in Rust (~530 lines for MLS protocol, ~290 lines for Whisper inference), compiled as a shared library (Android `.so`) and static library (iOS `.a`), with UniFFI generating Kotlin bindings for both platforms. Full MLS lifecycle: key package generation, group creation, member add/remove, message encryption/decryption, epoch management, and state serialization for persistence.
+
+---
+
+## ML Pipeline Detail
+
+### Voice Transcription
+
+```
+Voice message (AAC/MP3/PCM)
+  → symphonia audio decode
+  → rubato resample to 16 kHz mono
+  → WhisperEngine (Rust, whisper.cpp)
+  → transcribed text (RU/EN auto-detect)
+```
+
+### Text Translation
+
+```
+Source text
+  → ML Kit language identification (Android) / native bridge (iOS)
+  → SentencePiece tokenization (NllbTokenizer, 256k vocab)
+  → ONNX encoder → decoder autoregressive generation
+  → detokenized output → stored alongside original in SQLDelight
+```
+
+### NSFW Censorship
+
+```
+Image
+  → resize to model input size
+  → NSFW classifier (6 classes: nudity, gore, alcohol, smoking, military, ok)
+  → if flagged: NudeNet body-part detection → Gaussian blur on sensitive regions
+  → anime detector parallel pass
+  → OWLv2 swastika symbol detection
+```
+
+---
+
+## Server Architecture
+
+```
+                   HTTPS (REST + JSON)
+                           │
+                           ▼
+          ┌──────────────────────────────┐
+          │   Orchestrator (FastAPI)     │
+          │   AuthN, rate limit, routing │
+          └──────────────┬───────────────┘
+                         │ gRPC (Protobuf)
+    ┌────────┬───────┬───┴───┬────────┬────────┬────────┐
+    ▼        ▼       ▼       ▼        ▼        ▼        ▼
+ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────────┐
+ │ auth │ │users │ │cont- │ │messa-│ │media │ │item  │ │notifications │
+ │      │ │      │ │acts  │ │ging  │ │      │ │store │ │(consumer)    │
+ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──────┬───────┘
+    │        │        │        │        │        │            │
+    ▼        ▼        ▼        ▼        ▼        ▼            ▼
+ ┌──────────────── PostgreSQL 15 (database-per-service) ──────────────┐
+ │                                                                     │
+ │                        Redis 7 (cache, presence, Streams events)    │
+ │                                             │                       │
+ └─────────────────────────────────────────────┼───────────────────────┘
+                                               ▼
+                                        S3 (encrypted blobs)
+                                               │
+                                               ▼
+                                        FCM / APNs
+```
+
+| Service | Transport | Port | Purpose |
 |---|---|---|---|
-| **orchestrator** | REST (FastAPI) | 8000 | Внешний шлюз: приём запросов клиента, аутентификация, валидация, rate-limit, маршрутизация в gRPC |
-| **auth-service** | gRPC | 50051 | Устройства, JWT-сессии, инвайт-коды, публичные ключи |
-| **user-service** | gRPC | 50052 | Профили, настройки, аватары |
-| **contacts-service** | gRPC | 50053 | Контакты, избранное, чёрный список |
-| **messaging-service** | gRPC | 50054 | Диалоги, группы, MLS-состояние (key packages, commit/welcome, эпохи), доставка зашифрованных сообщений |
-| **media-service** | gRPC | 50055 | Pre-signed URL для загрузки/скачивания медиа в S3 |
-| **item-storage-service** | gRPC | 50056 | Бинарные объекты (аватары и пр.) с SSE-AES256 в S3 |
-| **notifications-service** | gRPC | 50057 | Consumer Redis Streams (`notifications-cg`), отправка push через FCM/APNs |
+| Orchestrator | REST (FastAPI) | 8000 | External gateway: auth, validation, rate-limiting, routing |
+| Auth | gRPC | 50051 | Devices, JWT sessions, invite codes, public keys |
+| Users | gRPC | 50052 | Profiles, settings, avatars |
+| Contacts | gRPC | 50053 | Contacts, favorites, block list |
+| Messaging | gRPC | 50054 | Chats, groups, MLS state, encrypted message delivery |
+| Media | gRPC | 50055 | S3 pre-signed URLs for upload/download |
+| Item Storage | gRPC | 50056 | Binary objects (avatars, etc.), SSE-AES256 in S3 |
+| Notifications | gRPC | 50057 | Redis Streams consumer, push via FCM/APNs |
 
-Каждый доменный сервис владеет собственной базой PostgreSQL и не имеет прямого доступа к данным соседей — общение только через gRPC и события Redis Streams.
+---
 
-### Поток сообщений
-
-1. Клиент шифрует `application`-сообщение MLS своим групповым ключом и отправляет в оркестратор по REST.
-2. Оркестратор валидирует запрос и через gRPC передаёт зашифрованный блоб в `messaging-service`.
-3. `messaging-service` сохраняет сообщение в PostgreSQL и публикует событие в Redis Streams.
-4. `notifications-service` (consumer-группа `notifications-cg`) забирает событие, формирует push-нотификации и отправляет их через FCM/APNs устройствам адресатов.
-5. Получатели вытягивают новые сообщения и расшифровывают их локально, используя свой MLS-эпоху.
-
-Сервер на всех этапах оперирует только зашифрованными данными и метаданными маршрутизации (id чата, id отправителя, временная метка); содержимое переписки физически недоступно даже оператору сервиса.
-
-## Технологический стек
-
-**Backend** — Python 3.12, FastAPI + Uvicorn (оркестратор), gRPC + grpcio (доменные сервисы), SQLAlchemy 2.0 + asyncpg, Alembic, structlog, aioboto3, firebase-admin, aioapns.
-
-**Хранилища** — PostgreSQL 15 (по одной БД на сервис), Redis 7 (кэш, presence, Streams), AWS S3 (или любое S3-совместимое хранилище для медиа).
-
-**Криптография** — Rust + OpenMLS, ciphersuite `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`, биндинги к Kotlin через UniFFI.
-
-**Клиент** — Kotlin Multiplatform 1.9+, Compose Multiplatform, MVVM + Repository, Koin DI, Kotlin Coroutines/Flow, SQLDelight + SQLCipher, Material 3, Android Keystore (MasterKey AES-256-GCM + EncryptedSharedPreferences), iOS Keychain, Swift-обёртка для iOS-таргета.
-
-**ML on-device** — Whisper (`whisper.cpp` через JNI с API-fallback) для ASR, NLLB-200 distilled (600M) в формате ONNX через ONNX Runtime для перевода, ML Kit Language Identification для определения языка.
-
-**Инфраструктура** — Docker, Docker Compose (для локальной разработки), Kubernetes 1.25+, Kustomize (`base` + оверлеи `dev`/`prod`), GKE Ingress + Google-managed SSL + Cloud Armor в продакшене.
-
-**CI/CD** — GitHub Actions: ruff, black, isort, pytest с матрицей по сервисам и измерением покрытия (pytest-cov); pre-commit hooks.
-
-## Структура репозитория
+## Repository Structure
 
 ```
 memegram/
-├── backend/                    # 8 микросервисов на Python
-│   ├── orchestrator/           # FastAPI REST-шлюз
-│   ├── auth-service/           # gRPC: устройства, сессии, инвайты
-│   ├── user-service/           # gRPC: профили, настройки
-│   ├── contacts-service/       # gRPC: контакты, блокировки
-│   ├── messaging-service/      # gRPC: чаты, группы, MLS-состояние
-│   ├── media-service/          # gRPC: S3 pre-signed URL для медиа
-│   ├── item-storage-service/   # gRPC: бинарные объекты
-│   ├── notifications-service/  # gRPC + consumer Redis Streams, FCM/APNs
-│   └── shared/                 # общие .proto-контракты, утилиты
-├── android-ios-app/            # Kotlin Multiplatform клиент
-│   ├── composeApp/             # общий код Compose Multiplatform
-│   ├── iosApp/                 # iOS-обёртка (Swift, Xcode-проект)
-│   └── ...
-├── mls-rust/                   # криптоядро MLS на Rust (OpenMLS + UniFFI)
+├── android-ios-app/            # KMP client (Compose Multiplatform)
+│   ├── composeApp/             # shared code + platform-specific
+│   ├── mls-rust/               # MLS crypto + Whisper engine (Rust)
+│   └── memegram-ios/           # iOS Xcode project wrapper
 ├── ml/
-│   └── voice-translator/       # Whisper ASR (JNI + API), NLLB-200
+│   └── voice-translator/       # Legacy/test Whisper JNI + API implementation
+├── exported_models/
+│   └── nllb-200-distilled-600M/ # Static export of NLLB model artifacts
+├── backend/                    # 8 Python microservices
+│   ├── orchestrator/           # FastAPI REST gateway
+│   ├── auth-service/           # gRPC: auth & invites
+│   ├── user-service/           # gRPC: profiles
+│   ├── contacts-service/       # gRPC: contacts & blocks
+│   ├── messaging-service/      # gRPC: chats, groups, MLS state
+│   ├── media-service/          # gRPC: S3 pre-signed URLs
+│   ├── item-storage-service/   # gRPC: binary blobs
+│   ├── notifications-service/  # gRPC + Redis Streams consumer
+│   └── shared/                 # shared protobuf contracts, utilities
 ├── k8s/
-│   ├── base/                   # Kustomize-манифесты по сервисам
+│   ├── base/                   # Kustomize manifests per service
 │   └── overlays/
-│       ├── dev/                # локальный/dev-кластер
-│       └── prod/               # GKE: Ingress + managed cert + Cloud Armor
+│       ├── dev/                # local/dev cluster
+│       └── prod/               # GKE: Ingress + managed SSL + Cloud Armor
 ├── docs/
-│   ├── architecture/           # архитектурные решения
-│   ├── user_stories_ru.md
+│   ├── architecture/           # architectural decisions per service
 │   ├── user_stories_en.md
-│   └── memegram-analogues.pdf
-├── docker-compose.yml          # 7×PostgreSQL + 4×Redis + сервисы
-├── deploy-local.sh             # развёртывание в minikube
-├── deploy-gke.sh               # полный цикл деплоя в GKE
+│   └── user_stories_ru.md
+├── docker-compose.yml          # 7×PostgreSQL + Redis + services
+├── deploy-local.sh             # minikube deployment
+├── deploy-gke.sh               # GKE deployment
 └── .github/workflows/ci.yml    # lint + matrix tests
 ```
 
-## Документация
+---
 
-- Архитектурные решения — [`docs/architecture/`](docs/architecture/) (в частности, мотивация перехода с Kafka/ScyllaDB на Redis Streams + PostgreSQL).
-- Пользовательские истории — [`docs/user_stories_ru.md`](docs/user_stories_ru.md), [`docs/user_stories_en.md`](docs/user_stories_en.md).
-- Сравнительный анализ аналогов — [`docs/memegram-analogues.pdf`](docs/memegram-analogues.pdf).
-- Техническое задание (`tz.txt`) и индивидуальное ТЗ (`tzind.txt`) — в корне репозитория, оформлены под Typst-шаблон по ГОСТ 19.
+## Tech Stack Summary
 
-## Команда
+**Client** — Kotlin Multiplatform 1.9+, Compose Multiplatform 1.10, MVVM + Repository, Koin DI, Coroutines/Flow, SQLDelight + SQLCipher, Material 3, Ktor 3.4, libsodium, Android Keystore, iOS Keychain.
 
-| Участник | Группа | Зона ответственности                                      |
-|---|---|-----------------------------------------------------------|
-| Павлухин Денис Игоревич | БПИ-236 | Backend-микросервисы, Docker, Kubernetes (Kustomize, GKE) |
-| Покровский Александр Андреевич | БПАД-233 | ML-компоненты (ASR, перевод), интеграция on-device моделей |
-| Алов Владислав Васильевич | БПАД-233 | Мобильный клиент (KMP/Compose), MLS-интеграция |
+**ML On-Device** — Whisper (`whisper.cpp` via Rust/UniFFI) for ASR, NLLB-200 distilled 600M (ONNX) for translation, 4 specialized ONNX models for NSFW censorship. ONNX Runtime 1.24 on Android, Swift-native ONNX bridge on iOS.
+
+**MLS Crypto** — Rust + OpenMLS, UniFFI bindings, `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`.
+
+**Backend** — Python 3.12, FastAPI + Uvicorn, gRPC + grpcio, SQLAlchemy 2.0 + asyncpg, Alembic, structlog, aioboto3, firebase-admin, aioapns.
+
+**Storage** — PostgreSQL 15 (database-per-service), Redis 7 (cache, presence, Streams), S3-compatible storage.
+
+**Infrastructure** — Docker, Docker Compose, Kubernetes 1.25+, Kustomize (`dev`/`prod` overlays), GKE Ingress + Google-managed SSL + Cloud Armor.
+
+**CI/CD** — GitHub Actions: ruff, black, isort, pytest (matrix per service, pytest-cov coverage), pre-commit hooks.
 
 ---
 
-*Курсовой проект, НИУ ВШЭ, направление 09.03.04 «Программная инженерия», 2025–2026 уч. г.*
+## Team
+
+| Member | Group | Responsibility |
+|---|---|---|
+| Denis Pavlukhin | БПИ-236 | Backend microservices, Docker, Kubernetes (Kustomize, GKE) |
+| Alexander Pokrovsky | БПАД-233 | ML components (ASR, translation), on-device model integration |
+| Vladislav Alov | БПАД-233 | Mobile client (KMP/Compose), MLS integration |
+
+---
+
+*Course project, HSE University, Data Science and Business analitics, 2025–2026*

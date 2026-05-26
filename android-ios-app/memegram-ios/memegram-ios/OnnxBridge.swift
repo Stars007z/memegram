@@ -369,7 +369,7 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
                 return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
             }
             do {
-                return try extractFloatOutput(value: value)
+                return try self.extractFloatOutput(value: value)
             } catch {
                 print("[OnnxBridge] output extract error: \(error)")
                 return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))

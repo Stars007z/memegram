@@ -7,4 +7,4 @@ CURRENT_PROJECT_VERSION=1
 MARKETING_VERSION=1.0
 
 // Required for SQLDelight native driver (co.touchlab:sqliter) and SQLCipher dependencies in ComposeApp framework
-OTHER_LDFLAGS = $(inherited) -lsqlite3 -lc++
+OTHER_LDFLAGS = $(inherited) -lsqlite3 -lc++ -framework Accelerate
