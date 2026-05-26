@@ -33,21 +33,19 @@ fun PrivacyScreen(
 ) {
     val s = LocalStrings.current
     val topBarTextColor       = if (topBarColor.luminance() < 0.5f) Color.White else Color.Black
-    val profileVisibleTo      by viewModel.profileVisibleTo.collectAsState()
-    val lastActiveVisibleTo   by viewModel.lastActiveVisibleTo.collectAsState()
     val autoDeleteDays        by viewModel.autoDeleteDays.collectAsState()
     val accountDeleted        by viewModel.accountDeleted.collectAsState()
     val isLoading             by viewModel.isLoading.collectAsState()
     val error                 by viewModel.error.collectAsState()
+    val nsfwFilterEnabled     by viewModel.nsfwFilterEnabled.collectAsState()
+    val nsfwModelState        by viewModel.nsfwModelState.collectAsState()
+    val nsfwModelSize         by viewModel.nsfwModelSize.collectAsState()
+    val nsfwSupported         = viewModel.nsfwSupported
 
     LaunchedEffect(accountDeleted) { if (accountDeleted) onAccountDeleted() }
 
-    var showProfileVisDialog    by remember { mutableStateOf(false) }
-    var showLastActiveVisDialog by remember { mutableStateOf(false) }
     var showAutoDeleteAccDialog by remember { mutableStateOf(false) }
-    var showAutoDeleteMsgDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
-    var autoDeleteMsgOption     by remember { mutableStateOf<String?>(null) }
 
     error?.let { msg ->
         AlertDialog(
@@ -58,28 +56,6 @@ fun PrivacyScreen(
         )
     }
 
-    if (showProfileVisDialog) {
-        PrivacyChoiceDialog(
-            title   = s.whoSeesProfile,
-            options = PrivacyViewModel.visibilityOptions(s),
-            current = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
-            onSelect  = { viewModel.setProfileVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showProfileVisDialog = false },
-            onDismiss = { showProfileVisDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
-    if (showLastActiveVisDialog) {
-        PrivacyChoiceDialog(
-            title   = s.whoSeesLastSeen,
-            options = PrivacyViewModel.visibilityOptions(s),
-            current = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
-            onSelect  = { viewModel.setLastActiveVisibleTo(PrivacyViewModel.visibilityValue(it, s)); showLastActiveVisDialog = false },
-            onDismiss = { showLastActiveVisDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
     if (showAutoDeleteAccDialog) {
         PrivacyChoiceDialog(
             title   = s.deleteAccountAfter,
@@ -87,17 +63,6 @@ fun PrivacyScreen(
             current = PrivacyViewModel.daysLabel(autoDeleteDays, s),
             onSelect  = { viewModel.setAutoDeleteDays(PrivacyViewModel.daysValue(it, s)); showAutoDeleteAccDialog = false },
             onDismiss = { showAutoDeleteAccDialog = false },
-            cancelLabel = s.cancel
-        )
-    }
-
-    if (showAutoDeleteMsgDialog) {
-        PrivacyChoiceDialog(
-            title   = s.autoDeleteMessages,
-            options = listOf(s.autoDeleteOff, s.autoDelete1Day, s.autoDelete1Week, s.autoDelete1Month),
-            current = autoDeleteMsgOption ?: s.autoDeleteOff,
-            onSelect  = { autoDeleteMsgOption = it; showAutoDeleteMsgDialog = false },
-            onDismiss = { showAutoDeleteMsgDialog = false },
             cancelLabel = s.cancel
         )
     }
@@ -154,37 +119,69 @@ fun PrivacyScreen(
                 onClick = onBlackListClick
             )
 
-            Spacer(Modifier.height(4.sdp))
-
-            SectionLabel(s.privacySection)
-            PrivacyItem(
-                title = s.whoSeesProfile,
-                subtitle = PrivacyViewModel.visibilityLabel(profileVisibleTo, s),
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showProfileVisDialog = true }
-            )
-            PrivacyItem(
-                title = s.whoSeesLastSeen,
-                subtitle = PrivacyViewModel.visibilityLabel(lastActiveVisibleTo, s),
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showLastActiveVisDialog = true }
-            )
-
-            Spacer(Modifier.height(4.sdp))
-
             SectionLabel(s.autoDeleteSection)
-            PrivacyItem(
-                title = s.autoDeleteMessages,
-                subtitle = autoDeleteMsgOption ?: s.autoDeleteOff,
-                accentColor = topBarColor, showArrow = true,
-                onClick = { showAutoDeleteMsgDialog = true }
-            )
             PrivacyItem(
                 title = s.deleteAccountAfter,
                 subtitle = PrivacyViewModel.daysLabel(autoDeleteDays, s),
                 accentColor = topBarColor, showArrow = true,
                 onClick = { showAutoDeleteAccDialog = true }
             )
+
+            if (nsfwSupported) {
+                SectionLabel(s.privacySection)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.sdp),
+                    tonalElevation = 2.sdp
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.sdp, vertical = 14.sdp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = s.nsfwFilter,
+                                    fontSize = 15.ssp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    text = s.nsfwFilterDescription,
+                                    fontSize = 12.ssp,
+                                    color = Color.Gray,
+                                )
+                            }
+                            Spacer(Modifier.width(12.sdp))
+                            Switch(
+                                checked = nsfwFilterEnabled,
+                                enabled = nsfwModelState == ModelDownloadState.Ready,
+                                onCheckedChange = viewModel::setNsfwFilterEnabled,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = topBarColor,
+                                    checkedTrackColor = topBarColor.copy(alpha = 0.4f)
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.sdp))
+
+                        ModelDownloadRow(
+                            state = nsfwModelState,
+                            modelSize = nsfwModelSize,
+                            accent = topBarColor,
+                            strings = s,
+                            onDownload = viewModel::downloadNsfwModel,
+                            onCancel = viewModel::cancelNsfwDownload,
+                            onDelete = viewModel::deleteNsfwModel,
+                            title = s.nsfwModel,
+                            description = s.nsfwModelDescription,
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(12.sdp))
 

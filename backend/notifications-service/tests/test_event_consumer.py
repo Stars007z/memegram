@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from types import SimpleNamespace
@@ -112,6 +113,25 @@ class TestStartStop:
 
         # Assert
         assert consumer._running is True
+
+    async def test_consume_loop_recreates_missing_group(self, consumer):
+        # Arrange: Redis lost the consumer group after redeploy/restart.
+        consumer._running = True
+        consumer._messaging_redis.xreadgroup = AsyncMock(
+            side_effect=[RuntimeError("NOGROUP No such key or consumer group"), asyncio.CancelledError()],
+        )
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await consumer._consume_loop()
+
+        # Assert
+        consumer._messaging_redis.xgroup_create.assert_awaited_once_with(
+            consumer._stream,
+            consumer._group,
+            id="0",
+            mkstream=True,
+        )
 
     async def test_stop_sets_running_false(self, consumer):
         # Arrange
@@ -345,6 +365,40 @@ class TestHandleNewMessage:
 
         # Assert
         send.assert_not_awaited()
+
+    async def test_group_message_filters_recipient_who_blocked_sender(self, consumer):
+        # Arrange
+        consumer._messaging_client.get_conversation_members = AsyncMock(
+            return_value=[
+                MemberInfo(user_id="u-sender", role="member"),
+                MemberInfo(user_id="u-blocked", role="member"),
+                MemberInfo(user_id="u-normal", role="member"),
+            ],
+        )
+
+        async def is_blocked(user_id: str, blocked_user_id: str) -> bool:
+            return user_id == "u-blocked" and blocked_user_id == "u-sender"
+
+        consumer._contacts_client.is_blocked = AsyncMock(side_effect=is_blocked)
+
+        # Act
+        with patch.object(
+            consumer,
+            "_send_push_to_users",
+            new=AsyncMock(),
+        ) as send:
+            await consumer._handle_new_message(
+                {
+                    "conversation_id": "c-1",
+                    "conversation_type": "group",
+                    "conversation_name": "Team",
+                    "sender_user_id": "u-sender",
+                },
+            )
+
+        # Assert
+        send.assert_awaited_once()
+        assert send.call_args.kwargs["recipient_user_ids"] == ["u-normal"]
 
 
 # ---------------------------------------------------------------------------

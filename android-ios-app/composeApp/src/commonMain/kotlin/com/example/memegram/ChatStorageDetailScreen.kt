@@ -102,6 +102,7 @@ fun ChatStorageDetailScreen(
                     ) {
                         ChatDetailDonutChart(
                             categories = categories,
+                            selectedTypes = selectedCategories,
                             totalSize = totalSize,
                             avatarMediaId = avatarMediaId,
                             chatName = chatName
@@ -222,14 +223,16 @@ fun ChatStorageDetailScreen(
 @Composable
 private fun ChatDetailDonutChart(
     categories: List<StorageCategoryUi>,
+    selectedTypes: Set<String>,
     totalSize: Long,
     avatarMediaId: String,
     chatName: String,
     modifier: Modifier = Modifier
 ) {
-    val strokeWidthDp = 22.sdp
+    val strokeWidthDp = 20.sdp
     val chartSize = 210.sdp
     val avatarSize = 100.sdp
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
 
     Box(modifier = modifier.size(chartSize), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -240,9 +243,20 @@ private fun ChatDetailDonutChart(
             val cx = size.width / 2
             val cy = size.height / 2
 
-            val selected = categories.filter { it.isSelected && it.sizeBytes > 0 }
-            val gapDegrees = if (selected.size > 1) 3f else 0f
-            val minSweep = 6f
+            val selected = categories.filter { it.type in selectedTypes && it.sizeBytes > 0 }
+            val gapDegrees = 0f
+            val minSweep = if (selected.size > 1) 3f else 0f
+            val cap = if (selected.size > 1) StrokeCap.Butt else StrokeCap.Round
+
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = Offset(cx - radius, cy - radius),
+                size = Size(diameter, diameter)
+            )
 
             if (selected.isEmpty()) {
                 drawArc(
@@ -278,7 +292,7 @@ private fun ChatDetailDonutChart(
                         startAngle = startAngle + gapDegrees / 2,
                         sweepAngle = (sweep - gapDegrees).coerceAtLeast(0.5f),
                         useCenter = false,
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        style = Stroke(width = strokeWidth, cap = cap),
                         topLeft = Offset(cx - radius, cy - radius),
                         size = Size(diameter, diameter)
                     )

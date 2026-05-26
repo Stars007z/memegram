@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator
 
 import redis.asyncio as aioredis
 
+from app.infrastructure.auth_client import IAuthClient
 from app.logging_config import get_logger
 from app.services.interfaces.stream_service import IStreamService
 
@@ -26,13 +27,15 @@ _NOTIFICATION_EVENT_TYPES: frozenset[str] = frozenset(
 )
 _NOTIFICATIONS_STREAM = "notifications:events"
 _NOTIFICATIONS_STREAM_MAXLEN = 100_000
+_DEVICE_ACTIVE_CHECK_INTERVAL_SECONDS = 15.0
 
 
 class StreamServiceImpl(IStreamService):
     """Redis Pub/Sub based event streaming."""
 
-    def __init__(self, redis: aioredis.Redis) -> None:
+    def __init__(self, redis: aioredis.Redis, auth_client: IAuthClient | None = None) -> None:
         self._redis = redis
+        self._auth = auth_client
 
     async def subscribe(
         self,
@@ -44,8 +47,20 @@ class StreamServiceImpl(IStreamService):
         channels = [f"conv:{cid}" for cid in conversation_ids]
 
         await pubsub.subscribe(*channels)
+        last_active_check = 0.0
         try:
             while True:
+                now = asyncio.get_running_loop().time()
+                if self._auth and now - last_active_check >= _DEVICE_ACTIVE_CHECK_INTERVAL_SECONDS:
+                    last_active_check = now
+                    if not await self._auth.is_device_active(user_id, device_id):
+                        logger.info(
+                            "stream.subscription.device_inactive",
+                            user_id=str(user_id),
+                            device_id=str(device_id),
+                        )
+                        break
+
                 message = await pubsub.get_message(
                     ignore_subscribe_messages=True,
                     timeout=1.0,

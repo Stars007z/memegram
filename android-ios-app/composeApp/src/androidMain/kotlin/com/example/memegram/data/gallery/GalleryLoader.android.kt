@@ -5,7 +5,6 @@ import android.content.ContentUris
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
-import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,6 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
@@ -37,6 +38,8 @@ actual fun rememberGalleryLoader(): GalleryLoader {
     return remember(context, isGranted) {
         object : GalleryLoader {
             override val isPermissionGranted = isGranted
+            private var cachedAll: List<GalleryThumb>? = null
+            private val cacheMutex = Mutex()
 
             override fun requestPermission() {
                 if (!isGranted) launcher.launch(permission)
@@ -44,7 +47,12 @@ actual fun rememberGalleryLoader(): GalleryLoader {
 
             override suspend fun loadAll(): List<GalleryThumb> = withContext(Dispatchers.IO) {
                 if (!isGranted) return@withContext emptyList()
-                val results    = ArrayList<GalleryThumb>(1024)
+                cacheMutex.withLock {
+                    cachedAll ?: queryAllImages().also { cachedAll = it }
+                }
+            }
+
+            private fun queryAllImages(): List<GalleryThumb> {
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                     MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
                 else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -52,96 +60,59 @@ actual fun rememberGalleryLoader(): GalleryLoader {
                 val projection = arrayOf(
                     MediaStore.Images.Media._ID,
                     MediaStore.Images.Media.DISPLAY_NAME,
-                    MediaStore.Images.Media.DATE_ADDED
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.DATE_MODIFIED,
+                    MediaStore.Images.Media.DATE_TAKEN,
                 )
 
+                val results = ArrayList<GalleryThumb>(2048)
+
                 context.contentResolver.query(
-                    collection, projection, null, null,
-                    "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                    collection,
+                    projection,
+                    null,
+                    null,
+                    null,
                 )?.use { cursor ->
                     val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                    val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                    val addedCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                    val modifiedCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
+                    val takenCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
                     while (cursor.moveToNext()) {
                         val id        = cursor.getLong(idCol)
                         val name      = cursor.getString(nameCol) ?: id.toString()
-                        val dateAdded = cursor.getLong(dateCol)
+                        val dateTaken = cursor.getSafeLong(takenCol).takeIf { it > 0L }?.let { it / 1000L } ?: 0L
+                        val dateAdded = cursor.getSafeLong(addedCol)
+                        val dateModified = cursor.getSafeLong(modifiedCol)
+                        val sectionDate = when {
+                            dateTaken > 0L -> dateTaken
+                            dateAdded > 0L -> dateAdded
+                            else -> dateModified
+                        }
                         val uri       = ContentUris.withAppendedId(collection, id)
                         results += GalleryThumb(
                             id        = uri.toString(),
                             bytes     = EMPTY_BYTES,
                             name      = name,
-                            dateAdded = dateAdded
+                            dateAdded = sectionDate,
                         )
                     }
                 }
-                results
+
+                return results.sortedWith(
+                    compareByDescending<GalleryThumb> { it.dateAdded }
+                        .thenByDescending { ContentUris.parseId(it.id.toUri()) }
+                )
             }
 
             override suspend fun loadPage(offset: Int, limit: Int): List<GalleryThumb> = withContext(Dispatchers.IO) {
-                if (!isGranted) return@withContext emptyList()
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-
-                val projection = arrayOf(
-                    MediaStore.Images.Media._ID,
-                    MediaStore.Images.Media.DISPLAY_NAME,
-                    MediaStore.Images.Media.DATE_ADDED
-                )
-
-                val results = ArrayList<GalleryThumb>(limit)
-
-                val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val args = Bundle().apply {
-                        putStringArray(
-                            android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS,
-                            arrayOf(MediaStore.Images.Media.DATE_ADDED)
-                        )
-                        putInt(
-                            android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION,
-                            android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
-                        )
-                        putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit)
-                        putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset)
-                    }
-                    context.contentResolver.query(collection, projection, args, null)
-                } else {
-                    context.contentResolver.query(
-                        collection, projection, null, null,
-                        "${MediaStore.Images.Media.DATE_ADDED} DESC LIMIT $limit OFFSET $offset"
-                    )
-                }
-
-                cursor?.use { c ->
-                    val idCol   = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                    val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                    val dateCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-                    while (c.moveToNext()) {
-                        val id        = c.getLong(idCol)
-                        val name      = c.getString(nameCol) ?: id.toString()
-                        val dateAdded = c.getLong(dateCol)
-                        val uri       = ContentUris.withAppendedId(collection, id)
-                        results += GalleryThumb(
-                            id        = uri.toString(),
-                            bytes     = EMPTY_BYTES,
-                            name      = name,
-                            dateAdded = dateAdded
-                        )
-                    }
-                }
-                results
+                val all = loadAll()
+                if (offset >= all.size) return@withContext emptyList()
+                all.subList(offset, (offset + limit).coerceAtMost(all.size))
             }
 
-            override suspend fun totalCount(): Int = withContext(Dispatchers.IO) {
-                if (!isGranted) return@withContext 0
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                context.contentResolver.query(
-                    collection, arrayOf(MediaStore.Images.Media._ID), null, null, null
-                )?.use { it.count } ?: 0
-            }
+            override suspend fun totalCount(): Int = loadAll().size
 
             override suspend fun loadThumbBytes(id: String): ByteArray? = withContext(Dispatchers.IO) {
                 runCatching {
@@ -168,3 +139,8 @@ actual fun rememberGalleryLoader(): GalleryLoader {
 }
 
 private val EMPTY_BYTES = ByteArray(0)
+
+private fun android.database.Cursor.getSafeLong(columnIndex: Int): Long {
+    if (columnIndex < 0 || isNull(columnIndex)) return 0L
+    return runCatching { getLong(columnIndex) }.getOrDefault(0L)
+}

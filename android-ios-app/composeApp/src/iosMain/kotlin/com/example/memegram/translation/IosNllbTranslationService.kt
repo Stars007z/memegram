@@ -1,5 +1,6 @@
 package com.example.memegram.translation
 
+import com.example.memegram.ml.MlModelGate
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
@@ -17,7 +18,9 @@ class IosNllbTranslationService(
         text: String,
         sourceLang: String?,
         targetLang: String,
+        onProgress: (TranslationProgress) -> Unit,
     ): TranslationResult = translateMutex.withLock {
+        onProgress(TranslationProgress(0.04f, TranslationProgressPhase.IDENTIFYING_LANGUAGE))
         val detectedLang = sourceLang ?: identifyLanguage(text) ?: "und"
         println("[NLLB-iOS] translate: text='${text.take(40)}' src=$sourceLang detected=$detectedLang tgt=$targetLang")
 
@@ -37,6 +40,7 @@ class IosNllbTranslationService(
             return TranslationResult(text, detectedLang)
         }
 
+        onProgress(TranslationProgress(0.12f, TranslationProgressPhase.LOADING_MODEL))
         val engine = modelManager.getEngine()
         if (engine == null) {
             println("[NLLB-iOS] translate: engine is null (model not on disk or not enough RAM) — returning original")
@@ -45,7 +49,7 @@ class IosNllbTranslationService(
 
         return try {
             println("[NLLB-iOS] translate: starting inference srcFlores=$srcFlores tgtFlores=$tgtFlores")
-            val translated = engine.translate(text, srcFlores, tgtFlores)
+            val translated = engine.translate(text, srcFlores, tgtFlores, onProgress)
             println("[NLLB-iOS] translate: inference done, output='${translated.take(40)}'")
             if (translated.isBlank() || translated == text) {
                 TranslationResult(text, detectedLang)
@@ -84,14 +88,14 @@ class IosNllbTranslationService(
         modelManager.isModelAvailable()
     }
 
-    override fun close() {
-        modelManager.release()
-    }
+    override fun close() = Unit
 
     override fun isModelAvailable(): Boolean = modelManager.isModelAvailable()
     override fun getModelSize(): Long = modelManager.getModelSize()
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 
     override suspend fun releaseModel() {
         modelManager.release()

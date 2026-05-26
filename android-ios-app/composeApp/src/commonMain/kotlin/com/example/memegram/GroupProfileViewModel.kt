@@ -13,6 +13,7 @@ import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
 import com.example.memegram.data.repository.ProfileRepository
+import com.example.memegram.mls.MlsCommitProcessResult
 import com.example.memegram.mls.MlsManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -95,25 +96,39 @@ class GroupProfileViewModel(
     }
 
     private suspend fun syncGroupState(conversationId: String): Long {
+        var latestCursor = mlsManager.getCommitCursor(conversationId)
         try {
             val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
-            val localEpoch = if (realEpoch >= 0) realEpoch else mlsManager.getGroupEpoch(conversationId)
-            val commits = api.getPendingCommits(conversationId, localEpoch)
+            val cursorEpoch = latestCursor
+                ?: if (realEpoch >= 0) realEpoch else mlsManager.getGroupEpoch(conversationId)
+            val commits = api.getPendingCommits(conversationId, cursorEpoch)
 
-            val newCommits = commits.filter { it.epoch > localEpoch }
+            val newCommits = commits.filter { it.epoch > cursorEpoch }
 
             if (newCommits.isNotEmpty()) {
                 newCommits.sortedBy { it.epoch }.forEach { commit ->
-                    val success = try {
-                        mlsManager.processCommit(conversationId, commit.commitDataB64)
-                    } catch (_: Exception) { false }
+                    val result = try {
+                        mlsManager.processCommitResult(conversationId, commit.commitDataB64)
+                    } catch (e: Exception) {
+                        MlsCommitProcessResult.Skipped(permanent = false, message = e.message)
+                    }
 
-                    if (success) {
-                        val newRealEpoch = mlsManager.getRealMlsEpoch(conversationId)
-                        if (newRealEpoch > 0) {
-                            mlsManager.updateGroupEpoch(conversationId, newRealEpoch)
-                        } else {
-                            mlsManager.updateGroupEpoch(conversationId, commit.epoch)
+                    when (result) {
+                        is MlsCommitProcessResult.Applied -> {
+                            val newRealEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                            if (newRealEpoch > 0) {
+                                mlsManager.updateGroupEpoch(conversationId, newRealEpoch)
+                            } else {
+                                mlsManager.updateGroupEpoch(conversationId, mlsManager.getGroupEpoch(conversationId))
+                            }
+                            mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                            latestCursor = commit.epoch
+                        }
+                        is MlsCommitProcessResult.Skipped -> {
+                            if (result.permanent) {
+                                mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                                latestCursor = commit.epoch
+                            }
                         }
                     }
                 }
@@ -122,8 +137,9 @@ class GroupProfileViewModel(
         } catch (e: Exception) {
             println("MemegramDebug [Sync]: ❌ Ошибка синхронизации: ${e.message}")
         }
-        val finalEpoch = mlsManager.getRealMlsEpoch(conversationId)
-        return if (finalEpoch >= 0) finalEpoch else mlsManager.getGroupEpoch(conversationId)
+        return latestCursor
+            ?: runCatching { api.getConversation(conversationId).mlsGroup?.currentEpoch }.getOrNull()
+            ?: mlsManager.getGroupEpoch(conversationId)
     }
 
     fun addMemberByUserId(conversationId: String, userId: String) {
@@ -142,6 +158,7 @@ class GroupProfileViewModel(
 
 
                     val addResult = mlsManager.addMemberToGroup(conversationId, kp.keyPackageData)
+                    mlsManager.rememberDeviceSignatureKey(kp.deviceId, addResult.memberSignatureKeyB64)
                     mlsManager.flushState()
 
                     val nextServerEpoch = (serverEpochCounter + 1).toInt()
@@ -159,7 +176,9 @@ class GroupProfileViewModel(
 
                         mlsManager.mergePendingCommit(conversationId)
                         serverEpochCounter++
-                        mlsManager.updateGroupEpoch(conversationId, serverEpochCounter)
+                        mlsManager.updateCommitCursor(conversationId, serverEpochCounter)
+                        val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                        mlsManager.updateGroupEpoch(conversationId, realEpoch)
 
                     } catch (networkError: Exception) {
                         mlsManager.clearPendingCommit(conversationId)
@@ -204,7 +223,9 @@ class GroupProfileViewModel(
                         )
 
                         mlsManager.mergePendingCommit(conversationId)
-                        mlsManager.updateGroupEpoch(conversationId, nextServerEpoch.toLong())
+                        mlsManager.updateCommitCursor(conversationId, nextServerEpoch.toLong())
+                        val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                        mlsManager.updateGroupEpoch(conversationId, realEpoch)
                         mlsManager.flushState()
 
                         println("MemegramDebug [Kick]: ✅ MLS Remove Commit sent, epoch=$nextServerEpoch")

@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +21,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,11 +72,11 @@ fun DateScrubber(
         label = "scrubberThumbFraction"
     )
 
-    BoxWithConstraints(modifier = modifier.width(56.sdp)) {
+    BoxWithConstraints(modifier = modifier.width(64.sdp)) {
         val trackH = maxHeight
 
         val trackWidth by animateDpAsState(
-            targetValue = if (isDragging) 6.sdp else 3.sdp,
+            targetValue = if (isDragging) 8.sdp else 4.sdp,
             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
             label = "scrubberTrackWidth"
         )
@@ -89,15 +90,15 @@ fun DateScrubber(
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 6.sdp)
+                .padding(end = 7.sdp)
                 .fillMaxHeight()
                 .padding(vertical = 4.sdp)
                 .width(trackWidth)
                 .background(trackColor, RoundedCornerShape(trackWidth / 2))
         )
 
-        val thumbW = 14.sdp
-        val thumbH = 34.sdp
+        val thumbW = 18.sdp
+        val thumbH = 42.sdp
         val thumbScale by animateFloatAsState(
             targetValue = if (isDragging) 1.18f else 1f,
             animationSpec = spring(
@@ -121,10 +122,11 @@ fun DateScrubber(
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(end = 2.sdp)
+                .padding(end = 1.sdp)
                 .offset(
                     x = 0.sdp,
-                    y = (trackH * animatedFraction - thumbH / 2).coerceIn(0.sdp, (trackH - thumbH))
+                    y = (trackH * animatedFraction - thumbH / 2)
+                        .coerceIn(0.sdp, (trackH - thumbH).coerceAtLeast(0.sdp))
                 )
                 .scale(thumbScale)
                 .shadow(
@@ -142,12 +144,13 @@ fun DateScrubber(
                 imageVector = Icons.Default.UnfoldMore,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.95f),
-                modifier = Modifier.size(12.sdp)
+                modifier = Modifier.size(14.sdp)
             )
         }
 
         if (isDragging && dragLabel.isNotEmpty()) {
-            val bubbleY = (trackH * animatedFraction - 16.sdp).coerceIn(0.sdp, trackH - 32.sdp)
+            val bubbleY = (trackH * animatedFraction - 16.sdp)
+                .coerceIn(0.sdp, (trackH - 32.sdp).coerceAtLeast(0.sdp))
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -182,6 +185,7 @@ fun DateScrubber(
                 .fillMaxSize()
                 .pointerInput(sections, totalItems, loadedItems) {
                     fun handle(yPx: Float) {
+                        if (size.height <= 0) return
                         val fraction = (yPx / size.height).coerceIn(0f, 1f)
                         dragFraction = fraction
                         val targetItem = (fraction * totalItems).toInt()
@@ -189,24 +193,31 @@ fun DateScrubber(
                         dragLabel = sections.lastOrNull { it.firstItemIndex <= targetItem }?.label
                             ?: sections.firstOrNull()?.label
                             ?: ""
-                        val loaded = loadedItems.coerceAtLeast(1)
-                        val scrollTarget = targetItem.coerceAtMost(loaded - 1)
+                        val scrollTarget = targetItem
                         scope.launch {
                             gridState.scrollToItem((scrollTarget / columns) * columns)
                         }
                     }
-                    detectDragGestures(
-                        onDragStart = { offset ->
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitPointerEvent(PointerEventPass.Initial)
+                                .changes
+                                .firstOrNull { it.pressed }
+                                ?: continue
+                            down.consume()
                             isDragging = true
-                            handle(offset.y)
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            handle(change.position.y)
-                        },
-                        onDragEnd    = { isDragging = false },
-                        onDragCancel = { isDragging = false }
-                    )
+                            handle(down.position.y)
+
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                change.consume()
+                                if (change.changedToUp() || !change.pressed) break
+                                handle(change.position.y)
+                            }
+                            isDragging = false
+                        }
+                    }
                 }
         )
     }

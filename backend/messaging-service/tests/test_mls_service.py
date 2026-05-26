@@ -44,12 +44,17 @@ class _NestedCtx:
 
 @pytest.fixture
 def key_package_repo() -> MagicMock:
-    return _repo(
+    repo = _repo(
         "delete_by_device",
         "create_many",
         "consume_one",
         "count_available",
+        "get_signature_key_for_device",
     )
+    # Default to None so callers that do `sig_key.hex() if sig_key else ""`
+    # take the safe branch; individual tests can override.
+    repo.get_signature_key_for_device.return_value = None
+    return repo
 
 
 @pytest.fixture

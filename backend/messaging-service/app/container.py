@@ -66,6 +66,7 @@ class RequestScope:
                 commit_repo=MlsCommitRepository(self._session),
                 message_repo=MessageRepository(self._session),
                 contacts_client=self._contacts,
+                auth_client=self._auth,
                 redis=self._redis,
                 stream_service=self._stream,
             )
@@ -148,7 +149,7 @@ class Container:
         if self._stream is None:
             from app.services.stream_service import StreamServiceImpl
 
-            self._stream = StreamServiceImpl(self._redis)
+            self._stream = StreamServiceImpl(self._redis, self._auth)
         return self._stream
 
     @property

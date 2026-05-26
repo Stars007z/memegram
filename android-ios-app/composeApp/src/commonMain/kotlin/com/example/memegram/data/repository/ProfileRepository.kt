@@ -6,6 +6,8 @@ import com.example.memegram.data.models.UserProfileResponse
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.database.AppDatabase
 import com.example.memegram.database.UserProfileEntity
+import com.example.memegram.DeletedPeerStore
+import com.russhwolf.settings.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,8 +20,11 @@ import kotlin.time.ExperimentalTime
 class ProfileRepository(
     private val api: ApiService,
     private val database: AppDatabase,
+    private val settings: Settings,
 ) {
     private val staleThresholdMs: Long = 15 * 60 * 1000L
+    private val failedFetchRetryMs: Long = 60 * 1000L
+    private val failedFetches = mutableMapOf<String, Long>()
 
     private val _updates = MutableSharedFlow<UserProfileResponse>(extraBufferCapacity = 32)
     val updates: SharedFlow<UserProfileResponse> = _updates.asSharedFlow()
@@ -27,14 +32,24 @@ class ProfileRepository(
     suspend fun getCached(userId: String): UserProfileResponse? = withContext(Dispatchers.Default) {
         runCatching {
             database.appDatabaseQueries.selectUserProfileById(userId).executeAsOneOrNull()?.toResponse()
+                ?: if (DeletedPeerStore.isUserDeleted(settings, userId)) {
+                    UserProfileResponse(id = userId, isDeleted = true)
+                } else null
         }.getOrNull()
     }
 
     suspend fun getOrFetch(userId: String, forceRefresh: Boolean = false): UserProfileResponse? {
         val cached = getCached(userId)
-        val needsFetch = forceRefresh || cached == null || isStale(userId)
+        val now = Clock.System.now().toEpochMilliseconds()
+        val lastFailure = failedFetches[userId] ?: 0L
+        val recentlyFailed = !forceRefresh && lastFailure > 0 && now - lastFailure < failedFetchRetryMs
+        val needsFetch = !recentlyFailed && (forceRefresh || cached == null || isStale(userId))
         if (needsFetch) {
-            runCatching { fetchAndCache(userId) }.getOrNull()?.let { return it }
+            runCatching { fetchAndCache(userId) }
+                .onSuccess { failedFetches.remove(userId) }
+                .onFailure { failedFetches[userId] = now }
+                .getOrNull()
+                ?.let { return it }
         }
         return cached
     }
@@ -56,24 +71,27 @@ class ProfileRepository(
     }
 
     suspend fun upsert(profile: UserProfileResponse) {
+        val effective = profile.withDeletedMarker()
+        if (effective.isDeleted) DeletedPeerStore.markUserDeleted(settings, effective.id)
         withContext(Dispatchers.Default) {
             runCatching {
                 database.appDatabaseQueries.upsertUserProfile(
-                    userId                   = profile.id,
-                    username                 = profile.username,
-                    userPublicKey            = profile.userPublicKey,
-                    bio                      = profile.bio,
-                    isDeleted                = if (profile.isDeleted) 1L else 0L,
-                    avatarMediaId            = profile.avatarMediaId,
-                    profileBackgroundMediaId = profile.profileBackgroundMediaId,
-                    lastActive               = profile.lastActive,
-                    isPeerBlocked            = if (profile.isPeerBlocked) 1L else 0L,
-                    isBlockedByPeer          = if (profile.isBlockedByPeer) 1L else 0L,
+                    userId                   = effective.id,
+                    username                 = effective.username,
+                    userPublicKey            = effective.userPublicKey,
+                    bio                      = effective.bio,
+                    isDeleted                = if (effective.isDeleted) 1L else 0L,
+                    avatarMediaId            = effective.avatarMediaId,
+                    profileBackgroundMediaId = effective.profileBackgroundMediaId,
+                    lastActive               = effective.lastActive,
+                    isPeerBlocked            = if (effective.isPeerBlocked) 1L else 0L,
+                    isBlockedByPeer          = if (effective.isBlockedByPeer) 1L else 0L,
                     cachedAt                 = Clock.System.now().toEpochMilliseconds()
                 )
             }
         }
-        _updates.tryEmit(profile)
+        _updates.tryEmit(effective)
+        failedFetches.remove(effective.id)
     }
 
     suspend fun clearOtherProfiles(selfUserId: String) {
@@ -93,7 +111,7 @@ class ProfileRepository(
     }
 
     private suspend fun fetchAndCache(userId: String): UserProfileResponse {
-        val fresh = api.getUserById(userId)
+        val fresh = api.getUserById(userId).withDeletedMarker()
         upsert(fresh)
         return fresh
     }
@@ -118,5 +136,11 @@ class ProfileRepository(
         lastActive               = lastActive,
         isPeerBlocked            = isPeerBlocked == 1L,
         isBlockedByPeer          = isBlockedByPeer == 1L,
-    )
+    ).withDeletedMarker()
+
+    private fun UserProfileResponse.withDeletedMarker(): UserProfileResponse {
+        val deleted = isDeleted || DeletedPeerStore.isUserDeleted(settings, id)
+        return if (deleted) copy(isDeleted = true, avatarMediaId = null, profileBackgroundMediaId = null)
+        else this
+    }
 }

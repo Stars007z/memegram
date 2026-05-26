@@ -47,15 +47,22 @@ class MemegramApp : Application() {
                 else -> if (isRu) " · сильная" else " · strong"
             }
 
+            val importance = if (strength == 0) {
+                NotificationManager.IMPORTANCE_LOW
+            } else {
+                NotificationManager.IMPORTANCE_HIGH
+            }
+
             val channel = NotificationChannel(
                 channelId,
                 baseName + suffix,
-                NotificationManager.IMPORTANCE_HIGH,
+                importance,
             ).apply {
                 this.description = baseDesc
-                enableLights(true)
+                enableLights(strength > 0)
                 setShowBadge(true)
                 if (strength == 0) {
+                    setSound(null, null)
                     enableVibration(false)
                 } else {
                     enableVibration(true)
@@ -67,7 +74,7 @@ class MemegramApp : Application() {
     }
 
     companion object {
-        private const val CHANNEL_MESSAGES_PREFIX = "memegram_messages_v"
+        private const val CHANNEL_MESSAGES_PREFIX = "memegram_messages_v2_strength_"
 
         fun channelIdForVibration(strength: Int): String {
             val s = strength.coerceIn(0, 3)

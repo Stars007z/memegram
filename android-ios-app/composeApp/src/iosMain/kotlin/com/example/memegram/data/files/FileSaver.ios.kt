@@ -5,18 +5,14 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.memegram.translation.IosFileOpenBridge
 import platform.Foundation.NSData
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
-import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.writeToFile
-import platform.UIKit.UIApplication
-import platform.UIKit.UIDocumentInteractionController
-import platform.UIKit.UIDocumentInteractionControllerDelegateProtocol
-import platform.darwin.NSObject
 
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun saveDownloadedFile(
@@ -43,17 +39,14 @@ actual suspend fun saveDownloadedFile(
     }.getOrNull()
 }
 
-private val docInteractionRetainer = mutableListOf<UIDocumentInteractionController>()
-
 actual suspend fun openSavedFile(pathOrUri: String, mime: String): Boolean = withContext(Dispatchers.Main) {
+    val opener = IosFileOpenBridge.delegate
+    if (opener == null) {
+        println("MemegramDebug [FileSaver]: FileOpenBridge not registered")
+        return@withContext false
+    }
     runCatching {
-        val url = NSURL.fileURLWithPath(pathOrUri)
-        val controller = UIDocumentInteractionController.interactionControllerWithURL(url)
-        docInteractionRetainer.add(controller)
-        val rootVc = UIApplication.sharedApplication.keyWindow?.rootViewController
-            ?: return@runCatching false
-        controller.presentPreviewAnimated(true)
-        true
+        opener.open(pathOrUri, mime)
     }.onFailure {
         println("MemegramDebug [FileSaver]: open failed: ${it.message}")
     }.getOrDefault(false)

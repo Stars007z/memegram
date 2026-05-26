@@ -20,6 +20,10 @@ class SessionManager(private val settings: Settings) {
     fun getAccessToken(): String? = settings.getStringOrNull("access_token")
     fun getDeviceType(): String? = settings.getStringOrNull("device_type")
 
+    fun updateDeviceType(deviceType: String) {
+        settings.putString("device_type", deviceType)
+    }
+
     val isLoggedIn: Boolean
         get() = getAccessToken() != null
 
@@ -36,6 +40,11 @@ class SessionManager(private val settings: Settings) {
         settings.remove("refresh_token")
         settings.remove("expires_at")
         settings.remove("device_type")
+    }
+
+    fun clearAuth() {
+        clear()
+        clearDeviceId()
     }
 
     fun saveProfile(username: String, bio: String) {

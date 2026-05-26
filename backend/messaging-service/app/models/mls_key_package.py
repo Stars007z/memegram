@@ -20,6 +20,7 @@ class MlsKeyPackage(Base):
     device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     key_package_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_package_ref: Mapped[bytes] = mapped_column(LargeBinary, unique=True, nullable=False)
+    signature_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     cipher_suite: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -30,5 +31,9 @@ class MlsKeyPackage(Base):
             "user_id",
             "device_id",
             postgresql_where=consumed_at.is_(None),
+        ),
+        Index(
+            "ix_key_packages_signature_key",
+            "signature_key",
         ),
     )

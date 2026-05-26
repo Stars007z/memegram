@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,7 +59,8 @@ import org.koin.compose.viewmodel.koinViewModel
 @Serializable data class ChatDetailRoute(
     val chatName: String,
     val conversationId: String = "",
-    val avatarMediaId: String = ""
+    val avatarMediaId: String = "",
+    val scrollToMessageId: Int? = null
 )
 @Serializable object AppearanceRoute
 @Serializable object NotificationsRoute
@@ -70,8 +74,6 @@ import org.koin.compose.viewmodel.koinViewModel
     val chatName: String,
     val avatarMediaId: String = ""
 )
-@Serializable object LinkedDevicesRoute
-@Serializable object AddDeviceRoute
 @Serializable object CreateGroupRoute
 @Serializable data class UserProfileRoute(val userId: String, val username: String)
 @Serializable data class GroupProfileRoute(val conversationId: String, val groupName: String)
@@ -128,7 +130,9 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun App() {
     LaunchedEffect(Unit) {
-        LibsodiumInitializer.initializeWithCallback { }
+        if (!LibsodiumInitializer.isInitialized()) {
+            LibsodiumInitializer.initializeWithCallback { }
+        }
     }
     remember {
         if (KoinPlatform.getKoinOrNull() == null) {
@@ -171,6 +175,10 @@ fun App() {
 
                 LaunchedEffect(navBackStackEntry) {
                     themeViewModel.refreshTheme()
+                    if (ManualBackTransition.skipNextPopAnimation) {
+                        withFrameNanos { }
+                        ManualBackTransition.skipNextPopAnimation = false
+                    }
                 }
 
                 val sessionRefresher = koinInject<SessionRefresher>()
@@ -184,6 +192,12 @@ fun App() {
 
                 val pendingPush by PushDeepLink.pending.collectAsState()
                 val sessionStateForPush by sessionRefresher.state.collectAsState()
+                LaunchedEffect(sessionStateForPush) {
+                    if (sessionStateForPush is SessionState.NoCredentials || sessionStateForPush is SessionState.Failed) {
+                        navController.navigate(AuthRoute) { popUpTo(0) { inclusive = true } }
+                    }
+                }
+
                 LaunchedEffect(pendingPush, sessionStateForPush, navBackStackEntry) {
                     val target = pendingPush ?: return@LaunchedEffect
                     if (sessionStateForPush !is SessionState.Authenticated) return@LaunchedEffect
@@ -215,16 +229,24 @@ fun App() {
                         ) + fadeOut(tween(280))
                     },
                     popEnterTransition = {
-                        slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            tween(280)
-                        ) + fadeIn(tween(280))
+                        if (ManualBackTransition.skipNextPopAnimation) {
+                            EnterTransition.None
+                        } else {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(280)
+                            ) + fadeIn(tween(280))
+                        }
                     },
                     popExitTransition = {
-                        slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            tween(280)
-                        ) + fadeOut(tween(280))
+                        if (ManualBackTransition.skipNextPopAnimation) {
+                            ExitTransition.None
+                        } else {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(280)
+                            ) + fadeOut(tween(280))
+                        }
                     },
                 ) {
                     composable<SplashRoute> {
@@ -259,9 +281,6 @@ fun App() {
                                     popUpTo<AuthRoute> { inclusive = true }
                                 }
                             },
-                            onAddDevice = {
-                                navController.navigate(AddDeviceRoute)
-                            },
                             viewModel = viewModel,
                             languageViewModel = languageViewModel,
                             themeViewModel = themeViewModel
@@ -281,12 +300,13 @@ fun App() {
                                     )
                                 ) { launchSingleTop = true }
                             },
-                            onNavigateToChat = { convId, chatName, avatarMediaId ->
+                            onNavigateToChat = { convId, chatName, avatarMediaId, messageId ->
                                 navController.navigate(
                                     ChatDetailRoute(
                                         chatName = chatName ?: strings.newChat,
                                         conversationId = convId,
-                                        avatarMediaId = avatarMediaId ?: ""
+                                        avatarMediaId = avatarMediaId ?: "",
+                                        scrollToMessageId = messageId
                                     )
                                 ) { launchSingleTop = true }
                             },
@@ -301,7 +321,6 @@ fun App() {
                             profileViewModel = profileViewModel,
                             onContactsClick = { navController.navigate(ContactsRoute) { launchSingleTop = true } },
                             onStorageClick = { navController.navigate(StorageRoute) { launchSingleTop = true } },
-                            onLinkedDevicesClick = { navController.navigate(LinkedDevicesRoute) { launchSingleTop = true } },
                             viewModel = viewModel
                         )
                     }
@@ -321,9 +340,10 @@ fun App() {
                         }
 
                         val savedStateHandle = backStackEntry.savedStateHandle
-                        val scrollToMessageId by savedStateHandle
+                        val savedScrollToMessageId by savedStateHandle
                             .getStateFlow<Int?>("scrollToMessageId", null)
                             .collectAsState()
+                        val scrollToMessageId = savedScrollToMessageId ?: route.scrollToMessageId
                         val replyToMessageId by savedStateHandle
                             .getStateFlow<Int?>("replyToMessageId", null)
                             .collectAsState()
@@ -359,6 +379,14 @@ fun App() {
                             replyToMessageId = replyToMessageId,
                             onScrollToConsumed = { savedStateHandle["scrollToMessageId"] = null },
                             onReplyToConsumed = { savedStateHandle["replyToMessageId"] = null },
+                            onSwipeBack = {
+                                ManualBackTransition.skipNextPopAnimation = true
+                                if (navController.previousBackStackEntry != null) {
+                                    navController.popBackStack()
+                                } else {
+                                    ManualBackTransition.skipNextPopAnimation = false
+                                }
+                            },
                             viewModel = viewModel
                         )
                     }
@@ -506,22 +534,6 @@ fun App() {
                             avatarMediaId = route.avatarMediaId,
                             onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
                             viewModel = viewModel
-                        )
-                    }
-                    composable<LinkedDevicesRoute> {
-                        LinkedDevicesScreen(
-                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() },
-                            onNavigateToScanQr = { navController.navigate(AddDeviceRoute) }
-                        )
-                    }
-                    composable<AddDeviceRoute> {
-                        AddDeviceScreen(
-                            onBack = { navController.popBackStack() },
-                            onSuccess = {
-                                navController.navigate(ChatsRoute) {
-                                    popUpTo(AuthRoute) { inclusive = true }
-                                }
-                            }
                         )
                     }
                     composable<CreateGroupRoute> {

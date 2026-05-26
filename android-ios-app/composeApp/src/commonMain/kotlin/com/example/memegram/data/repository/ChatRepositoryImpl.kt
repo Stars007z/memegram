@@ -7,13 +7,16 @@ import com.example.memegram.ChatStorageStat
 import com.example.memegram.MediaItemInfo
 import com.example.memegram.Message
 import com.example.memegram.MessageStatus
+import com.example.memegram.StoredChatMessage
 import com.example.memegram.StorageTypeStat
+import com.example.memegram.TranscriptionStatus
 import com.example.memegram.data.models.MarkAsReadRequest
 import com.example.memegram.database.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import com.russhwolf.settings.Settings
@@ -149,9 +152,6 @@ class ChatRepositoryImpl(
     }
 
     override fun getMessagesFlow(conversationId: String): Flow<List<Message>> {
-        val now = Clock.System.now().toEpochMilliseconds()
-        chatQueries.updateMessageAccessStats(now, conversationId)
-
         return chatQueries.selectMessagesByConversation(conversationId)
             .asFlow()
             .mapToList(ioDispatcher)
@@ -179,9 +179,62 @@ class ChatRepositoryImpl(
                         fileName           = entity.fileName,
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
-                        localFilePath      = entity.localFilePath
+                        localFilePath      = entity.localFilePath,
+                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                        transcribedText    = entity.transcribedText,
+                        transcribedLang    = entity.transcribedLang,
+                        transcriptionStatus = entity.transcriptionStatus
+                            ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
                     )
 
+                }
+            }
+            .onStart {
+                withContext(ioDispatcher) {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    runCatching { chatQueries.updateMessageAccessStats(now, conversationId) }
+                }
+            }
+    }
+
+    override fun getAllMessagesFlow(): Flow<List<StoredChatMessage>> {
+        return chatQueries.selectAllMessages()
+            .asFlow()
+            .mapToList(ioDispatcher)
+            .map { entities ->
+                entities.map { entity ->
+                    StoredChatMessage(
+                        conversationId = entity.conversationId,
+                        message = Message(
+                            id                 = entity.serverId.hashCode(),
+                            serverId           = entity.serverId,
+                            text               = entity.text,
+                            isOutgoing         = entity.isOutgoing == 1L,
+                            timestamp          = entity.timestamp,
+                            status             = try { MessageStatus.valueOf(entity.status) }
+                            catch (_: Exception) { MessageStatus.SENT },
+                            type               = entity.type,
+                            mediaId            = entity.mediaId,
+                            encryptionMetadata = entity.encryptionMetadata,
+                            localPreviewBytes  = entity.localPreviewBytes,
+                            mediaUrl           = entity.mediaUrl,
+                            senderUserId       = entity.senderUserId,
+                            groupId            = entity.groupId,
+                            originalText       = entity.originalText,
+                            translatedText     = entity.translatedText,
+                            translatedFromLang = entity.translatedFromLang,
+                            isTranslated       = entity.isTranslated == 1L,
+                            fileName           = entity.fileName,
+                            fileSize           = entity.fileSize,
+                            fileMime           = entity.fileMime,
+                            localFilePath      = entity.localFilePath,
+                            replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                            transcribedText    = entity.transcribedText,
+                            transcribedLang    = entity.transcribedLang,
+                            transcriptionStatus = entity.transcriptionStatus
+                                ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
+                        )
+                    )
                 }
             }
     }
@@ -204,7 +257,8 @@ class ChatRepositoryImpl(
                     message.groupId,
                     message.originalText, message.translatedText, message.translatedFromLang,
                     if (message.isTranslated) 1L else 0L,
-                    message.fileName, message.fileSize, message.fileMime, message.localFilePath
+                    message.fileName, message.fileSize, message.fileMime, message.localFilePath,
+                    message.replyToServerId?.takeIf { it.isNotBlank() }
                 )
                 chatQueries.updateExistingMessage(
                     message.text, message.status.name,
@@ -212,10 +266,11 @@ class ChatRepositoryImpl(
                     message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
                     message.senderUserId, message.groupId,
                     message.fileName, message.fileSize, message.fileMime, message.localFilePath,
+                    message.replyToServerId?.takeIf { it.isNotBlank() },
                     realId
                 )
-                runGarbageCollector(conversationId)
             }
+            runCatching { runGarbageCollector(conversationId) }
         }
     }
 
@@ -250,7 +305,8 @@ class ChatRepositoryImpl(
                         fileName           = message.fileName,
                         fileSize           = message.fileSize,
                         fileMime           = message.fileMime,
-                        localFilePath      = message.localFilePath
+                        localFilePath      = message.localFilePath,
+                        replyToServerId    = message.replyToServerId?.takeIf { it.isNotBlank() }
                     )
                     chatQueries.updateExistingMessage(
                         message.text, message.status.name,
@@ -258,11 +314,12 @@ class ChatRepositoryImpl(
                         message.localPreviewBytes, message.mediaUrl, now, message.timestamp,
                         message.senderUserId, message.groupId,
                         message.fileName, message.fileSize, message.fileMime, message.localFilePath,
+                        message.replyToServerId?.takeIf { it.isNotBlank() },
                         realId
                     )
                 }
-                runGarbageCollector(conversationId)
             }
+            runCatching { runGarbageCollector(conversationId) }
         }
     }
 
@@ -343,7 +400,12 @@ class ChatRepositoryImpl(
                         fileName           = entity.fileName,
                         fileSize           = entity.fileSize,
                         fileMime           = entity.fileMime,
-                        localFilePath      = entity.localFilePath
+                        localFilePath      = entity.localFilePath,
+                        replyToServerId    = entity.replyToServerId?.takeIf { it.isNotBlank() },
+                        transcribedText    = entity.transcribedText,
+                        transcribedLang    = entity.transcribedLang,
+                        transcriptionStatus = entity.transcriptionStatus
+                            ?.let { runCatching { TranscriptionStatus.valueOf(it) }.getOrNull() }
                     )
                 }
         }
@@ -377,6 +439,33 @@ class ChatRepositoryImpl(
     override suspend fun showCachedTranslation(serverId: String) {
         withContext(ioDispatcher) {
             chatQueries.showCachedTranslation(serverId)
+        }
+    }
+
+    // ── Voice transcription ──────────────────────────────────────────
+
+    override suspend fun updateMessageTranscription(
+        serverId: String,
+        transcribedText: String,
+        transcribedLang: String?
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.updateMessageTranscription(transcribedText, transcribedLang, serverId)
+        }
+    }
+
+    override suspend fun setTranscriptionStatus(
+        serverId: String,
+        status: TranscriptionStatus?
+    ) {
+        withContext(ioDispatcher) {
+            chatQueries.setTranscriptionStatus(status?.name, serverId)
+        }
+    }
+
+    override suspend fun clearTranscription(serverId: String) {
+        withContext(ioDispatcher) {
+            chatQueries.clearTranscription(serverId)
         }
     }
 

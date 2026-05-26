@@ -111,6 +111,13 @@ def contacts_client() -> MagicMock:
 
 
 @pytest.fixture
+def auth_client() -> MagicMock:
+    client = MagicMock()
+    client.get_active_device_ids = AsyncMock(return_value=[])
+    return client
+
+
+@pytest.fixture
 def redis_mock() -> MagicMock:
     redis = MagicMock()
     redis.get = AsyncMock(return_value=None)
@@ -133,6 +140,7 @@ def service(
     commit_repo,
     message_repo,
     contacts_client,
+    auth_client,
     redis_mock,
     stream_mock,
 ) -> ConversationServiceImpl:
@@ -144,6 +152,7 @@ def service(
         commit_repo,
         message_repo,
         contacts_client,
+        auth_client,
         redis_mock,
         stream_mock,
     )
@@ -264,6 +273,7 @@ class TestCreateGroup:
         # Assert
         assert result.type == "group"
         assert len(result.members) == 2
+        assert result.mls_group.current_epoch == 1
         mls_group_repo.create.assert_awaited_once()
         welcome_repo.create.assert_awaited_once()
 
@@ -281,7 +291,65 @@ class TestCreateGroup:
                 creator_user_id=uuid.uuid4(),
                 creator_device_id=uuid.uuid4(),
                 name="T",
+                members=[(uuid.uuid4(), [(uuid.uuid4(), b"w")])],
+            )
+
+    async def test_creator_welcomes_do_not_duplicate_owner(
+        self,
+        service,
+        conversation_repo,
+        member_repo,
+        welcome_repo,
+    ):
+        creator = uuid.uuid4()
+        member = uuid.uuid4()
+        conversation_repo.create.return_value = _make_conv(type="group", name="Team")
+        member_repo.create.side_effect = [
+            _make_member(user_id=creator, role="owner"),
+            _make_member(user_id=member, role="member"),
+        ]
+
+        result = await service.create_group(
+            creator_user_id=creator,
+            creator_device_id=uuid.uuid4(),
+            name="Team",
+            members=[
+                (member, [(uuid.uuid4(), b"member-welcome")]),
+                (creator, [(uuid.uuid4(), b"creator-other-device-welcome")]),
+            ],
+        )
+
+        assert len(result.members) == 2
+        assert result.mls_group.current_epoch == 1
+        assert member_repo.create.await_count == 2
+        assert welcome_repo.create.await_count == 2
+
+    async def test_rejects_member_without_welcomes(self, service):
+        with pytest.raises(ValueError, match="Missing MLS welcomes"):
+            await service.create_group(
+                creator_user_id=uuid.uuid4(),
+                creator_device_id=uuid.uuid4(),
+                name="T",
                 members=[(uuid.uuid4(), [])],
+            )
+
+    async def test_rejects_missing_active_device_welcome(self, service, auth_client):
+        creator = uuid.uuid4()
+        creator_device = uuid.uuid4()
+        member = uuid.uuid4()
+        member_device_with_welcome = uuid.uuid4()
+        member_device_missing = uuid.uuid4()
+        auth_client.get_active_device_ids.side_effect = lambda user_id: {
+            creator: [creator_device],
+            member: [member_device_with_welcome, member_device_missing],
+        }.get(user_id, [])
+
+        with pytest.raises(ValueError, match="missing_welcome_for_active_devices"):
+            await service.create_group(
+                creator_user_id=creator,
+                creator_device_id=creator_device,
+                name="T",
+                members=[(member, [(member_device_with_welcome, b"w")])],
             )
 
 

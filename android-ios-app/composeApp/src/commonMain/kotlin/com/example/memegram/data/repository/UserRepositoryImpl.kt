@@ -38,10 +38,10 @@ class UserRepositoryImpl(
         if (!response.success) {
             throw Exception("Server returned success=false")
         }
-        runCatching { clientDataWiper.wipeAll() }
-            .onFailure { println("MemegramDebug [AccountDelete] wipeAll threw despite catches: ${it.message}") }
         runCatching { sessionRefresher.markNoCredentials() }
             .onFailure { println("MemegramDebug [AccountDelete] markNoCredentials failed: ${it.message}") }
+        runCatching { clientDataWiper.wipeAll() }
+            .onFailure { println("MemegramDebug [AccountDelete] wipeAll threw despite catches: ${it.message}") }
         _profile.value = null
         true
     }

@@ -7,6 +7,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.onDownload
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.isSuccess
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -19,18 +20,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
 
-/**
- * Manages the single NLLB-200 translation model.
- *
- * Storage layout: {app_files}/translation_models/nllb-200-distilled-600M/
- *   - encoder_model.onnx
- *   - decoder_model.onnx
- *   - tokenizer.json
- *   - config.json
- *
- * The model is downloaded on demand from Cloudflare R2:
- *   GET {modelBaseUrl}/nllb-200-distilled-600M.zip
- */
 class NllbModelManager(
     private val context: Context,
     private val httpClient: HttpClient,
@@ -39,11 +28,6 @@ class NllbModelManager(
 
     companion object {
         private const val TAG = "NLLB"
-        /**
-         * Minimum free RAM (in bytes) required to safely run NLLB translation.
-         * With sequential session loading, peak memory is ~700MB (decoder only,
-         * encoder is closed before decoder loads). 512MB safety margin.
-         */
         private const val MIN_FREE_RAM_BYTES = 512L * 1024 * 1024
         private const val MODEL_DIR_NAME = "nllb-200-distilled-600M"
     }
@@ -58,11 +42,6 @@ class NllbModelManager(
         modelsDir.mkdirs()
     }
 
-    /**
-     * Get a ready-to-use translation engine.
-     * Returns null if the model is not available, or RAM is too low.
-     * Note: this does NOT download — call [downloadModel] explicitly first.
-     */
     suspend fun getEngine(): NllbTranslationEngine? {
         Log.d(TAG, "getEngine(): called, cachedEngine=${cachedEngine != null}")
 
@@ -105,19 +84,16 @@ class NllbModelManager(
         }
     }
 
-    /** Check if the model is fully present on disk. */
     fun isModelAvailable(): Boolean {
         return isModelComplete(File(modelsDir, modelDirName))
     }
 
-    /** Approximate model size in bytes. Returns 0 if not downloaded. */
     fun getModelSize(): Long {
         val dir = File(modelsDir, modelDirName)
         if (!dir.exists()) return 0
         return dir.listFiles()?.sumOf { it.length() } ?: 0
     }
 
-    /** Delete the model to free disk space. */
     suspend fun deleteModel() = withContext(Dispatchers.IO) {
         loadMutex.withLock {
             cachedEngine?.close()
@@ -127,24 +103,17 @@ class NllbModelManager(
         if (dir.exists()) dir.deleteRecursively()
     }
 
-    /** Release the loaded engine and free native memory. */
-    fun release() {
-        val hadEngine = cachedEngine != null
-        cachedEngine?.close()
-        cachedEngine = null
-        Log.d(TAG, "release(): hadEngine=$hadEngine")
+    suspend fun release() {
+        loadMutex.withLock {
+            val hadEngine = cachedEngine != null
+            cachedEngine?.close()
+            cachedEngine = null
+            Log.d(TAG, "release(): hadEngine=$hadEngine")
+        }
     }
 
     fun canLoadModel(): Boolean = isModelAvailable() && hasEnoughMemory()
 
-    /**
-     * Stream the NLLB model ZIP from R2 and unzip into [modelsDir].
-     * Emits incremental [ModelDownloadProgress]. Cancellation deletes the
-     * partially extracted directory.
-     *
-     * Uses [channelFlow] because Ktor's onDownload callback runs in a
-     * different coroutine context than a plain `flow { … }` builder.
-     */
     fun downloadModel(): Flow<ModelDownloadProgress> = channelFlow {
         if (isModelAvailable()) {
             val size = getModelSize()
@@ -173,6 +142,9 @@ class NllbModelManager(
                     }
                 }
             }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    error("HTTP ${response.status.value}: ${response.status.description}")
+                }
                 response.bodyAsChannel().toInputStream().use { input ->
                     FileOutputStream(tmpZip).use { fos -> input.copyTo(fos) }
                 }

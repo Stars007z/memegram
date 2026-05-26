@@ -48,6 +48,7 @@ fun UserProfileScreen(
     val isBlockedByPeer by viewModel.isBlockedByPeer.collectAsState()
     val isContact by viewModel.isContact.collectAsState()
     val isDeleted = profile?.isDeleted == true
+    val isProfileContentReady = profile != null && (isDeleted || isContact != null)
     val snackbarHostState = remember { SnackbarHostState() }
     var showCannotMessageDialog by remember { mutableStateOf(false) }
 
@@ -81,13 +82,18 @@ fun UserProfileScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (isLoading && profile == null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (isLoading && !isProfileContentReady) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
             }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
 
             Box(
                 modifier = Modifier.fillMaxWidth().aspectRatio(2.5f),
@@ -232,7 +238,7 @@ fun UserProfileScreen(
                     Text(s.sendMessage, style = MaterialTheme.typography.bodySmall)
                 }
 
-                if (!isDeleted && !isContact) {
+                if (!isDeleted && isContact == false) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         FilledTonalIconButton(
                             onClick = { viewModel.addToContacts() },
@@ -265,6 +271,7 @@ fun UserProfileScreen(
                         color = if (isBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                     )
                 }
+            }
             }
         }
     }

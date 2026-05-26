@@ -36,10 +36,8 @@ class NotificationsViewModel(
                 initialValue = NotificationsUiState(),
             )
 
-    val previewEnabled: StateFlow<Boolean> = prefs.previewEnabled
     val vibrationStrength: StateFlow<Int> = prefs.vibrationStrength
 
-    fun setPreviewEnabled(enabled: Boolean) = prefs.setPreviewEnabled(enabled)
     fun setVibrationStrength(strength: Int) = prefs.setVibrationStrength(strength)
 
     fun toggleMute(conversationId: String, currentMuteUntil: Long) {

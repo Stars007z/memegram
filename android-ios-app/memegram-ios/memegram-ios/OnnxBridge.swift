@@ -240,7 +240,7 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
             guard let entry = sessions[handle] else {
                 lock.unlock()
                 print("[OnnxBridge] run: invalid handle \(handle)")
-                return KotlinArray<OnnxOutput>(size: 0) { _ in OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0)) }
+                return emptyOutputs()
             }
             let session = entry.session
             let persistentInt64 = entry.persistentInt64
@@ -284,44 +284,99 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
                     )
                 }
 
-                let result = KotlinArray<OnnxOutput>(size: Int32(outNames.count)) { idx in
-                    let name = outNames[Int(truncating: idx)]
-                    guard let v = outputsDict[name] else {
-                        print("[OnnxBridge] missing output: \(name)")
-                        return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
-                    }
-                    do {
-                        let info = try v.tensorTypeAndShapeInfo()
-                        let shape = info.shape.map { Int64(truncating: $0) }
-                        let data = try v.tensorData() as Data
-                        let count = data.count / MemoryLayout<Float>.size
-                        let kotlinFloats = KotlinFloatArray(size: Int32(count))
-                        if count > 0 {
-                            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-                                let src = raw.bindMemory(to: Float.self).baseAddress!
-                                for j in 0..<count { kotlinFloats.set(index: Int32(j), value: src[j]) }
-                            }
-                        }
-                        let shapeKArr = KotlinLongArray(size: Int32(shape.count))
-                        for (j, s) in shape.enumerated() { shapeKArr.set(index: Int32(j), value: s) }
-                        return OnnxOutput(data: kotlinFloats, shape: shapeKArr)
-                    } catch {
-                        print("[OnnxBridge] output extract error: \(error)")
-                        return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
-                    }
-                }
-                return result
+                return buildOutputs(outputsDict: outputsDict, outNames: outNames)
             } catch {
                 print("[OnnxBridge] run error: \(error)")
-                return KotlinArray<OnnxOutput>(size: 0) { _ in OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0)) }
+                return emptyOutputs()
             }
         }
         #else
-        return KotlinArray<OnnxOutput>(size: 0) { _ in OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0)) }
+        return emptyOutputs()
         #endif
     }
 
+    func runWithUInt8(
+        handle: Int64,
+        uint8Names: KotlinArray<NSString>,
+        uint8Data: KotlinArray<KotlinByteArray>,
+        uint8Shapes: KotlinArray<KotlinLongArray>,
+        outputNames: KotlinArray<NSString>
+    ) -> KotlinArray<OnnxOutput> {
+        #if canImport(OnnxRuntimeBindings)
+        return autoreleasepool { () -> KotlinArray<OnnxOutput> in
+            lock.lock()
+            guard let entry = sessions[handle] else {
+                lock.unlock()
+                print("[OnnxBridge] runWithUInt8: invalid handle \(handle)")
+                return emptyOutputs()
+            }
+            let session = entry.session
+            let persistentInt64 = entry.persistentInt64
+            let persistentFloat = entry.persistentFloat
+            lock.unlock()
+
+            do {
+                var inputs: [String: ORTValue] = [:]
+                var transientBacking: [NSMutableData] = []
+                let uint8Count = Int(uint8Names.size)
+                inputs.reserveCapacity(persistentInt64.count + persistentFloat.count + uint8Count)
+                transientBacking.reserveCapacity(uint8Count)
+                for (k, v) in persistentInt64 { inputs[k] = v }
+                for (k, v) in persistentFloat { inputs[k] = v }
+
+                for i in 0..<uint8Count {
+                    let name = uint8Names.get(index: Int32(i))! as String
+                    let arr = uint8Data.get(index: Int32(i))!
+                    let shape = uint8Shapes.get(index: Int32(i))!
+                    let (value, backing) = try buildUInt8Tensor(array: arr, shape: shape)
+                    inputs[name] = value
+                    transientBacking.append(backing)
+                }
+
+                let outNames: [String] = (0..<Int(outputNames.size)).map { outputNames.get(index: Int32($0))! as String }
+                let outSet = Set(outNames)
+                let outputsDict = try withExtendedLifetime(transientBacking) {
+                    try session.run(
+                        withInputs: inputs,
+                        outputNames: outSet,
+                        runOptions: nil
+                    )
+                }
+
+                return buildOutputs(outputsDict: outputsDict, outNames: outNames)
+            } catch {
+                print("[OnnxBridge] runWithUInt8 error: \(error)")
+                return emptyOutputs()
+            }
+        }
+        #else
+        return emptyOutputs()
+        #endif
+    }
+
+    private func emptyOutputs() -> KotlinArray<OnnxOutput> {
+        KotlinArray<OnnxOutput>(size: 0) { _ in
+            OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
+        }
+    }
+
     #if canImport(OnnxRuntimeBindings)
+    private func buildOutputs(outputsDict: [String: ORTValue], outNames: [String]) -> KotlinArray<OnnxOutput> {
+        KotlinArray<OnnxOutput>(size: Int32(outNames.count)) { idx in
+            let name = outNames[Int(truncating: idx)]
+            guard let value = outputsDict[name] else {
+                print("[OnnxBridge] missing output: \(name)")
+                return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
+            }
+            do {
+                return try self.extractFloatOutput(value: value)
+            } catch {
+                print("[OnnxBridge] output extract error: \(error)")
+                return OnnxOutput(data: KotlinFloatArray(size: 0), shape: KotlinLongArray(size: 0))
+            }
+        }
+    }
+
     private func buildInt64Tensor(array: KotlinLongArray, shape: KotlinLongArray) throws -> (ORTValue, NSMutableData) {
         let count = Int(array.size)
         let buf = NSMutableData(length: count * MemoryLayout<Int64>.size)!
@@ -340,6 +395,90 @@ final class OnnxBridge: NSObject, OnnxBridgeDelegate {
         let shapeArr: [NSNumber] = (0..<Int(shape.size)).map { NSNumber(value: shape.get(index: Int32($0))) }
         let value = try ORTValue(tensorData: buf, elementType: .float, shape: shapeArr)
         return (value, buf)
+    }
+
+    private func buildUInt8Tensor(array: KotlinByteArray, shape: KotlinLongArray) throws -> (ORTValue, NSMutableData) {
+        let count = Int(array.size)
+        let buf = NSMutableData(length: count)!
+        let dst = buf.mutableBytes.bindMemory(to: Int8.self, capacity: count)
+        for i in 0..<count { dst[i] = array.get(index: Int32(i)) }
+        let shapeArr: [NSNumber] = (0..<Int(shape.size)).map { NSNumber(value: shape.get(index: Int32($0))) }
+        let uint8Type = ORTTensorElementDataType(rawValue: 3)!
+        let value = try ORTValue(tensorData: buf, elementType: uint8Type, shape: shapeArr)
+        return (value, buf)
+    }
+
+    private func extractFloatOutput(value: ORTValue) throws -> OnnxOutput {
+        let info = try value.tensorTypeAndShapeInfo()
+        let shape = info.shape.map { Int64(truncating: $0) }
+        let data = try value.tensorData() as Data
+        let shapedCount = tensorElementCount(shape)
+        let preferFloat32 = shapedCount > 0 && data.count == shapedCount * MemoryLayout<Float>.size
+        let preferFloat16 = shapedCount > 0 && data.count == shapedCount * MemoryLayout<UInt16>.size
+        let count: Int
+        let kotlinFloats: KotlinFloatArray
+
+        if preferFloat32 || (!preferFloat16 && data.count % MemoryLayout<Float>.size == 0) {
+            count = data.count / MemoryLayout<Float>.size
+            kotlinFloats = KotlinFloatArray(size: Int32(count))
+            if count > 0 {
+                data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                    let src = raw.bindMemory(to: Float.self).baseAddress!
+                    for j in 0..<count { kotlinFloats.set(index: Int32(j), value: src[j]) }
+                }
+            }
+        } else {
+            count = data.count / MemoryLayout<UInt16>.size
+            kotlinFloats = KotlinFloatArray(size: Int32(count))
+            if count > 0 {
+                data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                    let src = raw.bindMemory(to: UInt16.self).baseAddress!
+                    for j in 0..<count { kotlinFloats.set(index: Int32(j), value: fp16ToFloat(src[j])) }
+                }
+            }
+        }
+
+        let shapeKArr = KotlinLongArray(size: Int32(shape.count))
+        for (j, s) in shape.enumerated() { shapeKArr.set(index: Int32(j), value: s) }
+        return OnnxOutput(data: kotlinFloats, shape: shapeKArr)
+    }
+
+    private func tensorElementCount(_ shape: [Int64]) -> Int {
+        if shape.isEmpty { return 1 }
+        var count = 1
+        for dim in shape {
+            if dim <= 0 { return 0 }
+            count *= Int(dim)
+        }
+        return count
+    }
+
+    private func fp16ToFloat(_ half: UInt16) -> Float {
+        let sign = UInt32(half & 0x8000) << 16
+        let exponent = Int((half & 0x7C00) >> 10)
+        let mantissa = UInt32(half & 0x03FF)
+        let bits: UInt32
+
+        if exponent == 0 {
+            if mantissa == 0 {
+                bits = sign
+            } else {
+                var normalizedMantissa = mantissa
+                var normalizedExponent = -14
+                while (normalizedMantissa & 0x0400) == 0 {
+                    normalizedMantissa <<= 1
+                    normalizedExponent -= 1
+                }
+                normalizedMantissa &= 0x03FF
+                bits = sign | (UInt32(normalizedExponent + 127) << 23) | (normalizedMantissa << 13)
+            }
+        } else if exponent == 0x1F {
+            bits = sign | 0x7F800000 | (mantissa << 13)
+        } else {
+            bits = sign | (UInt32(exponent + 112) << 23) | (mantissa << 13)
+        }
+
+        return Float(bitPattern: bits)
     }
     #endif
 }

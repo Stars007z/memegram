@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -59,6 +60,7 @@ class AuthViewModel(
     fun register(username: String, inviteCode: String) {
         viewModelScope.launch {
             _localOverride.value = AuthState.Loading
+            var sessionSaved = false
             try {
                 mlsManager.clearAll()
                 keyManager.getOrCreateKeyPair()
@@ -68,18 +70,26 @@ class AuthViewModel(
                     username = username,
                     inviteCode = inviteCode,
                     deviceId = deviceId,
-                    deviceName = "KMP Device",
+                    deviceName = getDeviceModelName(),
                     identityKeyPub = pubKey,
                     initKeyPub = pubKey,
                     credentialData = pubKey
                 )
                 val result = api.register(req)
                 sessionManager.save(result)
+                sessionSaved = true
                 initMlsAndUploadKeys()
                 notificationsRepository.registerCurrentDeviceToken()
                 sessionRefresher.markAuthenticated()
                 _localOverride.value = null
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (sessionSaved) {
+                    sessionManager.clearAuth()
+                    mlsManager.clearAll()
+                    sessionRefresher.markNoCredentials()
+                }
                 _localOverride.value = AuthState.Error(e.message ?: "Ошибка регистрации")
             }
         }
@@ -106,7 +116,7 @@ class AuthViewModel(
             if (countOnServer < MlsManager.MIN_KEY_PACKAGES) {
                 val packages = mlsManager.generateKeyPackages(MlsManager.BATCH_KEY_PACKAGES)
                 mlsManager.flushState()
-                api.uploadKeyPackages(packages)
+                api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
                 sessionManager.clearPendingKpCleanup()
             }
         }

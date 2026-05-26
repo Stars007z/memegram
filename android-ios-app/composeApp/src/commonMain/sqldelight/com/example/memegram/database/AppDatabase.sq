@@ -36,7 +36,11 @@ CREATE TABLE messageEntity (
     fileName             TEXT,
     fileSize             INTEGER,
     fileMime             TEXT,
-    localFilePath        TEXT
+    localFilePath        TEXT,
+    replyToServerId      TEXT,
+    transcribedText      TEXT,
+    transcribedLang      TEXT,
+    transcriptionStatus  TEXT
 );
 
 CREATE INDEX messageEntity_conversationId_idx ON messageEntity(conversationId);
@@ -77,15 +81,18 @@ UPDATE chatEntity SET muteUntil = ? WHERE conversationId IN ?;
 selectMessagesByConversation:
 SELECT * FROM messageEntity WHERE conversationId = ? ORDER BY timestamp ASC;
 
+selectAllMessages:
+SELECT * FROM messageEntity ORDER BY timestamp DESC;
+
 insertMessage:
 INSERT OR IGNORE INTO messageEntity(
     serverId, conversationId, text, isOutgoing, timestamp, status,
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
     originalText, translatedText, translatedFromLang, isTranslated,
-    fileName, fileSize, fileMime, localFilePath
+    fileName, fileSize, fileMime, localFilePath, replyToServerId
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMessagesByConversation:
 DELETE FROM messageEntity WHERE conversationId = ?;
@@ -132,9 +139,9 @@ INSERT OR IGNORE INTO messageEntity(
     type, mediaId, encryptionMetadata, localPreviewBytes, mediaUrl,
     lastAccessedAt, accessCount, senderUserId, groupId,
     originalText, translatedText, translatedFromLang, isTranslated,
-    fileName, fileSize, fileMime, localFilePath
+    fileName, fileSize, fileMime, localFilePath, replyToServerId
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateExistingMessage:
 UPDATE messageEntity
@@ -145,7 +152,8 @@ SET text = CASE WHEN isTranslated = 1 THEN text ELSE ? END,
     fileName = COALESCE(?, fileName),
     fileSize = COALESCE(?, fileSize),
     fileMime = COALESCE(?, fileMime),
-    localFilePath = COALESCE(?, localFilePath)
+    localFilePath = COALESCE(?, localFilePath),
+    replyToServerId = COALESCE(?, replyToServerId)
 WHERE serverId = ?;
 
 updateMessageLocalFile:
@@ -200,6 +208,25 @@ showCachedTranslation:
 UPDATE messageEntity
 SET text = translatedText, isTranslated = 1
 WHERE serverId = ? AND translatedText IS NOT NULL;
+
+updateMessageTranscription:
+UPDATE messageEntity
+SET transcribedText = ?,
+    transcribedLang = ?,
+    transcriptionStatus = 'DONE'
+WHERE serverId = ?;
+
+setTranscriptionStatus:
+UPDATE messageEntity
+SET transcriptionStatus = ?
+WHERE serverId = ?;
+
+clearTranscription:
+UPDATE messageEntity
+SET transcribedText = NULL,
+    transcribedLang = NULL,
+    transcriptionStatus = NULL
+WHERE serverId = ?;
 
 storageByType:
 WITH normalized AS (

@@ -5,11 +5,13 @@ from datetime import datetime, timedelta
 import jwt
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database.redis import RedisClient, delete_challenge, get_challenge, store_challenge
 from app.logging_config import get_logger
+from app.models.session import Session as SessionModel
 from app.repositories.device_repo import DeviceRepository
 from app.repositories.invite_repo import InviteRepository
 from app.repositories.session_repo import SessionRepository
@@ -279,7 +281,7 @@ class AuthService:
         await self.session_repo.update(session, {"is_revoked": True, "last_used": datetime.utcnow()})
 
         redis = await RedisClient.get_instance()
-        await redis.delete(f"session:valid:{access_token}")
+        await redis.delete(f"session:valid:{access_token}", f"session:version:{session.device_id}")
 
         logger.info("auth.logout.success", device_id=str(session.device_id))
 
@@ -380,3 +382,16 @@ class AuthService:
             await redis.setex(cache_key, ttl, json.dumps(result))
 
         return result
+
+    async def invalidate_device_tokens(self, device_id: str) -> int:
+        device_uuid = uuid.UUID(device_id)
+        result = await self.session.execute(
+            select(SessionModel.access_token).where(SessionModel.device_id == device_uuid)
+        )
+        tokens = list(result.scalars().all())
+        if not tokens:
+            return 0
+
+        redis = await RedisClient.get_instance()
+        await redis.delete(*(f"session:valid:{token}" for token in tokens))
+        return len(tokens)

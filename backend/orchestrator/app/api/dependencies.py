@@ -16,6 +16,7 @@ from app.core.use_cases.auth.login_init import LoginInitUseCase
 from app.core.use_cases.auth.register import RegisterUseCase
 
 bearer = HTTPBearer()
+PRIMARY_LIKE_DEVICE_TYPES = {"primary", "admin"}
 
 
 def _container(request: Request) -> Container:
@@ -69,10 +70,14 @@ async def get_current_session(
 
 
 def require_device_type(*allowed_types: str):
+    effective_allowed = set(allowed_types)
+    if "primary" in effective_allowed:
+        effective_allowed.update(PRIMARY_LIKE_DEVICE_TYPES)
+
     async def dependency(
         session: SessionContext = Depends(get_current_session),
     ) -> SessionContext:
-        if session.device_type not in allowed_types:
+        if session.device_type not in effective_allowed:
             raise HTTPException(
                 status_code=403,
                 detail=f"This action requires device type: {', '.join(allowed_types)}",

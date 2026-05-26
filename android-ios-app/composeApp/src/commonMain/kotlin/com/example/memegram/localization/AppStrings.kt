@@ -44,6 +44,9 @@ interface AppStrings {
     val publicKey: String
     val start: String
     val nothingFound: String
+    val chatResults: String
+    val messageResults: String
+    fun searchResultsCount(n: Int): String
     val youPrefix: String
 
     val gallery: String
@@ -68,6 +71,8 @@ interface AppStrings {
     val resendUnsupported: String
     val clearHistory: String
     val clearHistoryMessage: String
+    val clearHistoryForEveryoneMessage: String
+    val clearHistoryForEveryoneNotAllowed: String
     val onlyForMe: String
     val forAll: String
     val deleteMessageTitle: String
@@ -183,6 +188,10 @@ interface AppStrings {
     val privacySection: String
     val autoDeleteSection: String
     val deleteAccountAction: String
+    val nsfwFilter: String
+    val nsfwFilterDescription: String
+    val nsfwModel: String
+    val nsfwModelDescription: String
 
     val visEverybody: String
     val visContacts: String
@@ -205,8 +214,6 @@ interface AppStrings {
     val disable: String
     val disabled: String
     val enabled: String
-    val notificationPreview: String
-    val notificationPreviewDesc: String
     val vibration: String
     val vibrationOff: String
     val vibrationLight: String
@@ -319,6 +326,15 @@ interface AppStrings {
     val modelNotDownloaded: String
     val modelDownloadFailed: String
 
+    val transcriptionModel: String
+    val transcriptionModelDescription: String
+    val transcribe: String
+    val transcribing: String
+    val showTranscription: String
+    val hideTranscription: String
+    val transcriptionFailed: String
+    val transcriptionNoSpeech: String
+
     val linkedDevicesTitle: String
     val refresh: String
     val addDeviceByQr: String
@@ -329,6 +345,9 @@ interface AppStrings {
     val revoke: String
     val revokeDeviceTitle: String
     fun revokeDeviceMessage(name: String): String
+    val makePrimary: String
+    val transferPrimaryTitle: String
+    fun transferPrimaryMessage(name: String): String
     val decline: String
     val allow: String
     val addDevice: String
@@ -433,6 +452,9 @@ object RuStrings : AppStrings {
     override val publicKey = "Публичный ключ"
     override val start = "Начать"
     override val nothingFound = "Ничего не найдено"
+    override val chatResults = "Чаты"
+    override val messageResults = "Сообщения"
+    override fun searchResultsCount(n: Int) = "$n совпадений"
     override val youPrefix = "Вы: "
 
     override val gallery = "Галерея"
@@ -457,6 +479,8 @@ object RuStrings : AppStrings {
     override val resendUnsupported = "Повторная отправка медиа недоступна. Удалите сообщение и отправьте файл заново."
     override val clearHistory = "Очистить историю"
     override val clearHistoryMessage = "Выберите, для кого очистить историю сообщений."
+    override val clearHistoryForEveryoneMessage = "Вся история сообщений будет удалена для всех участников. Это действие нельзя отменить."
+    override val clearHistoryForEveryoneNotAllowed = "Нельзя очистить всю историю для всех: вы можете удалять только свои сообщения, а в группе - все сообщения только если вы администратор."
     override val onlyForMe = "Только у меня"
     override val forAll = "У всех"
     override val deleteMessageTitle = "Удалить сообщение?"
@@ -573,6 +597,10 @@ object RuStrings : AppStrings {
     override val privacySection = "Приватность"
     override val autoDeleteSection = "Авто-удаление"
     override val deleteAccountAction = "Удалить аккаунт"
+    override val nsfwFilter = "Фильтр NSFW"
+    override val nsfwFilterDescription = "Пропускает входящие фото через модель до показа на экране."
+    override val nsfwModel = "Модель цензуры изображений"
+    override val nsfwModelDescription = "CLIP + NudeNet + anime detector. Скачиваются один раз с серверов Memegram."
 
     override val visEverybody = "Все"
     override val visContacts = "Контакты"
@@ -595,8 +623,6 @@ object RuStrings : AppStrings {
     override val disable = "Отключить"
     override val disabled = "Отключено"
     override val enabled = "Включено"
-    override val notificationPreview = "Показывать текст сообщения"
-    override val notificationPreviewDesc = "Если выключено, в уведомлении не будет видно содержимое"
     override val vibration = "Вибрация"
     override val vibrationOff = "Выкл."
     override val vibrationLight = "Слабая"
@@ -707,6 +733,14 @@ object RuStrings : AppStrings {
     override val modelReady = "Модель готова"
     override val modelNotDownloaded = "Модель не загружена"
     override val modelDownloadFailed = "Не удалось загрузить модель"
+    override val transcriptionModel = "Модель распознавания речи"
+    override val transcriptionModelDescription = "Whisper Small. Скачивается один раз с серверов Memegram."
+    override val transcribe = "Распознать речь"
+    override val transcribing = "Распознавание…"
+    override val showTranscription = "Показать текст"
+    override val hideTranscription = "Скрыть текст"
+    override val transcriptionFailed = "Не удалось распознать"
+    override val transcriptionNoSpeech = "В голосовом нет слов"
     override val linkedDevicesTitle = "Связанные устройства"
     override val refresh = "Обновить"
     override val addDeviceByQr = "Добавить устройство по QR"
@@ -717,6 +751,9 @@ object RuStrings : AppStrings {
     override val revoke = "Отозвать"
     override val revokeDeviceTitle = "Отозвать устройство?"
     override fun revokeDeviceMessage(name: String) = "'$name' будет удалено из вашего аккаунта."
+    override val makePrimary = "Сделать основным"
+    override val transferPrimaryTitle = "Передать основное устройство?"
+    override fun transferPrimaryMessage(name: String) = "'$name' сможет добавлять и отзывать устройства."
     override val decline = "Отклонить"
     override val allow = "Разрешить"
     override val addDevice = "Добавить устройство"
@@ -826,6 +863,9 @@ object EnStrings : AppStrings {
     override val publicKey = "Public key"
     override val start = "Start"
     override val nothingFound = "Nothing found"
+    override val chatResults = "Chats"
+    override val messageResults = "Messages"
+    override fun searchResultsCount(n: Int) = "$n result${if (n == 1) "" else "s"}"
     override val youPrefix = "You: "
 
     override val gallery = "Gallery"
@@ -850,6 +890,8 @@ object EnStrings : AppStrings {
     override val resendUnsupported = "Resending media is not supported. Delete the message and send the file again."
     override val clearHistory = "Clear history"
     override val clearHistoryMessage = "Choose who to clear message history for."
+    override val clearHistoryForEveryoneMessage = "The entire message history will be deleted for everyone. This cannot be undone."
+    override val clearHistoryForEveryoneNotAllowed = "Cannot clear the whole history for everyone: you can only delete your own messages, or all group messages if you are an admin."
     override val onlyForMe = "Only for me"
     override val forAll = "For everyone"
     override val deleteMessageTitle = "Delete message?"
@@ -966,6 +1008,10 @@ object EnStrings : AppStrings {
     override val privacySection = "Privacy"
     override val autoDeleteSection = "Auto-delete"
     override val deleteAccountAction = "Delete account"
+    override val nsfwFilter = "NSFW filter"
+    override val nsfwFilterDescription = "Runs incoming photos through the model before showing them."
+    override val nsfwModel = "Image censorship model"
+    override val nsfwModelDescription = "CLIP + NudeNet + anime detector. Downloaded once from Memegram servers."
 
     override val visEverybody = "Everybody"
     override val visContacts = "Contacts"
@@ -988,8 +1034,6 @@ object EnStrings : AppStrings {
     override val disable = "Disable"
     override val disabled = "Disabled"
     override val enabled = "Enabled"
-    override val notificationPreview = "Show message text"
-    override val notificationPreviewDesc = "When off, notifications won't reveal message content"
     override val vibration = "Vibration"
     override val vibrationOff = "Off"
     override val vibrationLight = "Light"
@@ -1100,6 +1144,14 @@ object EnStrings : AppStrings {
     override val modelReady = "Model ready"
     override val modelNotDownloaded = "Model not downloaded"
     override val modelDownloadFailed = "Model download failed"
+    override val transcriptionModel = "Voice recognition model"
+    override val transcriptionModelDescription = "Whisper Small. Downloaded once from Memegram servers."
+    override val transcribe = "Transcribe"
+    override val transcribing = "Transcribing…"
+    override val showTranscription = "Show transcription"
+    override val hideTranscription = "Hide transcription"
+    override val transcriptionFailed = "Transcription failed"
+    override val transcriptionNoSpeech = "No speech in this voice message"
     override val linkedDevicesTitle = "Linked Devices"
     override val refresh = "Refresh"
     override val addDeviceByQr = "Add device via QR"
@@ -1110,6 +1162,9 @@ object EnStrings : AppStrings {
     override val revoke = "Revoke"
     override val revokeDeviceTitle = "Revoke device?"
     override fun revokeDeviceMessage(name: String) = "'$name' will be removed from your account."
+    override val makePrimary = "Make primary"
+    override val transferPrimaryTitle = "Transfer primary device?"
+    override fun transferPrimaryMessage(name: String) = "'$name' will be able to add and revoke devices."
     override val decline = "Decline"
     override val allow = "Allow"
     override val addDevice = "Add device"

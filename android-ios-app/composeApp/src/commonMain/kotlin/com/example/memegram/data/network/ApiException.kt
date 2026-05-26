@@ -17,6 +17,14 @@ class ApiException(
                 (code == "PERMISSION_DENIED" || code == "BLOCKED" ||
                  detail.contains("block", ignoreCase = true))
 
+    val isRecipientUnavailable: Boolean
+        get() = status == HttpStatusCode.Forbidden &&
+                (code == "RECIPIENT_UNAVAILABLE" ||
+                 code == "ACCOUNT_DELETED" ||
+                 detail.contains("recipient is not available", ignoreCase = true) ||
+                 detail.contains("recipient unavailable", ignoreCase = true) ||
+                 detail.contains("account deleted", ignoreCase = true))
+
     companion object {
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

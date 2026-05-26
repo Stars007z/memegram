@@ -2,29 +2,58 @@ package com.example.memegram
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.memegram.auth.SessionRefresher
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.CommitGroupChangeRequest
 import com.example.memegram.data.models.LeaveConversationRequest
 import com.example.memegram.data.models.SseEvent
+import com.example.memegram.data.network.ApiException
 import com.example.memegram.data.network.ApiService
 import com.example.memegram.data.repository.ChatRepository
+import com.example.memegram.localization.S
+import com.example.memegram.mls.MlsCommitProcessResult
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.mls.MlsManager.Companion.BATCH_KEY_PACKAGES
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.russhwolf.settings.Settings
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 
+private fun hexToBytes(hex: String): ByteArray {
+    val s = if (hex.length % 2 == 1) "0$hex" else hex
+    val out = ByteArray(s.length / 2)
+    for (i in out.indices) {
+        val hi = hexNibble(s[2 * i])
+        val lo = hexNibble(s[2 * i + 1])
+        out[i] = ((hi shl 4) or lo).toByte()
+    }
+    return out
+}
+
+private fun hexNibble(c: Char): Int = when (c) {
+    in '0'..'9' -> c - '0'
+    in 'a'..'f' -> c - 'a' + 10
+    in 'A'..'F' -> c - 'A' + 10
+    else -> throw IllegalArgumentException("Invalid hex char: $c")
+}
+
+@OptIn(ExperimentalEncodingApi::class)
 class ChatsViewModel(
     private val sessionManager: SessionManager,
     private val api: ApiService,
+    private val sessionRefresher: SessionRefresher,
     private val mlsManager: MlsManager,
     private val chatRepository: ChatRepository,
     private val blockedUsersCache: BlockedUsersCache,
-    private val profileRepository: com.example.memegram.data.repository.ProfileRepository
+    private val profileRepository: com.example.memegram.data.repository.ProfileRepository,
+    private val settings: Settings,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -109,6 +138,63 @@ class ChatsViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val searchMessageResults: StateFlow<List<ChatSearchResult>> = combine(
+        chatRepository.getAllChatsFlow(),
+        chatRepository.getAllMessagesFlow(),
+        _searchQuery,
+        blockedUsersCache.blockedIds
+    ) { allChats, allMessages, query, blockedIds ->
+        val q = query.trim()
+        if (q.isBlank()) return@combine emptyList()
+
+        val chatsById = allChats.associateBy { it.conversationId }
+        val myId = sessionManager.getUserId()
+        val results = mutableListOf<ChatSearchResult>()
+
+        for (stored in allMessages) {
+            if (results.size >= 200) break
+            val chat = chatsById[stored.conversationId] ?: continue
+            val msg = stored.message
+            val senderId = msg.senderUserId
+            if (senderId != null && senderId != myId && senderId in blockedIds) continue
+            if (chat.peerUserId != null && chat.peerUserId in blockedIds) continue
+
+            val displayText = searchDisplayText(msg)
+            val searchableText = buildString {
+                if (msg.type == "text" && msg.text.isNotBlank()) append(msg.text) else append(displayText)
+                append('\n')
+                msg.fileName?.let { append('\n').append(it) }
+            }
+            if (!searchableText.contains(q, ignoreCase = true)) continue
+
+            val profile = senderId
+                ?.takeIf { it.isNotBlank() && it != myId }
+                ?.let { profileRepository.getCached(it) }
+            val senderName = when {
+                msg.isOutgoing -> null
+                chat.isGroup -> profile?.username ?: senderId?.takeIf { it.isNotBlank() }?.let { "User_${it.take(4)}" }
+                else -> chat.name
+            }
+            val senderAvatar = when {
+                msg.isOutgoing -> null
+                chat.isGroup -> profile?.avatarMediaId
+                else -> chat.avatarMediaId
+            }
+
+            results += ChatSearchResult(
+                chat = chat,
+                message = msg,
+                senderName = senderName,
+                senderAvatarMediaId = senderAvatar,
+                displayText = displayText
+            )
+        }
+
+        results
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private fun searchDisplayText(message: Message): String = messagePreviewText(message)
+
     private var sseJob: Job? = null
     private var pollingJob: Job? = null
 
@@ -136,13 +222,22 @@ class ChatsViewModel(
 
     private suspend fun initMls() {
         try {
+            if (!ensureFreshSession()) return
+            println("MemegramDebug [ChatsVM]: initMls initialize start")
             mlsManager.initialize()
+            println("MemegramDebug [ChatsVM]: initMls initialize done")
             if (mlsManager.needsKeyPackages()) {
                 val packages = mlsManager.generateKeyPackages(BATCH_KEY_PACKAGES)
-                api.uploadKeyPackages(packages)
+                mlsManager.flushState()
+                api.uploadKeyPackages(packages, mlsManager.getOwnSignaturePublicKeyB64())
             }
+            println("MemegramDebug [ChatsVM]: initMls welcomes start")
             processPendingWelcomes()
-        } catch (_: Exception) {
+            println("MemegramDebug [ChatsVM]: initMls done")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            println("MemegramDebug [ChatsVM]: initMls failed: ${e::class.simpleName}: ${e.message}")
             _error.value = "Ошибка инициализации шифрования"
         }
     }
@@ -167,32 +262,44 @@ class ChatsViewModel(
         if (!silent) _error.value = null
 
         try {
+            if (!ensureFreshSession()) return
             val response = api.getConversations()
             val currentUserId = sessionManager.getUserId()
 
             val newChatsList = response.items.map { conv ->
+                val localChat = chatRepository.getChatById(conv.id)
                 var chatName = conv.name?.takeIf { it.isNotBlank() } ?: "Собеседник"
                 var peerAvatarMediaId: String? = null
-                var dmPeerUserId: String? = null
+                var dmPeerUserId: String? = DeletedPeerStore.conversationPeerId(settings, conv.id)
+                    ?: localChat?.peerUserId
 
                 if (conv.type == "direct") {
                     try {
-                        val peerId = peerCache[conv.id] ?: run {
+                        val peerId = peerCache[conv.id] ?: dmPeerUserId ?: run {
                             val details = api.getConversation(conv.id)
                             val peer = details.members.find { it.userId != currentUserId }
                             peer?.userId?.also { peerCache[conv.id] = it }
                         }
                         dmPeerUserId = peerId
+                        peerId?.let { peerCache[conv.id] = it }
                         if (peerId != null) {
-                            val profile = profileRepository.getOrFetch(peerId)
+                            val profile = profileRepository.getOrFetch(peerId, forceRefresh = true)
                             if (profile != null) {
-                                chatName = if (profile.isDeleted) {
+                                val deleted = profile.isDeleted || DeletedPeerStore.isDeleted(settings, conv.id, peerId)
+                                if (deleted) DeletedPeerStore.markConversationDeleted(settings, conv.id, peerId)
+                                chatName = if (deleted) {
                                     com.example.memegram.localization.S.current.deletedAccountTitle
                                 } else {
                                     profile.username?.takeIf { it.isNotBlank() } ?: "User_${peerId.take(4)}"
                                 }
-                                peerAvatarMediaId = if (profile.isDeleted) null else profile.avatarMediaId
+                                peerAvatarMediaId = if (deleted) null else profile.avatarMediaId
+                            } else if (DeletedPeerStore.isDeleted(settings, conv.id, peerId)) {
+                                chatName = com.example.memegram.localization.S.current.deletedAccountTitle
+                                peerAvatarMediaId = null
                             }
+                        } else if (DeletedPeerStore.isConversationDeleted(settings, conv.id)) {
+                            chatName = com.example.memegram.localization.S.current.deletedAccountTitle
+                            peerAvatarMediaId = null
                         }
                     } catch (_: Exception) {}
                 }
@@ -245,11 +352,9 @@ class ChatsViewModel(
                 }
 
                 val displayLastMessage = when {
-                    localLastMessage?.type == "voice" -> "🎤 Голосовое сообщение"
-                    localLastMessage?.type == "image" && localLastMessage.text.isBlank() -> "📸 Фото"
-                    localLastMessage != null && localLastMessage.text.isNotBlank() -> localLastMessage.text
-                    conv.lastMessageType == "voice" -> "🎤 Голосовое сообщение"
-                    conv.lastMessageType == "image" -> "📸 Фото"
+                    localLastMessage != null -> messagePreviewText(localLastMessage)
+                    conv.lastMessageType == "voice" -> "🎤 ${S.current.voiceMessage}"
+                    conv.lastMessageType == "image" -> "📸 ${S.current.photo}"
                     conv.lastMessageType == "text" -> "Сообщение"
                     else -> "Новый чат"
                 }
@@ -267,8 +372,11 @@ class ChatsViewModel(
                     },
                     isLastMessageMine       = isMine,
                     lastSenderName          = senderName,
-                    avatarMediaId           = peerAvatarMediaId
-                                                ?: conv.avatarMediaId?.takeIf { it.isNotBlank() },
+                    avatarMediaId           = if (!isGroup && DeletedPeerStore.isConversationDeleted(settings, conv.id)) {
+                        null
+                    } else {
+                        peerAvatarMediaId ?: conv.avatarMediaId?.takeIf { it.isNotBlank() }
+                    },
                     lastSenderAvatarMediaId = lastSenderAvatarMediaId,
                     peerUserId              = dmPeerUserId,
                     isGroup                 = isGroup
@@ -293,18 +401,52 @@ class ChatsViewModel(
 
     private suspend fun processPendingWelcomes() {
         try {
+            if (!ensureFreshSession()) return
             val welcomes = api.getPendingWelcomes()
             var hasNew = false
             for (w in welcomes) {
-                if (!mlsManager.hasGroup(w.conversationId)) {
-                    mlsManager.processWelcome(w.conversationId, w.welcomeDataB64)
+                val convId = w.conversationId
+                if (mlsManager.isChatMlsBroken(convId)) {
+                    println("MemegramDebug [Welcome]: ack stale Welcome for MLS-broken conv=$convId")
+                    runCatching { api.ackWelcome(w.id) }
+                        .onFailure { println("MemegramDebug [Welcome]: ack stale failed: ${it.message}") }
+                    continue
+                }
+
+                if (mlsManager.hasGroup(convId)) {
+                    runCatching { api.ackWelcome(w.id) }
+                    continue
+                }
+
+                try {
+                    mlsManager.processWelcome(convId, w.welcomeDataB64)
                     api.ackWelcome(w.id)
 
-                    val realEpoch = mlsManager.getRealMlsEpoch(w.conversationId)
-                    mlsManager.updateGroupEpoch(w.conversationId, realEpoch)
+                    val realEpoch = mlsManager.getRealMlsEpoch(convId)
+                    mlsManager.updateGroupEpoch(convId, realEpoch)
                     println("MemegramDebug [Welcome]: Новичку установлена реальная MLS-эпоха = $realEpoch")
 
+                    val myUserId = sessionManager.getUserId()
+                    runCatching {
+                        val convResp = api.getConversation(convId)
+                        convResp.members
+                            .map { it.userId }
+                            .filter { it.isNotBlank() && it != myUserId }
+                            .forEach { peerId ->
+                                runCatching { profileRepository.getOrFetch(peerId, forceRefresh = true) }
+                                    .onFailure { println("MemegramDebug [Welcome]: prefetch profile failed peer=$peerId: ${it.message}") }
+                            }
+                    }.onFailure { println("MemegramDebug [Welcome]: prefetch members failed conv=$convId: ${it.message}") }
+
                     hasNew = true
+                } catch (e: Exception) {
+                    if (mlsManager.isChatMlsBroken(convId)) {
+                        println("MemegramDebug [Welcome]: stale Welcome detected, ack and stop retry conv=$convId")
+                        runCatching { api.ackWelcome(w.id) }
+                            .onFailure { println("MemegramDebug [Welcome]: ack stale failed: ${it.message}") }
+                    } else {
+                        println("MemegramDebug [Welcome]: process failed for conv=$convId: ${e.message}")
+                    }
                 }
             }
             if (hasNew) loadChatsInternal(silent = true)
@@ -324,6 +466,11 @@ class ChatsViewModel(
             var backoffMs = 1_000L
             while (isActive) {
                 try {
+                    if (!ensureFreshSession()) {
+                        delay(backoffMs)
+                        backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
+                        continue
+                    }
                     println("MemegramDebug [ChatsVM]: SSE global подключаемся")
                     api.subscribeToConversation(idsParam).collect { event ->
                         handleGlobalEvent(event)
@@ -333,6 +480,10 @@ class ChatsViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    if (e.isUnauthorized()) {
+                        println("MemegramDebug [ChatsVM]: SSE global 401, refresh token before retry")
+                        if (ensureFreshSession(force = true)) backoffMs = 1_000L
+                    }
                     println("MemegramDebug [ChatsVM]: SSE global ошибка (${e.message}), retry через ${backoffMs}мс")
                 }
                 delay(backoffMs)
@@ -340,6 +491,14 @@ class ChatsViewModel(
             }
         }
     }
+
+    private suspend fun ensureFreshSession(force: Boolean = false): Boolean {
+        if (!force && !sessionManager.isTokenExpired) return true
+        return sessionRefresher.refreshIfNeededAwait(force = force)
+    }
+
+    private fun Throwable.isUnauthorized(): Boolean =
+        this is ApiException && status == HttpStatusCode.Unauthorized
 
     private var _lastSubscribedKey: String = ""
 
@@ -393,16 +552,24 @@ class ChatsViewModel(
                 }
 
                 mlsManager.flushState()
+                val parsed = parseMlsPayload(decryptedText)
                 chatRepository.saveMessage(
                     Message(
                         id           = event.data?.id.hashCode(),
                         serverId     = event.data?.id ?: "",
-                        text         = decryptedText,
+                        text         = parsed.content,
                         isOutgoing   = isMine,
                         timestamp    = (event.data?.createdAt?.let { it * 1000L })
                             ?: Clock.System.now().toEpochMilliseconds(),
                         status       = MessageStatus.SENT,
-                        senderUserId = event.data?.senderUserId
+                        type         = parsed.type,
+                        mediaId      = parsed.mediaId.takeIf { it.isNotBlank() },
+                        senderUserId = event.data?.senderUserId,
+                        groupId      = parsed.groupId,
+                        fileName     = parsed.fileName,
+                        fileSize     = parsed.fileSize,
+                        fileMime     = parsed.fileMime,
+                        replyToServerId = event.data?.replyToMessageId?.takeIf { it.isNotBlank() }
                     ),
                     convId
                 )
@@ -428,7 +595,7 @@ class ChatsViewModel(
                     }
                     chatRepository.saveChat(
                         chat.copy(
-                            lastMessage             = decryptedText,
+                            lastMessage             = parsedPayloadPreviewText(parsed),
                             timestamp               = (event.data?.createdAt?.let { it * 1000L }) ?: chat.timestamp,
                             unreadCount             = if (isMine) chat.unreadCount else chat.unreadCount + 1,
                             isLastMessageMine       = isMine,
@@ -445,6 +612,20 @@ class ChatsViewModel(
                     syncGroupCommitsQuietly(convId)
                 }
             }
+            "device_revoked" -> {
+                val revokedDeviceId = event.data?.revokedDeviceId ?: return
+                if (revokedDeviceId == sessionManager.getDeviceId()) {
+                    sessionRefresher.markRevoked("Доступ этого устройства отозван")
+                    sseJob?.cancel()
+                    pollingJob?.cancel()
+                    return
+                }
+                handleDeviceRevoked(
+                    revokedDeviceId,
+                    event.data.conversationIds,
+                    event.data.revokedSignatureKeyHex
+                )
+            }
             "member_left" -> {
                 val leftUserId = event.data?.userId
                 val myUserId = sessionManager.getUserId()
@@ -453,8 +634,30 @@ class ChatsViewModel(
 
                 if (leftUserId == null || leftUserId == myUserId) return
 
-                if (convType == "direct" || reason == "account_deleted") {
+                val localChat = chatRepository.getChatById(convId)
+                val isDirectChat = convType == "direct" || localChat?.isGroup == false
+
+                if (isDirectChat || reason == "account_deleted") {
                     viewModelScope.launch {
+                        if (isDirectChat) {
+                            DeletedPeerStore.markConversationDeleted(settings, convId, leftUserId)
+                            profileRepository.upsert(
+                                com.example.memegram.data.models.UserProfileResponse(
+                                    id = leftUserId,
+                                    isDeleted = true,
+                                )
+                            )
+                            val chat = localChat ?: chatRepository.getChatById(convId)
+                            if (chat != null && !chat.isGroup) {
+                                chatRepository.saveChat(
+                                    chat.copy(
+                                        name = com.example.memegram.localization.S.current.deletedAccountTitle,
+                                        avatarMediaId = null,
+                                        peerUserId = leftUserId,
+                                    )
+                                )
+                            }
+                        }
                         try {
                             profileRepository.refresh(leftUserId)
                         } catch (_: Exception) {}
@@ -506,7 +709,7 @@ class ChatsViewModel(
                     val currentChats = chats.value
                     for (chat in currentChats) {
                         val convId = chat.conversationId
-                        if (mlsManager.hasGroup(convId)) {
+                        if (mlsManager.hasGroup(convId, log = false)) {
                             syncGroupCommitsQuietly(convId)
                         }
                     }
@@ -531,8 +734,10 @@ class ChatsViewModel(
                     return@launch
                 }
 
-                val currentEpoch = mlsManager.getRealMlsEpoch(conversationId)
-                val nextEpoch = (currentEpoch + 1).toInt()
+                val serverEpoch = mlsManager.getCommitCursor(conversationId)
+                    ?: runCatching { api.getConversation(conversationId).mlsGroup?.currentEpoch }.getOrNull()
+                    ?: mlsManager.getGroupEpoch(conversationId)
+                val nextEpoch = (serverEpoch + 1).toInt()
 
                 try {
                     api.commitGroupChange(
@@ -545,7 +750,9 @@ class ChatsViewModel(
                     )
 
                     mlsManager.mergePendingCommit(conversationId)
-                    mlsManager.updateGroupEpoch(conversationId, nextEpoch.toLong())
+                    mlsManager.updateCommitCursor(conversationId, nextEpoch.toLong())
+                    val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                    mlsManager.updateGroupEpoch(conversationId, realEpoch)
                     mlsManager.flushState()
 
                     println("MemegramDebug [ChatsVM]: Remove commit sent successfully, epoch=$nextEpoch")
@@ -577,10 +784,53 @@ class ChatsViewModel(
         }
     }
 
+    private fun handleDeviceRevoked(
+        revokedDeviceId: String,
+        conversationIds: List<String>,
+        revokedSignatureKeyHex: String? = null
+    ) {
+        viewModelScope.launch {
+            val sigKeyB64: String? = revokedSignatureKeyHex
+                ?.takeIf { it.isNotBlank() }
+                ?.let { hex ->
+                    runCatching { Base64.encode(hexToBytes(hex)) }.getOrNull()
+                }
+            val targetConversationIds = conversationIds.ifEmpty { listOfNotNull(ActiveChatCoordinator.conversationId) }
+            targetConversationIds.forEach { conversationId ->
+                if (conversationId.isBlank() || !mlsManager.hasGroup(conversationId, log = false)) return@forEach
+                try {
+                    syncGroupCommitsQuietly(conversationId)
+                    val commitB64 = mlsManager.removeMemberDevice(conversationId, revokedDeviceId, sigKeyB64)
+                    val serverEpoch = mlsManager.getCommitCursor(conversationId)
+                        ?: runCatching { api.getConversation(conversationId).mlsGroup?.currentEpoch }.getOrNull()
+                        ?: mlsManager.getGroupEpoch(conversationId)
+                    val nextEpoch = (serverEpoch + 1).toInt()
+                    api.commitGroupChange(
+                        conversationId,
+                        CommitGroupChangeRequest(
+                            commitData = commitB64,
+                            newEpoch = nextEpoch,
+                            removedDeviceIds = listOf(revokedDeviceId)
+                        )
+                    )
+                    mlsManager.mergePendingCommit(conversationId)
+                    mlsManager.updateCommitCursor(conversationId, nextEpoch.toLong())
+                    val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                    mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                    mlsManager.flushState()
+                } catch (e: Exception) {
+                    try { mlsManager.clearPendingCommit(conversationId) } catch (_: Exception) {}
+                    println("MemegramDebug [DeviceRevoked]: remove device failed conv=$conversationId: ${e.message}")
+                }
+            }
+        }
+    }
+
     private suspend fun syncGroupCommitsQuietly(conversationId: String, justProcessedWelcome: Boolean = false) {
         try {
-            val localEpoch = mlsManager.getGroupEpoch(conversationId)
-            val commits = api.getPendingCommits(conversationId, localEpoch)
+            val cursorEpoch = mlsManager.getCommitCursor(conversationId)
+                ?: mlsManager.getGroupEpoch(conversationId)
+            val commits = api.getPendingCommits(conversationId, cursorEpoch)
 
             if (commits.isNotEmpty()) {
                 if (justProcessedWelcome) {
@@ -588,17 +838,24 @@ class ChatsViewModel(
                     mlsManager.updateGroupEpoch(conversationId, realEpoch)
                     println("MemegramDebug [Welcome]: Синхронизирована metadata-эпоха с реальной MLS = $realEpoch")
                 } else {
-                    val newCommits = commits.filter { it.epoch > localEpoch }
+                    val newCommits = commits.filter { it.epoch > cursorEpoch }
                     if (newCommits.isNotEmpty()) {
                         newCommits.sortedBy { it.epoch }.forEach { commit ->
-                            val success = try {
-                                mlsManager.processCommit(conversationId, commit.commitDataB64)
+                            val result = try {
+                                mlsManager.processCommitResult(conversationId, commit.commitDataB64)
                             } catch (e: Exception) {
                                 println("MemegramDebug [BackgroundSync]: ❌ Ошибка коммита ${commit.epoch}: ${e.message}")
-                                false
+                                MlsCommitProcessResult.Skipped(permanent = false, message = e.message)
                             }
-                            if (success) {
-                                mlsManager.updateGroupEpoch(conversationId, commit.epoch)
+                            when (result) {
+                                is MlsCommitProcessResult.Applied -> {
+                                    val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                                    mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                                    mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                                }
+                                is MlsCommitProcessResult.Skipped -> {
+                                    if (result.permanent) mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                                }
                             }
                         }
                     }

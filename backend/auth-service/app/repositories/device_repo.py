@@ -39,19 +39,21 @@ class DeviceRepository(BaseRepository[Device]):
         return list(result.scalars().all())
 
     async def get_primary_device(self, user_id: uuid.UUID) -> Device | None:
+        # Both "primary" and "admin" devices are treated as primary-capable owners.
+        # The first invite (admin) is functionally a primary device for the account.
         query = select(Device).where(
             Device.user_id == user_id,
-            Device.device_type == "primary",
+            Device.device_type.in_(("primary", "admin")),
             Device.is_active == True,
         )
         result = await self.session.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_stats(self, user_id: uuid.UUID) -> dict:
         query = select(
             func.count().label("total"),
             func.count().filter(Device.is_active == True).label("active"),
-            func.count().filter(Device.device_type == "primary").label("primary"),
+            func.count().filter(Device.device_type.in_(("primary", "admin"))).label("primary"),
             func.max(Device.last_seen).label("last_activity"),
         ).where(Device.user_id == user_id)
         result = await self.session.execute(query)

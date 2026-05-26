@@ -114,6 +114,7 @@ fun StorageScreen(
                     ) {
                         StorageDonutChart(
                             categories = categories,
+                            selectedTypes = selectedCategories,
                             totalSize = totalSize
                         )
                     }
@@ -310,6 +311,7 @@ fun StorageScreen(
 @Composable
 private fun StorageDonutChart(
     categories: List<StorageCategoryUi>,
+    selectedTypes: Set<String>,
     totalSize: Long,
     modifier: Modifier = Modifier
 ) {
@@ -319,13 +321,13 @@ private fun StorageDonutChart(
     val allNonEmpty = remember(categories) {
         categories.filter { it.sizeBytes > 0 }.sortedBy { it.type }
     }
-    val selectedTotal = remember(categories) {
-        categories.filter { it.isSelected && it.sizeBytes > 0 }.sumOf { it.sizeBytes }
+    val selectedTotal = remember(categories, selectedTypes) {
+        categories.filter { it.type in selectedTypes && it.sizeBytes > 0 }.sumOf { it.sizeBytes }
     }
     val displayedSize = selectedTotal
 
     val animatedWeights: Map<String, Float> = allNonEmpty.associate { cat ->
-        val target = if (cat.isSelected) 1f else 0f
+        val target = if (cat.type in selectedTypes) 1f else 0f
         val anim by animateFloatAsState(
             targetValue = target,
             animationSpec = spring(
@@ -345,8 +347,9 @@ private fun StorageDonutChart(
 
     val (valueStr, unitStr) = remember(displayedSize) { formatSizeComponents(displayedSize) }
 
-    val strokeWidthDp = 26.sdp
+    val strokeWidthDp = 22.sdp
     val chartSize = 210.sdp
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
 
     Box(modifier = modifier.size(chartSize), contentAlignment = Alignment.Center) {
@@ -363,6 +366,16 @@ private fun StorageDonutChart(
             }
             val effectiveTotal = effectiveValues.sum()
 
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = Offset(cx - radius, cy - radius),
+                size = Size(diameter, diameter)
+            )
+
             if (emptyAlpha > 0.001f) {
                 drawArc(
                     color = placeholderColor.copy(alpha = placeholderColor.alpha * emptyAlpha),
@@ -377,10 +390,11 @@ private fun StorageDonutChart(
 
             if (effectiveTotal > 0.0) {
                 val visibleCount = effectiveValues.count { it > 0.0001 }
-                val gapDegrees = if (visibleCount > 1) 3f else 0f
+                val gapDegrees = 0f
                 val totalGap = gapDegrees * visibleCount
                 val available = (360f - totalGap).coerceAtLeast(0f)
-                val minSweep = if (visibleCount > 1) 6f else 0f
+                val minSweep = if (visibleCount > 1) 3f else 0f
+                val cap = if (visibleCount > 1) StrokeCap.Butt else StrokeCap.Round
 
                 val rawSweeps = effectiveValues.map { v ->
                     if (v > 0.0) (v / effectiveTotal).toFloat() * available else 0f
@@ -407,13 +421,13 @@ private fun StorageDonutChart(
                     val sweep = adjusted[idx]
                     if (sweep <= 0f) return@forEachIndexed
                     val w = animatedWeights[cat.type] ?: 0f
-                    val gap = if (visibleCount > 1) gapDegrees else 0f
+                    val gap = 0f
                     drawArc(
                         color = cat.color.copy(alpha = w.coerceIn(0f, 1f)),
                         startAngle = startAngle + gap / 2,
                         sweepAngle = (sweep - gap).coerceAtLeast(0.5f),
                         useCenter = false,
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        style = Stroke(width = strokeWidth, cap = cap),
                         topLeft = Offset(cx - radius, cy - radius),
                         size = Size(diameter, diameter)
                     )

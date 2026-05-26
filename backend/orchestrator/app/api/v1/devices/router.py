@@ -188,6 +188,17 @@ async def revoke_device(
 
     if result.success:
         try:
+            await msg_gw.delete_key_packages_for_device(
+                user_id=session.user_id,
+                device_id=device_id,
+            )
+        except Exception:
+            logger.warning(
+                "device.revoke.key_packages_delete_failed",
+                revoked_device_id=device_id,
+                user_id=session.user_id,
+            )
+        try:
             await msg_gw.notify_device_revoked(
                 user_id=session.user_id,
                 revoked_device_id=device_id,
@@ -279,6 +290,17 @@ async def bulk_revoke_devices(
 
     if result.success:
         for revoked_id in result.revoked_device_ids:
+            try:
+                await msg_gw.delete_key_packages_for_device(
+                    user_id=session.user_id,
+                    device_id=revoked_id,
+                )
+            except Exception:
+                logger.warning(
+                    "device.bulk_revoke.key_packages_delete_failed",
+                    revoked_device_id=revoked_id,
+                    user_id=session.user_id,
+                )
             try:
                 await msg_gw.notify_device_revoked(
                     user_id=session.user_id,

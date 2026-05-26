@@ -13,6 +13,12 @@ thiserror  = "2"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+whisper-rs = { version = "0.14", default-features = false }
+
+symphonia  = { version = "0.5", default-features = false, features = ["aac", "isomp4", "mp3", "wav", "pcm"] }
+
+rubato     = "0.16"
+
 [dependencies.openmls]
 git      = "https://github.com/openmls/openmls"
 branch   = "main"
@@ -29,3 +35,6 @@ branch = "main"
 [dependencies.openmls_memory_storage]
 git    = "https://github.com/openmls/openmls"
 branch = "main"
+
+[patch.crates-io]
+whisper-rs-sys = { path = "vendor/whisper-rs-sys" }

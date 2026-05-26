@@ -6,6 +6,7 @@ from typing import Optional
 import redis.asyncio as aioredis
 from sqlalchemy import text
 
+from app.infrastructure.auth_client import IAuthClient
 from app.infrastructure.contacts_client import IContactsClient
 from app.logging_config import get_logger
 from app.repositories.conversation_repo import ConversationRepository
@@ -38,6 +39,7 @@ class ConversationServiceImpl(IConversationService):
         commit_repo: MlsCommitRepository,
         message_repo: MessageRepository,
         contacts_client: IContactsClient,
+        auth_client: IAuthClient | None,
         redis: aioredis.Redis,
         stream_service: IStreamService,
     ) -> None:
@@ -48,6 +50,7 @@ class ConversationServiceImpl(IConversationService):
         self._commits = commit_repo
         self._messages = message_repo
         self._contacts = contacts_client
+        self._auth = auth_client
         self._redis = redis
         self._stream = stream_service
 
@@ -143,7 +146,27 @@ class ConversationServiceImpl(IConversationService):
         name: str,
         members: list[tuple[uuid.UUID, list[tuple[uuid.UUID, bytes]]]],
     ) -> ConversationResult:
-        for member_user_id, _ in members:
+        welcomes_by_user = {
+            member_user_id: [device_id for device_id, _ in welcomes] for member_user_id, welcomes in members
+        }
+        if self._auth is not None:
+            users_to_validate = set(welcomes_by_user) | {creator_user_id}
+            for user_id in users_to_validate:
+                active_device_ids = await self._auth.get_active_device_ids(user_id)
+                expected_device_ids = {
+                    d for d in active_device_ids if d != creator_device_id or user_id != creator_user_id
+                }
+                provided_device_ids = set(welcomes_by_user.get(user_id, []))
+                missing_device_ids = expected_device_ids - provided_device_ids
+                if missing_device_ids:
+                    missing = ",".join(str(d) for d in sorted(missing_device_ids, key=str))
+                    raise ValueError(f"FAILED_PRECONDITION: missing_welcome_for_active_devices:{user_id}:{missing}")
+
+        for member_user_id, welcomes in members:
+            if member_user_id == creator_user_id:
+                continue
+            if not welcomes:
+                raise ValueError(f"INVALID_ARGUMENT: Missing MLS welcomes for member {member_user_id}")
             await self._check_blocks_both_ways(creator_user_id, member_user_id)
 
         conv = await self._conversations.create(
@@ -166,6 +189,17 @@ class ConversationServiceImpl(IConversationService):
         all_members.append(creator_member)
 
         for member_user_id, welcomes in members:
+            if member_user_id == creator_user_id:
+                for device_id, welcome_data in welcomes:
+                    await self._welcomes.create(
+                        {
+                            "recipient_device_id": device_id,
+                            "conversation_id": conv.id,
+                            "welcome_data": welcome_data,
+                        }
+                    )
+                continue
+
             member = await self._members.create(
                 {
                     "conversation_id": conv.id,
@@ -184,12 +218,13 @@ class ConversationServiceImpl(IConversationService):
                     }
                 )
 
+        initial_epoch = 1 if any(welcomes for _, welcomes in members) else 0
         mls_group_id = uuid.uuid4().bytes
         await self._mls_groups.create(
             {
                 "id": conv.id,
                 "mls_group_id": mls_group_id,
-                "current_epoch": 0,
+                "current_epoch": initial_epoch,
                 "cipher_suite": 1,
             }
         )
@@ -201,7 +236,7 @@ class ConversationServiceImpl(IConversationService):
             member_count=len(all_members),
         )
 
-        added_user_ids = [str(uid) for uid, _ in members]
+        added_user_ids = [str(uid) for uid, _ in members if uid != creator_user_id]
         if added_user_ids:
             try:
                 await self._stream.publish_event(
@@ -224,7 +259,7 @@ class ConversationServiceImpl(IConversationService):
         return self._build_conversation_result(
             conv,
             all_members,
-            epoch=0,
+            epoch=initial_epoch,
             cipher_suite=1,
         )
 

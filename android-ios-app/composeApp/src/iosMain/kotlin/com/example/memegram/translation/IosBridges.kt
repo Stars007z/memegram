@@ -25,6 +25,14 @@ interface OnnxBridgeDelegate {
         outputNames: Array<String>,
     ): Array<OnnxOutput>
 
+    fun runWithUInt8(
+        handle: Long,
+        uint8Names: Array<String>,
+        uint8Data: Array<ByteArray>,
+        uint8Shapes: Array<LongArray>,
+        outputNames: Array<String>,
+    ): Array<OnnxOutput>
+
     fun setPersistentFloatInput(handle: Long, name: String, data: FloatArray, shape: LongArray): Boolean
 
     fun setPersistentInt64Input(handle: Long, name: String, data: LongArray, shape: LongArray): Boolean
@@ -100,5 +108,20 @@ object IosPhotoPickerBridge {
     }
 
     val delegate: PhotoPickerBridgeDelegate?
+        get() = ref.value
+}
+
+interface FileOpenBridgeDelegate {
+    fun open(path: String, mime: String): Boolean
+}
+
+object IosFileOpenBridge {
+    private val ref = AtomicReference<FileOpenBridgeDelegate?>(null)
+
+    fun register(delegate: FileOpenBridgeDelegate) {
+        ref.value = delegate
+    }
+
+    val delegate: FileOpenBridgeDelegate?
         get() = ref.value
 }

@@ -9,6 +9,7 @@ private class IosMlsClient(
 
     override fun exportProviderState(): ByteArray = handle.exportProviderState()
     override fun exportSigningKey(): ByteArray = handle.exportSigningKey()
+    override fun exportSigningPublicKey(): ByteArray = handle.exportSigningPublicKey()
     override fun generateKeyPackage(): ByteArray = handle.generateKeyPackage()
     override fun createGroupWithId(groupId: ByteArray) = handle.createGroupWithId(groupId)
 
@@ -17,6 +18,14 @@ private class IosMlsClient(
         keyPackageBytes: ByteArray
     ): WelcomeBundleKt {
         val bundle = handle.addMember(groupId, keyPackageBytes)
+        return WelcomeBundleKt(commit = bundle.commit, welcome = bundle.welcome)
+    }
+
+    override fun addMembers(
+        groupId: ByteArray,
+        keyPackageBytes: List<ByteArray>
+    ): WelcomeBundleKt {
+        val bundle = handle.addMembers(groupId, keyPackageBytes)
         return WelcomeBundleKt(commit = bundle.commit, welcome = bundle.welcome)
     }
 
@@ -45,6 +54,12 @@ private class IosMlsClient(
 
     override fun removeMemberByIdentity(groupId: ByteArray, identity: String): ByteArray =
         handle.removeMemberByIdentity(groupId, identity)
+
+    override fun removeMemberBySignatureKey(groupId: ByteArray, signatureKey: ByteArray): ByteArray =
+        handle.removeMemberBySignatureKey(groupId, signatureKey)
+
+    override fun extractSignatureKey(keyPackageBytes: ByteArray): ByteArray =
+        handle.extractSignatureKey(keyPackageBytes)
 
     override fun getGroupEpoch(groupId: ByteArray): ULong =
         handle.getGroupEpoch(groupId)

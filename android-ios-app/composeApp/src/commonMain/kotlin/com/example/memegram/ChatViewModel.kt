@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.memegram.audio.AudioRecordResult
 import com.example.memegram.audio.createAudioRecorder
+import com.example.memegram.auth.SessionRefresher
 import com.example.memegram.data.local.SessionManager
 import com.example.memegram.data.models.*
+import com.example.memegram.data.network.ApiException
 import com.example.memegram.data.network.ApiService
 import com.russhwolf.settings.Settings
 import kotlin.io.encoding.Base64
@@ -19,11 +21,17 @@ import com.example.memegram.data.gallery.guessMimeType
 import com.example.memegram.data.gallery.readUploadBytes
 import com.example.memegram.data.files.openSavedFile
 import com.example.memegram.data.files.saveDownloadedFile
+import com.example.memegram.mls.MlsCommitProcessResult
+import com.example.memegram.mls.MlsDecryptResult
 import com.example.memegram.mls.decryptMediaBytes
 import com.example.memegram.mls.encryptMediaBytes
 import com.example.memegram.localization.S
+import com.example.memegram.nsfw.NsfwService
+import com.example.memegram.nsfw.NsfwSettings
 import com.example.memegram.translation.TranslationService
+import com.example.memegram.translation.TranslationProgress
 import com.example.memegram.translation.TranslationSettings
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -40,9 +48,13 @@ class ChatViewModel(
     private val settings: Settings,
     private val translationService: TranslationService,
     private val translationSettings: TranslationSettings,
+    private val transcriptionService: com.example.memegram.transcription.TranscriptionService,
+    private val nsfwSettings: NsfwSettings,
+    private val nsfwService: NsfwService,
     private val blockedUsersCache: BlockedUsersCache,
     private val profileRepository: com.example.memegram.data.repository.ProfileRepository,
     private val appearance: AppearanceRepository,
+    private val sessionRefresher: SessionRefresher,
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -50,6 +62,9 @@ class ChatViewModel(
 
     private val _isGroupChat = MutableStateFlow(false)
     val isGroupChat: StateFlow<Boolean> = _isGroupChat.asStateFlow()
+
+    private val _myRole = MutableStateFlow<String?>(null)
+    val myRole: StateFlow<String?> = _myRole.asStateFlow()
 
     private val _messageSenders = MutableStateFlow<Map<String, String>>(emptyMap())
     val messageSenders: StateFlow<Map<String, String>> = _messageSenders.asStateFlow()
@@ -77,10 +92,32 @@ class ChatViewModel(
     private val _isLoading        = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _muteUntil = MutableStateFlow(0L)
+    val muteUntil: StateFlow<Long> = _muteUntil.asStateFlow()
+
     private val _error            = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
     fun clearError() { _error.value = null }
+
+    private val _forceClose = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val forceClose: SharedFlow<Unit> = _forceClose.asSharedFlow()
+
+    private suspend fun handlePossibleNotMemberError(e: Throwable): Boolean {
+        val msg = e.message.orEmpty()
+        if (!msg.contains("Not a member of this conversation", ignoreCase = true)) {
+            return false
+        }
+        val convId = currentConversationId ?: return false
+        println("MemegramDebug [ChatVM]: server says not-a-member for conv=$convId, purging locally and closing chat")
+        runCatching {
+            com.example.memegram.conversation.ConversationLocalCleaner.purge(
+                convId, chatRepository, mlsManager,
+            )
+        }
+        _forceClose.tryEmit(Unit)
+        return true
+    }
 
     private val _initialUnreadCount = MutableStateFlow(0)
     val initialUnreadCount: StateFlow<Int> = _initialUnreadCount.asStateFlow()
@@ -102,6 +139,7 @@ class ChatViewModel(
     val peerDisplayName: StateFlow<String?> = _peerDisplayName.asStateFlow()
 
     fun setInitialPeerAvatar(mediaId: String) {
+        if (_isPeerDeleted.value) return
         if (_peerAvatarMediaId.value == null) {
             _peerAvatarMediaId.value = mediaId
         }
@@ -126,6 +164,29 @@ class ChatViewModel(
         return true
     }
 
+    private suspend fun handleRecipientUnavailableOnSendError(e: Throwable): Boolean {
+        val api = e as? com.example.memegram.data.network.ApiException ?: return false
+        if (!api.isRecipientUnavailable || _isGroupChat.value) return false
+        markPeerDeletedLocally()
+        return true
+    }
+
+    private suspend fun markPeerDeletedLocally() {
+        _isPeerDeleted.value = true
+        _peerAvatarMediaId.value = null
+        val convId = currentConversationId
+        val peerId = peerUserId
+        if (convId != null) DeletedPeerStore.markConversationDeleted(settings, convId, peerId)
+        if (peerId == null) return
+        profileRepository.upsert(
+            UserProfileResponse(
+                id = peerId,
+                username = _peerDisplayName.value,
+                isDeleted = true,
+            )
+        )
+    }
+
     val audioRecorder = createAudioRecorder()
     private var myUserId: String? = null
     private var myDeviceId: String? = null
@@ -139,8 +200,29 @@ class ChatViewModel(
     private val _downloadingFiles = MutableStateFlow<Set<String>>(emptySet())
     val downloadingFiles: StateFlow<Set<String>> = _downloadingFiles.asStateFlow()
 
-    private val _translatingIds = MutableStateFlow<Set<String>>(emptySet())
-    val translatingIds: StateFlow<Set<String>> = _translatingIds.asStateFlow()
+    private val _translationProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val translationProgress: StateFlow<Map<String, Float>> = _translationProgress.asStateFlow()
+
+    val transcriptionProgress: StateFlow<Map<String, Float>> = TranscriptionProgressTracker.progress
+
+    private val _visibleTranscriptions = MutableStateFlow<Set<String>>(emptySet())
+    val visibleTranscriptions: StateFlow<Set<String>> = _visibleTranscriptions.asStateFlow()
+
+    private fun updateTranslationProgress(messageId: String, progress: TranslationProgress) {
+        _translationProgress.update { current ->
+            if (messageId !in current) current
+            else current + (messageId to progress.fraction.coerceIn(0f, 0.99f))
+        }
+    }
+
+    private suspend fun finishTranslationProgress(messageId: String) {
+        var wasVisible = false
+        _translationProgress.update { current ->
+            wasVisible = messageId in current
+            if (wasVisible) current + (messageId to 1f) else current
+        }
+        if (wasVisible) delay(220)
+    }
 
     companion object {
         const val MAX_UPLOAD_SIZE_BYTES: Long = 100L * 1024L * 1024L
@@ -173,9 +255,16 @@ class ChatViewModel(
     fun loadConversation(conversationId: String) {
         if (currentConversationId == conversationId) return
         currentConversationId = conversationId
+        _myRole.value = null
         myUserId = sessionManager.getUserId()
         myDeviceId = sessionManager.getDeviceId()
         ActiveChatCoordinator.conversationId = conversationId
+        if (DeletedPeerStore.isConversationDeleted(settings, conversationId)) {
+            _isPeerDeleted.value = true
+            _peerAvatarMediaId.value = null
+        }
+        DeletedPeerStore.conversationPeerId(settings, conversationId)
+            ?.let { peerUserId = it }
 
         sseJob?.cancel()
         pollingJob?.cancel()
@@ -184,75 +273,125 @@ class ChatViewModel(
         dbObserveJob = viewModelScope.launch {
             combine(
                 chatRepository.getMessagesFlow(conversationId),
-                blockedUsersCache.blockedIds
-            ) { msgs, blockedIds ->
-                msgs.asSequence()
+                blockedUsersCache.blockedIds,
+                nsfwSettings.filterRevision,
+            ) { msgs, blockedIds, revision ->
+                revision to msgs.asSequence()
                     .filterNot { m ->
                         val sender = m.senderUserId
                         sender != null && sender != myUserId && sender in blockedIds
                     }
                     .sortedBy { it.timestamp }
                     .toList()
-            }.collect { msgs ->
-                val warm = mutableMapOf<String, ByteArray>()
+            }.collect { (_, msgs) ->
+                val warm = LinkedHashMap<String, ByteArray>()
                 val current = _mediaCache.value
+                val localReplyCtx = mutableMapOf<String, String>()
+                val displayMessages = mutableListOf<Message>()
+                val filterEnabled = nsfwSettings.filterEnabled.value
+                val nsfwModelAvailable = nsfwService.isModelAvailable()
                 msgs.forEach { m ->
-                    val mid = m.mediaId ?: return@forEach
-                    val bytes = m.localPreviewBytes ?: return@forEach
-                    if (mid !in current && mid !in warm) warm[mid] = bytes
+                    val mid = m.mediaId
+                    val bytes = m.localPreviewBytes
+                    val imageMediaId = mid?.takeIf { !m.isOutgoing && m.type == "image" }
+                    val refreshIncomingImage = imageMediaId != null &&
+                            ((filterEnabled && nsfwModelAvailable && !nsfwSettings.hasProcessedMedia(imageMediaId)) ||
+                                    (!filterEnabled && nsfwSettings.hasProcessedMedia(imageMediaId)))
+                    if (mid != null && bytes != null && mid !in current && mid !in warm && !refreshIncomingImage) {
+                        warm[mid] = bytes
+                    } else if (imageMediaId != null && refreshIncomingImage) {
+                        loadMedia(
+                            mediaId = imageMediaId,
+                            encryptionMetadata = m.encryptionMetadata,
+                            forceReload = true,
+                            knownMessage = m,
+                            mlPriority = com.example.memegram.ml.MlModelGate.Priority.AUTO,
+                        )
+                    }
+                    displayMessages += if (refreshIncomingImage) m.copy(localPreviewBytes = null) else m
+                    val sid = m.serverId
+                    val replySid = m.replyToServerId
+                    if (sid.isNotBlank() && !replySid.isNullOrBlank()) {
+                        localReplyCtx[sid] = replySid
+                    }
                 }
                 if (warm.isNotEmpty()) _mediaCache.value = current + warm
-                _messages.value = msgs
+                if (localReplyCtx.isNotEmpty()) _replyContext.update { it + localReplyCtx }
+                _messages.value = displayMessages
             }
         }
 
         viewModelScope.launch {
-            try {
-                val conv = api.getConversation(conversationId)
-                _initialUnreadCount.value = conv.unreadCount ?: 0
-                val isGroup = conv.type != "direct"
-                _isGroupChat.value = isGroup
-                _isBlockedByPeer.value = !isGroup && conv.isBlockedByPeer
+            val cachedChat = runCatching { chatRepository.getChatById(conversationId) }.getOrNull()
+            cachedChat?.let { _muteUntil.value = it.muteUntil }
+            cachedChat?.peerUserId?.takeIf { it.isNotBlank() && peerUserId == null }
+                ?.let { peerUserId = it }
 
-                if (isGroup) {
-                    _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+            val convInfoJob = launch {
+                try {
+                    val conv = api.getConversation(conversationId)
+                    _initialUnreadCount.value = conv.unreadCount ?: 0
+                    val isGroup = conv.type != "direct"
+                    _isGroupChat.value = isGroup
+                    _isBlockedByPeer.value = !isGroup && conv.isBlockedByPeer
+                    _myRole.value = conv.members.find { it.userId == myUserId }?.role
 
-                    conv.members.forEach { member ->
-                        if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
+                    if (isGroup) {
+                        _peerAvatarMediaId.value = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+
+                        conv.members.forEach { member ->
+                            if (member.userId != myUserId && !_memberProfiles.value.containsKey(member.userId)) {
+                                launch {
+                                    try {
+                                        val profile = profileRepository.getOrFetch(member.userId) ?: return@launch
+                                        _memberProfiles.update { it + (member.userId to profile) }
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                    } else {
+                        val peer = conv.members.find { it.userId != myUserId }
+                        val existingPeerId = peerUserId
+                        val resolvedPeerId = peer?.userId ?: existingPeerId
+                        peerUserId = resolvedPeerId
+                        if (DeletedPeerStore.isConversationDeleted(settings, conversationId)) {
+                            _isPeerDeleted.value = true
+                            _peerAvatarMediaId.value = null
+                            resolvedPeerId?.let { DeletedPeerStore.markConversationDeleted(settings, conversationId, it) }
+                        }
+                        resolvedPeerId?.let { peerId ->
+                            if (_myRole.value == "owner" || _myRole.value == "admin") {
+                                launch {
+                                    runCatching { api.updateMemberRole(conversationId, peerId, "admin") }
+                                        .onFailure { e ->
+                                            println("MemegramDebug [DirectRole]: peer admin grant skipped: ${e.message}")
+                                        }
+                                }
+                            }
                             launch {
                                 try {
-                                    val profile = profileRepository.getOrFetch(member.userId) ?: return@launch
-                                    _memberProfiles.update { it + (member.userId to profile) }
+                                    val profile = profileRepository.getOrFetch(peerId) ?: return@launch
+                                    val deleted = profile.isDeleted || DeletedPeerStore.isDeleted(settings, conversationId, peerId)
+                                    _peerAvatarMediaId.value = if (deleted) null else profile.avatarMediaId
+                                    _isPeerDeleted.value = deleted
+                                    _peerDisplayName.value = profile.username
+                                    if (deleted) DeletedPeerStore.markConversationDeleted(settings, conversationId, peerId)
                                 } catch (_: Exception) {}
                             }
                         }
-                    }
-                } else {
-                    val peer = conv.members.find { it.userId != myUserId }
-                    peerUserId = peer?.userId
-                    peer?.userId?.let { peerId ->
-                        launch {
-                            try {
-                                val profile = profileRepository.getOrFetch(peerId) ?: return@launch
-                                _peerAvatarMediaId.value = profile.avatarMediaId
-                                _isPeerDeleted.value = profile.isDeleted
-                                _peerDisplayName.value = profile.username
-                            } catch (_: Exception) {}
-                        }
-                    }
-                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
-                        launch {
-                            runCatching {
-                                chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                        conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                            launch {
+                                runCatching {
+                                    chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                                }
                             }
                         }
                     }
-                }
-            } catch (_: Exception) { }
+                } catch (_: Exception) { }
+            }
 
             val mlsReady = syncMlsPending(conversationId)
             if (!mlsReady) {
-                _error.value = S.current.mlsNotReady
                 return@launch
             }
 
@@ -275,12 +414,7 @@ class ChatViewModel(
                     runCatching { api.markAsRead(conversationId, MarkAsReadRequest(lastBlockedFromServer.id)) }
                 }
             }
-            val sortedMessages = rawMessages
-                .filterNot { msg ->
-                    val sender = msg.effectiveSenderId
-                    sender != myId && blockedUsersCache.isBlocked(sender)
-                }
-                .sortedBy { it.createdAt }
+            val sortedMessages = rawMessages.sortedBy { it.createdAt }
             decryptMutex.withLock {
                 val existingLocalMessages = chatRepository.getMessagesOnce(conversationId)
                 val newSenders = mutableMapOf<String, String>()
@@ -298,13 +432,14 @@ class ChatViewModel(
                                 && (cached.isNotBlank() || existing.type != "text")
                         if (cachedUsable) return@run cached!!
 
-                        val decrypted = try {
-                            mlsManager.decrypt(conversationId, msg.mlsCiphertextB64)
-                        } catch (_: Exception) { null }
-
-                        if (decrypted != null) decrypted
-                        else if (isSentByMe) S.current.sentFromOtherDevice
-                        else return@mapNotNull null
+                        when (val decrypted = mlsManager.decryptResult(conversationId, msg.mlsCiphertextB64)) {
+                            is MlsDecryptResult.Success -> decrypted.plaintext
+                            is MlsDecryptResult.Failure -> when {
+                                isSentByMe -> S.current.sentFromOtherDevice
+                                decrypted.permanent -> ""
+                                else -> return@mapNotNull null
+                            }
+                        }
                     }
 
                     newSenders[msg.id] = msg.effectiveSenderId
@@ -313,6 +448,17 @@ class ChatViewModel(
                     }
 
                     val parsed = parseMlsPayload(text)
+                    val serverMediaType = msg.type?.takeIf { it == "image" || it == "voice" || it == "file" }
+                    val restoredMediaType = existing
+                        ?.takeIf { it.mediaId != null && it.type != "text" && it.type != "undecryptable" }
+                        ?.type
+                    val messageType = when {
+                        parsed.type != "text" -> parsed.type
+                        serverMediaType != null -> serverMediaType
+                        restoredMediaType != null -> restoredMediaType
+                        text.isBlank() -> "undecryptable"
+                        else -> existing?.type ?: "text"
+                    }
 
                     Message(
                         id           = existing?.id ?: msg.id.hashCode(),
@@ -321,15 +467,20 @@ class ChatViewModel(
                         isOutgoing   = isSentByMe,
                         timestamp    = msg.createdAt * 1000L,
                         status       = if (isSentByMe && existing?.status == MessageStatus.READ) MessageStatus.READ else MessageStatus.SENT,
-                        type         = if (parsed.type != "text") parsed.type else (existing?.type ?: "text"),
-                        mediaId      = parsed.mediaId.takeIf { it.isNotBlank() } ?: existing?.mediaId,
+                        type         = messageType,
+                        mediaId      = parsed.mediaId.takeIf { it.isNotBlank() }
+                            ?: msg.mediaId?.takeIf { it.isNotBlank() }
+                            ?: existing?.mediaId,
+                        encryptionMetadata = existing?.encryptionMetadata,
                         senderUserId = msg.effectiveSenderId,
                         groupId      = parsed.groupId ?: existing?.groupId,
                         fileName     = parsed.fileName ?: existing?.fileName,
                         fileSize     = parsed.fileSize ?: existing?.fileSize,
                         fileMime     = parsed.fileMime ?: existing?.fileMime,
                         localFilePath = existing?.localFilePath,
-                        localPreviewBytes = existing?.localPreviewBytes
+                        localPreviewBytes = existing?.localPreviewBytes,
+                        replyToServerId = msg.replyToMessageId?.takeIf { it.isNotBlank() }
+                            ?: existing?.replyToServerId?.takeIf { it.isNotBlank() }
                     )
                 }
 
@@ -357,7 +508,9 @@ class ChatViewModel(
             }
         } catch (e: Exception) {
             println("MemegramDebug: Ошибка в loadMessages: ${e.message}")
-            _error.value = S.current.loadError(e.message ?: "")
+            if (!handlePossibleNotMemberError(e)) {
+                _error.value = S.current.loadError(e.message ?: "")
+            }
         } finally {
             _isLoading.value = false
         }
@@ -368,6 +521,11 @@ class ChatViewModel(
             var backoffMs = 1_000L
             while (isActive) {
                 try {
+                    if (!ensureFreshSession()) {
+                        delay(backoffMs)
+                        backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
+                        continue
+                    }
                     api.subscribeToConversation(conversationId).collect { event ->
                         handleEvent(conversationId, event)
                         backoffMs = 1_000L
@@ -375,6 +533,9 @@ class ChatViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    if (e.isUnauthorized() && ensureFreshSession(force = true)) {
+                        backoffMs = 1_000L
+                    }
                     val isExpectedClose = e.message?.contains("timeout", ignoreCase = true) == true
                             || e.message?.contains("ClosedByteChannelException") == true
                     if (isExpectedClose) {
@@ -395,11 +556,11 @@ class ChatViewModel(
             "new_message" -> {
                 val msgId = data.id ?: return
                 val senderId = data.senderUserId
-                if (senderId != null && senderId != myId && blockedUsersCache.isBlocked(senderId)) {
+                val isFromBlocked = senderId != null && senderId != myId && blockedUsersCache.isBlocked(senderId)
+                if (isFromBlocked) {
                     viewModelScope.launch {
                         runCatching { api.markAsRead(convId, MarkAsReadRequest(msgId)) }
                     }
-                    return
                 }
                 senderId?.let { sId ->
                     _messageSenders.update { it + (msgId to sId) }
@@ -413,7 +574,8 @@ class ChatViewModel(
                     ciphertextB64 = data.mlsCiphertextB64 ?: "",
                     createdAt     = data.createdAt,
                     isOutgoing    = senderId == myId,
-                    senderUserId  = senderId
+                    senderUserId  = senderId,
+                    replyToServerId = data.replyToMessageId?.takeIf { it.isNotBlank() }
                 )
             }
 
@@ -443,20 +605,41 @@ class ChatViewModel(
 
             "epoch_changed" -> syncMlsPending(convId)
 
+            "device_revoked" -> {
+                val revokedDeviceId = data.revokedDeviceId ?: return
+                if (revokedDeviceId == myDeviceId) {
+                    sessionRefresher.markRevoked("Доступ этого устройства отозван")
+                    sseJob?.cancel()
+                    pollingJob?.cancel()
+                    dbObserveJob?.cancel()
+                    return
+                }
+                syncMlsPending(convId)
+            }
+
             "member_left" -> {
                 val userId = data.userId ?: return
                 val reason = data.reason
                 val isDirect = !_isGroupChat.value
 
-                if (reason == "account_deleted" && isDirect && userId == peerUserId) {
+                if (isDirect && (userId == peerUserId || peerUserId == null)) {
+                    if (peerUserId == null) peerUserId = userId
                     viewModelScope.launch {
                         try {
+                            DeletedPeerStore.markConversationDeleted(settings, convId, userId)
+                            profileRepository.upsert(
+                                UserProfileResponse(
+                                    id = userId,
+                                    username = _peerDisplayName.value,
+                                    isDeleted = true,
+                                )
+                            )
                             val refreshed = profileRepository.refresh(userId)
                                 ?: profileRepository.getOrFetch(userId, forceRefresh = true)
                             if (refreshed != null) {
-                                _isPeerDeleted.value = refreshed.isDeleted
+                                _isPeerDeleted.value = true
                                 _peerDisplayName.value = refreshed.username
-                                _peerAvatarMediaId.value = refreshed.avatarMediaId
+                                _peerAvatarMediaId.value = null
                             } else {
                                 _isPeerDeleted.value = true
                             }
@@ -511,6 +694,7 @@ class ChatViewModel(
         pollingJob = viewModelScope.launch {
             while (isActive) {
                 delay(3_000)
+                if (currentConversationId != conversationId) return@launch
                 pollNewMessages(conversationId)
             }
         }
@@ -519,33 +703,12 @@ class ChatViewModel(
     private suspend fun pollNewMessages(conversationId: String) {
         try {
             val myId = myUserId ?: return
-            if (!_isGroupChat.value && peerUserId != null) {
-                try {
-                    val profile = profileRepository.getOrFetch(peerUserId!!, forceRefresh = true)
-                    if (profile != null && profile.avatarMediaId != _peerAvatarMediaId.value) {
-                        _peerAvatarMediaId.value = profile.avatarMediaId
-                    }
-                } catch (_: Exception) {}
-                try {
-                    val conv = api.getConversation(conversationId)
-                    conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
-                        runCatching {
-                            chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
-                        }
-                    }
-                } catch (_: Exception) {}
-            } else if (_isGroupChat.value) {
-                try {
-                    val conv = api.getConversation(conversationId)
-                    val serverAvatar = conv.avatarMediaId?.takeIf { it.isNotBlank() }
-                    if (serverAvatar != _peerAvatarMediaId.value) {
-                        _peerAvatarMediaId.value = serverAvatar
-                    }
-                } catch (_: Exception) {}
-            }
+            if (!ensureFreshSession()) return
+
+            refreshConversationState(conversationId)
 
             val serverMessages = api.getMessages(conversationId)
-            val localMessages  = chatRepository.getMessagesOnce(conversationId)
+            val localMessages = chatRepository.getMessagesOnce(conversationId)
             val localServerIds = localMessages.map { it.serverId }.toSet()
 
             if (serverMessages.isNotEmpty()) {
@@ -566,44 +729,80 @@ class ChatViewModel(
 
             val newMessages = serverMessages
                 .filter { it.id !in localServerIds }
-                .filterNot { msg ->
-                    val sender = msg.effectiveSenderId
-                    val skip = sender != myId && blockedUsersCache.isBlocked(sender)
-                    if (skip) {
-                        viewModelScope.launch {
-                            runCatching { api.markAsRead(conversationId, MarkAsReadRequest(msg.id)) }
-                        }
-                    }
-                    skip
-                }
                 .sortedBy { it.createdAt }
 
             if (newMessages.isEmpty()) return
 
-            println("MemegramDebug [Poll]: найдено ${newMessages.size} новых сообщений")
-
             val newSenders = mutableMapOf<String, String>()
             val newReplyCtx = mutableMapOf<String, String>()
             for (msg in newMessages) {
-                newSenders[msg.id] = msg.effectiveSenderId
+                val senderId = msg.effectiveSenderId
+                val isFromBlocked = senderId != myId && blockedUsersCache.isBlocked(senderId)
+                if (isFromBlocked) {
+                    viewModelScope.launch {
+                        runCatching { api.markAsRead(conversationId, MarkAsReadRequest(msg.id)) }
+                    }
+                }
+                newSenders[msg.id] = senderId
                 if (!msg.replyToMessageId.isNullOrBlank()) {
                     newReplyCtx[msg.id] = msg.replyToMessageId
                 }
                 decryptAndSave(
-                    convId        = conversationId,
-                    msgId         = msg.id,
+                    convId = conversationId,
+                    msgId = msg.id,
                     ciphertextB64 = msg.mlsCiphertextB64,
-                    createdAt     = msg.createdAt,
-                    isOutgoing    = msg.effectiveSenderId == myId,
-                    senderUserId  = msg.effectiveSenderId
+                    createdAt = msg.createdAt,
+                    isOutgoing = senderId == myId,
+                    senderUserId = senderId,
+                    replyToServerId = msg.replyToMessageId?.takeIf { it.isNotBlank() }
                 )
             }
             _messageSenders.update { it + newSenders }
             if (newReplyCtx.isNotEmpty()) {
                 _replyContext.update { it + newReplyCtx }
             }
-        } catch (_: Exception) { }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (e.isUnauthorized()) {
+                ensureFreshSession(force = true)
+            } else {
+                handlePossibleNotMemberError(e)
+            }
+        }
     }
+
+    private suspend fun refreshConversationState(conversationId: String) {
+        val conv = runCatching { api.getConversation(conversationId) }.getOrNull()
+        if (conv != null) {
+            if (_isGroupChat.value) {
+                val serverAvatar = conv.avatarMediaId?.takeIf { it.isNotBlank() }
+                if (serverAvatar != _peerAvatarMediaId.value) {
+                    _peerAvatarMediaId.value = serverAvatar
+                }
+            } else {
+                conv.peerLastReadMessageId?.takeIf { it.isNotBlank() }?.let { lastReadId ->
+                    chatRepository.markOutgoingMessagesRead(conversationId, lastReadId)
+                }
+            }
+        }
+
+        if (!_isGroupChat.value) {
+            val peerId = peerUserId ?: return
+            val profile = runCatching { profileRepository.getOrFetch(peerId, forceRefresh = true) }.getOrNull()
+            if (profile != null && profile.avatarMediaId != _peerAvatarMediaId.value) {
+                _peerAvatarMediaId.value = profile.avatarMediaId
+            }
+        }
+    }
+
+    private suspend fun ensureFreshSession(force: Boolean = false): Boolean {
+        if (!force && !sessionManager.isTokenExpired) return true
+        return sessionRefresher.refreshIfNeededAwait(force = force)
+    }
+
+    private fun Throwable.isUnauthorized(): Boolean =
+        this is ApiException && status == HttpStatusCode.Unauthorized
 
     private suspend fun decryptAndSave(
         convId: String,
@@ -611,16 +810,30 @@ class ChatViewModel(
         ciphertextB64: String,
         createdAt: Long,
         isOutgoing: Boolean,
-        senderUserId: String? = null
+        senderUserId: String? = null,
+        replyToServerId: String? = null
     ) {
         decryptMutex.withLock {
             val alreadyExists = chatRepository.getMessagesOnce(convId)
                 .any { it.serverId == msgId && it.text.isNotBlank() && it.text != "🔒" }
             if (alreadyExists) return@withLock
 
-            val plaintext = try {
-                mlsManager.decrypt(convId, ciphertextB64) ?: return@withLock
-            } catch (_: Exception) { return@withLock }
+            val plaintext = when (val decrypted = mlsManager.decryptResult(convId, ciphertextB64)) {
+                is MlsDecryptResult.Success -> decrypted.plaintext
+                is MlsDecryptResult.Failure -> {
+                    if (decrypted.permanent) {
+                        saveUndecryptablePlaceholder(
+                            convId = convId,
+                            msgId = msgId,
+                            createdAt = createdAt,
+                            isOutgoing = isOutgoing,
+                            senderUserId = senderUserId,
+                            replyToServerId = replyToServerId,
+                        )
+                    }
+                    return@withLock
+                }
+            }
 
             mlsManager.flushState()
 
@@ -639,7 +852,8 @@ class ChatViewModel(
                 groupId      = parsed.groupId,
                 fileName     = parsed.fileName,
                 fileSize     = parsed.fileSize,
-                fileMime     = parsed.fileMime
+                fileMime     = parsed.fileMime,
+                replyToServerId = replyToServerId?.takeIf { it.isNotBlank() }
             )
             chatRepository.saveMessage(msg, convId)
             if (!isOutgoing && parsed.type == "file" && parsed.mediaId.isNotBlank()
@@ -653,11 +867,11 @@ class ChatViewModel(
                 if (translationSettings.autoTranslateEnabled.value) {
                     viewModelScope.launch {
                         var added = false
-                        _translatingIds.update { current ->
+                        _translationProgress.update { current ->
                             if (msgId in current) current
                             else {
                                 added = true
-                                current + msgId
+                                current + (msgId to 0f)
                             }
                         }
                         if (!added) {
@@ -678,7 +892,12 @@ class ChatViewModel(
                                 val result = com.example.memegram.ml.MlModelGate.withModel(
                                     com.example.memegram.ml.MlModelGate.Priority.AUTO
                                 ) {
-                                    translationService.translate(parsed.content, detected, targetLang)
+                                    translationService.translate(
+                                        text = parsed.content,
+                                        sourceLang = detected,
+                                        targetLang = targetLang,
+                                        onProgress = { progress -> updateTranslationProgress(msgId, progress) }
+                                    )
                                 }
                                 println("MemegramDebug [AutoTranslate]: result='${result.translatedText.take(40)}' srcLang=${result.detectedSourceLang}")
                                 if (result.translatedText != parsed.content) {
@@ -686,11 +905,14 @@ class ChatViewModel(
                                         msgId, result.translatedText, result.detectedSourceLang
                                     )
                                 }
+                            } else {
+                                _translationProgress.update { it + (msgId to 1f) }
                             }
                         } catch (e: Exception) {
                             println("MemegramDebug [AutoTranslate]: Error translating msgId=$msgId: ${e.message}")
                         } finally {
-                            _translatingIds.update { it - msgId }
+                            finishTranslationProgress(msgId)
+                            _translationProgress.update { it - msgId }
                         }
                     }
                 }
@@ -698,9 +920,34 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun saveUndecryptablePlaceholder(
+        convId: String,
+        msgId: String,
+        createdAt: Long,
+        isOutgoing: Boolean,
+        senderUserId: String?,
+        replyToServerId: String?,
+    ) {
+        println("MemegramDebug [MLS]: skip permanently undecryptable message msg=$msgId conv=$convId")
+        chatRepository.saveMessage(
+            Message(
+                id = msgId.hashCode(),
+                serverId = msgId,
+                text = "",
+                isOutgoing = isOutgoing,
+                timestamp = createdAt * 1000L,
+                status = MessageStatus.SENT,
+                type = "undecryptable",
+                senderUserId = senderUserId,
+                replyToServerId = replyToServerId?.takeIf { it.isNotBlank() }
+            ),
+            convId
+        )
+    }
+
     private suspend fun findWelcomeWithRetry(
         conversationId: String,
-        maxAttempts: Int = 3,
+        maxAttempts: Int = 1,
         delayMs: Long = 4_000L
     ): WelcomeResponse? {
         repeat(maxAttempts) { attempt ->
@@ -715,8 +962,34 @@ class ChatViewModel(
         return null
     }
 
-    private suspend fun syncMlsPending(conversationId: String): Boolean {
+    private fun retryWelcomeInBackground(conversationId: String) {
+        viewModelScope.launch {
+            val delays = longArrayOf(3_000L, 6_000L, 12_000L)
+            for ((idx, d) in delays.withIndex()) {
+                delay(d)
+                if (currentConversationId != conversationId) return@launch
+                if (mlsManager.hasGroup(conversationId)) return@launch
+                println("MemegramDebug [MLS]: background welcome retry ${idx + 1}/${delays.size} for conv=$conversationId")
+                val ready = syncMlsPending(conversationId, allowBackgroundRetry = false)
+                if (ready && mlsManager.hasGroup(conversationId)) {
+                    loadMessages(conversationId)
+                    return@launch
+                }
+            }
+            if (!mlsManager.hasGroup(conversationId) && currentConversationId == conversationId) {
+                println("MemegramDebug [MLS]: background retries exhausted, mark mls_broken conv=$conversationId")
+                mlsManager.markChatMlsBroken(conversationId)
+                _isMlsBroken.value = true
+            }
+        }
+    }
+
+    private suspend fun syncMlsPending(
+        conversationId: String,
+        allowBackgroundRetry: Boolean = true,
+    ): Boolean {
         if (mlsManager.isChatMlsBroken(conversationId)) {
+            ackBrokenConversationWelcome(conversationId)
             _isMlsBroken.value = true
             return false
         }
@@ -735,14 +1008,18 @@ class ChatViewModel(
                     justProcessedWelcome = true
                 } catch (_: Exception) {
                     if (mlsManager.isChatMlsBroken(conversationId)) {
+                        println("MemegramDebug [MLS]: stale Welcome detected, ack and stop retry conv=$conversationId")
+                        runCatching { api.ackWelcome(welcome.id) }
+                            .onFailure { println("MemegramDebug [MLS]: stale Welcome ack failed: ${it.message}") }
                         _isMlsBroken.value = true
                     }
                     return false
                 }
             } else {
-                println("MemegramDebug [MLS]: No Welcome for conv=$conversationId after retries, marking mls_broken")
-                mlsManager.markChatMlsBroken(conversationId)
-                _isMlsBroken.value = true
+                if (allowBackgroundRetry) {
+                    println("MemegramDebug [MLS]: No Welcome for conv=$conversationId on first try, scheduling background retries")
+                    retryWelcomeInBackground(conversationId)
+                }
                 return false
             }
         }
@@ -755,18 +1032,28 @@ class ChatViewModel(
                 return true
             }
 
-            val localEpoch = mlsManager.getGroupEpoch(conversationId)
-            val commits = api.getPendingCommits(conversationId, localEpoch)
-            val newCommits = commits.filter { it.epoch > localEpoch }
+            val cursorEpoch = mlsManager.getCommitCursor(conversationId)
+                ?: mlsManager.getGroupEpoch(conversationId)
+            val commits = api.getPendingCommits(conversationId, cursorEpoch)
+            val newCommits = commits.filter { it.epoch > cursorEpoch }
 
             if (newCommits.isNotEmpty()) {
                 newCommits.sortedBy { it.epoch }.forEach { commit ->
-                    val success = try {
-                        mlsManager.processCommit(conversationId, commit.commitDataB64)
-                    } catch (e: Exception) { false }
+                    val result = try {
+                        mlsManager.processCommitResult(conversationId, commit.commitDataB64)
+                    } catch (e: Exception) {
+                        MlsCommitProcessResult.Skipped(permanent = false, message = e.message)
+                    }
 
-                    if (success) {
-                        mlsManager.updateGroupEpoch(conversationId, commit.epoch)
+                    when (result) {
+                        is MlsCommitProcessResult.Applied -> {
+                            val realEpoch = mlsManager.getRealMlsEpoch(conversationId)
+                            mlsManager.updateGroupEpoch(conversationId, realEpoch)
+                            mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                        }
+                        is MlsCommitProcessResult.Skipped -> {
+                            if (result.permanent) mlsManager.updateCommitCursor(conversationId, commit.epoch)
+                        }
                     }
                 }
                 mlsManager.flushState()
@@ -774,6 +1061,15 @@ class ChatViewModel(
         } catch (_: Exception) { return false }
 
         return true
+    }
+
+    private suspend fun ackBrokenConversationWelcome(conversationId: String) {
+        val welcome = runCatching { api.getPendingWelcomes().find { it.conversationId == conversationId } }
+            .getOrNull()
+            ?: return
+        println("MemegramDebug [MLS]: ack pending Welcome for MLS-broken conv=$conversationId")
+        runCatching { api.ackWelcome(welcome.id) }
+            .onFailure { println("MemegramDebug [MLS]: broken Welcome ack failed: ${it.message}") }
     }
 
     fun updateInput(text: String) {
@@ -831,7 +1127,8 @@ class ChatViewModel(
         val tempMsg = Message(
             id = now.hashCode(), text = text, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING, type = "text",
-            senderUserId = myUserId
+            senderUserId = myUserId,
+            replyToServerId = replyTo?.serverId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -854,7 +1151,8 @@ class ChatViewModel(
             val sentMsg = tempMsg.copy(
                 serverId  = response.messageId,
                 status    = MessageStatus.SENT,
-                timestamp = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp)
+                timestamp = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
+                replyToServerId = replyTo?.serverId
             )
             chatRepository.saveMessage(sentMsg, convId)
             if (replyTo != null && replyTo.serverId.isNotBlank()) {
@@ -862,8 +1160,12 @@ class ChatViewModel(
             }
         } catch (e: Exception) {
             chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
-            handleBlockedByPeerOnSendError(e)
-            _error.value = S.current.sendError(e.message ?: "")
+            when {
+                handlePossibleNotMemberError(e) -> {}
+                handleRecipientUnavailableOnSendError(e) -> _error.value = S.current.userDeletedAccountBanner
+                handleBlockedByPeerOnSendError(e) -> _error.value = S.current.cannotMessageBlockedByPeer
+                else -> _error.value = S.current.sendError(e.message ?: "")
+            }
         }
     }
 
@@ -877,7 +1179,8 @@ class ChatViewModel(
             id = now.hashCode(), text = caption, isOutgoing = true,
             timestamp = now, status = MessageStatus.SENDING,
             type = "image", localPreviewBytes = previewBytes,
-            senderUserId = myUserId, groupId = groupId
+            senderUserId = myUserId, groupId = groupId,
+            replyToServerId = replyTo?.serverId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -936,7 +1239,8 @@ class ChatViewModel(
                     timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                     text               = caption,
                     mediaId            = initResp.mediaId,
-                    encryptionMetadata = encrypted.encryptionMetadataB64
+                    encryptionMetadata = encrypted.encryptionMetadataB64,
+                    replyToServerId    = replyTo?.serverId
                 ),
                 convId
             )
@@ -948,8 +1252,12 @@ class ChatViewModel(
             chatRepository.saveMessage(
                 tempMsg.copy(status = MessageStatus.FAILED, text = S.current.photoSendError), convId
             )
-            handleBlockedByPeerOnSendError(e)
-            _error.value = S.current.photoSendErrorDetail(e.message ?: "")
+            when {
+                handlePossibleNotMemberError(e) -> {}
+                handleRecipientUnavailableOnSendError(e) -> _error.value = S.current.userDeletedAccountBanner
+                handleBlockedByPeerOnSendError(e) -> _error.value = S.current.cannotMessageBlockedByPeer
+                else -> _error.value = S.current.photoSendErrorDetail(e.message ?: "")
+            }
         }
     }
 
@@ -986,7 +1294,8 @@ class ChatViewModel(
             timestamp = now, status = MessageStatus.SENDING,
             type = "file", localPreviewBytes = null,
             senderUserId = myUserId, groupId = groupId,
-            fileName = fileName, fileSize = fileSize, fileMime = mime
+            fileName = fileName, fileSize = fileSize, fileMime = mime,
+            replyToServerId = replyTo?.serverId
         )
         chatRepository.saveMessage(tempMsg, convId)
 
@@ -1038,7 +1347,8 @@ class ChatViewModel(
                     timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                     text               = caption,
                     mediaId            = initResp.mediaId,
-                    encryptionMetadata = encrypted.encryptionMetadataB64
+                    encryptionMetadata = encrypted.encryptionMetadataB64,
+                    replyToServerId    = replyTo?.serverId
                 ),
                 convId
             )
@@ -1051,8 +1361,12 @@ class ChatViewModel(
                 tempMsg.copy(status = MessageStatus.FAILED, text = S.current.fileSendError(e.message ?: "")),
                 convId
             )
-            handleBlockedByPeerOnSendError(e)
-            _error.value = S.current.fileSendError(e.message ?: "")
+            when {
+                handlePossibleNotMemberError(e) -> {}
+                handleRecipientUnavailableOnSendError(e) -> _error.value = S.current.userDeletedAccountBanner
+                handleBlockedByPeerOnSendError(e) -> _error.value = S.current.cannotMessageBlockedByPeer
+                else -> _error.value = S.current.fileSendError(e.message ?: "")
+            }
         }
     }
 
@@ -1072,12 +1386,22 @@ class ChatViewModel(
             val plain = decryptMediaBytes(bytes, metadata)
             val name  = message.fileName ?: "file_$mediaId"
             val mime  = message.fileMime ?: "application/octet-stream"
-            val saved = saveDownloadedFile(plain, name, mime)
+            val finalPlain = censorIncomingImageIfNeeded(
+                mediaId = mediaId,
+                imageBytes = plain,
+                message = message,
+                mime = mime,
+                mlPriority = com.example.memegram.ml.MlModelGate.Priority.USER,
+            )
+            if (isImageForNsfw(message, mime)) {
+                _mediaCache.update { it + (mediaId to finalPlain) }
+            }
+            val saved = saveDownloadedFile(finalPlain, name, mime)
             if (saved == null) {
                 throw IllegalStateException("FileSaver returned null (write failed)")
             }
             if (message.serverId.isNotBlank()) {
-                val inlineBlob = if (plain.size <= INLINE_BLOB_LIMIT_BYTES) plain else null
+                val inlineBlob = if (finalPlain.size <= INLINE_BLOB_LIMIT_BYTES) finalPlain else null
                 chatRepository.updateMessageLocalFile(message.serverId, saved, inlineBlob)
             }
             saved
@@ -1181,15 +1505,20 @@ class ChatViewModel(
                         timestamp          = serverTimestampMs(response.createdAt, fallback = tempMsg.timestamp),
                         mediaId            = initResp.mediaId,
                         encryptionMetadata = encrypted.encryptionMetadataB64,
-                        text               = "${recordResult.durationMs}|${recordResult.waveform}"
+                        text               = "${recordResult.durationMs}|${recordResult.waveform}",
+                        localPreviewBytes  = recordResult.bytes
                     ),
                     convId
                 )
             } catch (e: Exception) {
                 println("MemegramDebug [Voice]: 🚨 КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ: ${e.message}")
                 chatRepository.saveMessage(tempMsg.copy(status = MessageStatus.FAILED), convId)
-                handleBlockedByPeerOnSendError(e)
-                _error.value = S.current.voiceSendError(e.message ?: "")
+                when {
+                    handlePossibleNotMemberError(e) -> {}
+                    handleRecipientUnavailableOnSendError(e) -> _error.value = S.current.userDeletedAccountBanner
+                    handleBlockedByPeerOnSendError(e) -> _error.value = S.current.cannotMessageBlockedByPeer
+                    else -> _error.value = S.current.voiceSendError(e.message ?: "")
+                }
             }
         }
     }
@@ -1213,7 +1542,7 @@ class ChatViewModel(
                     0
                 } else {
                     val ratio = (kotlin.math.log10(amp.toFloat()) - kotlin.math.log10(300f)) /
-                        (kotlin.math.log10(32767f) - kotlin.math.log10(300f))
+                            (kotlin.math.log10(32767f) - kotlin.math.log10(300f))
                     (ratio * 9f).toInt().coerceIn(0, 9)
                 }
                 rawAmplitudes.add(normalized)
@@ -1291,22 +1620,78 @@ class ChatViewModel(
 
     private val _mediaCache = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaCache: StateFlow<Map<String, ByteArray>> = _mediaCache.asStateFlow()
+    private val mediaLoadsInFlight = mutableSetOf<String>()
 
-    fun loadMedia(mediaId: String, encryptionMetadata: String?) {
-        if (_mediaCache.value.containsKey(mediaId)) return
+    fun loadMedia(
+        mediaId: String,
+        encryptionMetadata: String?,
+        forceReload: Boolean = false,
+        knownMessage: Message? = null,
+        mlPriority: com.example.memegram.ml.MlModelGate.Priority = com.example.memegram.ml.MlModelGate.Priority.USER,
+    ) {
+        if (forceReload) _mediaCache.update { it - mediaId }
+        if (!forceReload && _mediaCache.value.containsKey(mediaId)) return
+        if (!mediaLoadsInFlight.add(mediaId)) return
         viewModelScope.launch {
             try {
                 val resp           = api.getMediaDownloadUrl(mediaId)
                 val encryptedBytes = api.downloadBytesFromUrl(resp.downloadUrl)
                 val meta           = resp.encryptionMetadata.takeIf { it.isNotBlank() } ?: encryptionMetadata
+                val msg = knownMessage ?: _messages.value.firstOrNull { it.mediaId == mediaId }
                 val decryptedBytes = if (meta != null) decryptMediaBytes(encryptedBytes, meta) else encryptedBytes
-                _mediaCache.value += (mediaId to decryptedBytes)
-                val msg = _messages.value.firstOrNull { it.mediaId == mediaId }
+                val finalBytes = censorIncomingImageIfNeeded(
+                    mediaId = mediaId,
+                    imageBytes = decryptedBytes,
+                    message = msg,
+                    mime = null,
+                    mlPriority = mlPriority,
+                )
+                _mediaCache.value += (mediaId to finalBytes)
                 if (msg != null && (msg.type == "image" || msg.type == "voice") && msg.serverId.isNotBlank()) {
-                    chatRepository.updateMessageLocalPreview(msg.serverId, decryptedBytes)
+                    chatRepository.updateMessageLocalPreview(msg.serverId, finalBytes)
                 }
             } catch (_: Exception) { }
+            finally { mediaLoadsInFlight.remove(mediaId) }
         }
+    }
+
+    private suspend fun censorIncomingImageIfNeeded(
+        mediaId: String,
+        imageBytes: ByteArray,
+        message: Message?,
+        mime: String?,
+        mlPriority: com.example.memegram.ml.MlModelGate.Priority,
+    ): ByteArray {
+        if (message == null || message.isOutgoing || !isImageForNsfw(message, mime)) return imageBytes
+        if (!nsfwSettings.filterEnabled.value) {
+            nsfwSettings.unmarkMediaProcessed(mediaId)
+            return imageBytes
+        }
+        if (!nsfwService.isModelAvailable()) {
+            return imageBytes
+        }
+
+        val result = runCatching {
+            com.example.memegram.ml.MlModelGate.withModel(
+                mlPriority
+            ) {
+                nsfwService.censorImageIfNeeded(imageBytes, mime)
+            }
+        }.onSuccess { result ->
+            if (result.processed) nsfwSettings.markMediaProcessed(mediaId)
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            println("MemegramDebug [NSFW]: censor failed for media=$mediaId: ${it.message}")
+            throw it
+        }
+        return result.bytes
+    }
+
+    private fun isImageForNsfw(message: Message, mime: String?): Boolean {
+        if (message.type == "image") return true
+        if (message.type != "file") return false
+        return mime?.startsWith("image/", ignoreCase = true) == true
+                || message.fileMime?.startsWith("image/", ignoreCase = true) == true
     }
 
     fun markMessagesRead(lastVisibleServerId: String) {
@@ -1321,11 +1706,83 @@ class ChatViewModel(
         }
     }
 
+    fun setMuteUntil(until: Long) {
+        val convId = currentConversationId ?: return
+        _muteUntil.value = until
+        viewModelScope.launch {
+            runCatching { chatRepository.setMuteUntil(convId, until) }
+                .onFailure { _error.value = it.message }
+        }
+    }
+
+    fun muteFor(durationMs: Long) {
+        val until = when {
+            durationMs <= 0L -> 0L
+            durationMs == Long.MAX_VALUE -> Long.MAX_VALUE
+            else -> Clock.System.now().toEpochMilliseconds() + durationMs
+        }
+        setMuteUntil(until)
+    }
+
     private var _lastReadServerId: String? = null
 
     fun clearMessages() {
         val convId = currentConversationId ?: return
-        viewModelScope.launch { chatRepository.deleteMessages(convId) }
+        viewModelScope.launch {
+            try {
+                val myId = myUserId ?: sessionManager.getUserId()
+                val myRole = runCatching {
+                    api.getConversation(convId).members
+                        .firstOrNull { it.userId == myId }
+                        ?.role
+                }.getOrNull()
+                _myRole.value = myRole
+                val isAdminOrOwner = myRole == "owner" || myRole == "admin"
+
+                val allMessages = mutableListOf<MessageResponse>()
+                var beforeMessageId = ""
+                while (true) {
+                    val page = api.getMessages(convId, limit = 100, beforeMessageId = beforeMessageId)
+                    if (page.isEmpty()) break
+                    allMessages += page
+                    if (page.size < 100) break
+                    beforeMessageId = page.last().id
+                }
+
+                val canDeleteAll = allMessages.all { msg ->
+                    msg.effectiveSenderId == myId || isAdminOrOwner
+                }
+                if (!canDeleteAll) {
+                    _error.value = S.current.clearHistoryForEveryoneNotAllowed
+                    return@launch
+                }
+
+                allMessages.forEach { msg ->
+                    api.deleteMessage(msg.id, deleteForEveryone = true)
+                }
+                chatRepository.deleteMessages(convId)
+            } catch (e: Exception) {
+                _error.value = S.current.deleteError(e.message ?: "")
+            }
+        }
+    }
+
+    fun deleteChat(onDeleted: () -> Unit) {
+        val convId = currentConversationId ?: return
+        viewModelScope.launch {
+            try {
+                api.deleteConversation(convId)
+                try { mlsManager.deleteLocalGroup(convId) } catch (_: Exception) {}
+                chatRepository.deleteChat(convId)
+                mlsManager.flushState()
+                if (ActiveChatCoordinator.conversationId == convId) {
+                    ActiveChatCoordinator.conversationId = null
+                }
+                onDeleted()
+            } catch (e: Exception) {
+                _error.value = S.current.deleteError(e.message ?: "")
+            }
+        }
     }
 
     fun setReplyTo(message: Message?) { _replyingTo.value = message }
@@ -1335,11 +1792,11 @@ class ChatViewModel(
         val serverId = message.serverId
         if (serverId.isBlank()) return
         var added = false
-        _translatingIds.update { current ->
+        _translationProgress.update { current ->
             if (serverId in current) current
             else {
                 added = true
-                current + serverId
+                current + (serverId to 0f)
             }
         }
         if (!added) {
@@ -1355,7 +1812,12 @@ class ChatViewModel(
                 val result = com.example.memegram.ml.MlModelGate.withModel(
                     com.example.memegram.ml.MlModelGate.Priority.USER
                 ) {
-                    translationService.translate(textToTranslate, forcedSourceLang, targetLang)
+                    translationService.translate(
+                        text = textToTranslate,
+                        sourceLang = forcedSourceLang,
+                        targetLang = targetLang,
+                        onProgress = { progress -> updateTranslationProgress(serverId, progress) }
+                    )
                 }
                 println("MemegramDebug [Translate]: result='${result.translatedText.take(50)}' detectedLang=${result.detectedSourceLang}")
                 if (result.translatedText != textToTranslate) {
@@ -1369,7 +1831,8 @@ class ChatViewModel(
                 println("MemegramDebug [Translate]: Error: ${e.message}")
                 _error.value = S.current.translationNotAvailable
             } finally {
-                _translatingIds.update { it - serverId }
+                finishTranslationProgress(serverId)
+                _translationProgress.update { it - serverId }
             }
         }
     }
@@ -1386,6 +1849,102 @@ class ChatViewModel(
         }
     }
 
+    // ── Voice transcription (Whisper) ────────────────────────────────
+
+    fun toggleTranscriptionVisibility(serverId: String) {
+        if (serverId.isBlank()) return
+        _visibleTranscriptions.update { current ->
+            if (serverId in current) current - serverId else current + serverId
+        }
+    }
+
+    fun transcribeMessage(message: Message) {
+        val serverId = message.serverId
+        println("MemegramDebug [Transcribe]: click serverId=$serverId type=${message.type} mediaId=${message.mediaId}")
+        if (serverId.isBlank()) {
+            println("MemegramDebug [Transcribe]: skip, blank serverId")
+            return
+        }
+        if (message.type != "voice") {
+            println("MemegramDebug [Transcribe]: skip, not a voice message")
+            return
+        }
+
+        if (!message.transcribedText.isNullOrBlank() &&
+            message.transcriptionStatus == TranscriptionStatus.DONE) {
+            _visibleTranscriptions.update { it + serverId }
+            return
+        }
+
+        if (!TranscriptionProgressTracker.tryQueue(serverId)) return
+
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.Default) {
+                    message.localPreviewBytes
+                        ?: message.mediaId?.let { _mediaCache.value[it] }
+                        ?: message.localFilePath?.takeIf { it.isNotBlank() }?.let {
+                            com.example.memegram.audio.readLocalAudioFile(it)
+                        }
+                }
+                if (bytes == null || bytes.isEmpty()) {
+                    println("MemegramDebug [Transcribe]: no local audio bytes for serverId=$serverId")
+                    chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                    _error.value = S.current.transcriptionFailed
+                    return@launch
+                }
+                println("MemegramDebug [Transcribe]: start Whisper bytes=${bytes.size} serverId=$serverId")
+
+                val result = com.example.memegram.ml.MlModelGate.withModel(
+                    priority = com.example.memegram.ml.MlModelGate.Priority.USER,
+                    onStarted = { TranscriptionProgressTracker.markStarted(serverId) }
+                ) {
+                    try {
+                        chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.IN_PROGRESS)
+                        val transcriptionResult = transcriptionService.transcribe(
+                            audioBytes = bytes,
+                            language = null,
+                            onProgress = { p -> TranscriptionProgressTracker.update(serverId, p.fraction) }
+                        )
+                        chatRepository.updateMessageTranscription(
+                            serverId = serverId,
+                            transcribedText = transcriptionResult.text.trim().ifBlank { S.current.transcriptionNoSpeech },
+                            transcribedLang = transcriptionResult.language.takeIf { it.isNotBlank() }
+                        )
+                        transcriptionResult
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                        throw e
+                    } finally {
+                        TranscriptionProgressTracker.finish(serverId)
+                    }
+                }
+
+                _visibleTranscriptions.update { it + serverId }
+            } catch (e: CancellationException) {
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    withContext(NonCancellable) {
+                        TranscriptionProgressTracker.clear(serverId)
+                    }
+                }
+                throw e
+            } catch (e: Exception) {
+                println("MemegramDebug [Transcribe]: error ${e.message}")
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    chatRepository.setTranscriptionStatus(serverId, TranscriptionStatus.FAILED)
+                }
+                _error.value = S.current.transcriptionFailed
+            } finally {
+                if (!TranscriptionProgressTracker.isActive(serverId)) {
+                    withContext(NonCancellable) {
+                        TranscriptionProgressTracker.clear(serverId)
+                    }
+                }
+            }
+        }
+    }
+
     fun deleteMessage(message: Message) {
         val convId = currentConversationId ?: return
         if (message.serverId.isBlank()) return
@@ -1398,7 +1957,7 @@ class ChatViewModel(
             }
         }
     }
-    
+
     fun deleteFailedMessage(message: Message) {
         if (message.status != MessageStatus.FAILED) return
         viewModelScope.launch {
@@ -1414,6 +1973,10 @@ class ChatViewModel(
             _error.value = S.current.resendUnsupported
             return
         }
+        if (!_isGroupChat.value && _isPeerDeleted.value) {
+            _error.value = S.current.userDeletedAccountBanner
+            return
+        }
         viewModelScope.launch {
             val oldKey = message.serverId.takeIf { it.isNotBlank() } ?: "temp_${message.id}"
             chatRepository.deleteMessageByServerId(oldKey)
@@ -1421,62 +1984,8 @@ class ChatViewModel(
         }
     }
 
-    private data class ParsedMlsPayload(
-        val type: String,
-        val mediaId: String,
-        val content: String,
-        val groupId: String? = null,
-        val fileName: String? = null,
-        val fileSize: Long? = null,
-        val fileMime: String? = null
-    )
-
-    private fun parseMlsPayload(payload: String): ParsedMlsPayload {
-        if (payload.startsWith("[image:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-            val metaInfo = payload.substring(7, closeIdx).split(":")
-            val mediaId = metaInfo[0]
-            val groupId = if (metaInfo.size > 1) metaInfo[1] else null
-            val caption = payload.substring(closeIdx + 1).trim()
-            return ParsedMlsPayload("image", mediaId, caption, groupId)
-        }
-        if (payload.startsWith("[voice:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-
-            val metaInfo = payload.substring(7, closeIdx).split(":")
-            val mediaId = metaInfo[0]
-            val waveform = if (metaInfo.size > 1) metaInfo[1] else ""
-            val durationMs = payload.substring(closeIdx + 1).trim()
-
-            return ParsedMlsPayload("voice", mediaId, "$durationMs|$waveform")
-        }
-        if (payload.startsWith("[file:")) {
-            val closeIdx = payload.indexOf(']')
-            if (closeIdx == -1) return ParsedMlsPayload("text", "", payload)
-            val metaInfo = payload.substring(6, closeIdx).split(":")
-            if (metaInfo.size < 3) return ParsedMlsPayload("text", "", payload)
-            val mediaId  = metaInfo[0]
-            val sizeBytes = metaInfo[1].toLongOrNull() ?: 0L
-            val mime      = runCatching { decodeBase64Utf8(metaInfo[2]) }.getOrDefault("application/octet-stream")
-            val tail      = payload.substring(closeIdx + 1)
-            val parts     = tail.split(":", limit = 2)
-            val fileName  = runCatching { decodeBase64Utf8(parts[0]) }.getOrDefault(parts[0])
-            val caption   = if (parts.size > 1) runCatching { decodeBase64Utf8(parts[1]) }.getOrDefault("") else ""
-            return ParsedMlsPayload(
-                type = "file", mediaId = mediaId, content = caption,
-                fileName = fileName, fileSize = sizeBytes, fileMime = mime
-            )
-        }
-        return ParsedMlsPayload("text", "", payload)
-    }
-
     private fun encodeBase64Utf8(s: String): String =
         kotlin.io.encoding.Base64.encode(s.encodeToByteArray())
-
-    private fun decodeBase64Utf8(s: String): String =
-        kotlin.io.encoding.Base64.decode(s).decodeToString()
 
     fun blockPeer() {
         val peerId = peerUserId ?: return

@@ -25,6 +25,7 @@ object MlModelGate {
 
     private class Task<R>(
         val block: suspend () -> R,
+        val onStarted: (suspend () -> Unit)?,
         val deferred: CompletableDeferred<R>,
     )
 
@@ -35,22 +36,31 @@ object MlModelGate {
     private var autoQueued: ArrayDeque<Task<*>> = ArrayDeque()
 
     @Volatile
-    private var releaseHook: (suspend () -> Unit)? = null
+    private var releaseHooks: List<suspend () -> Unit> = emptyList()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var workerJob: Job? = null
     private var idleJob: Job? = null
     private val activeModelLock = Mutex()
+    @Volatile
+    private var activityGeneration: Long = 0L
 
     init { startWorker() }
 
     fun setReleaseHook(hook: suspend () -> Unit) {
-        releaseHook = hook
+        releaseHooks = releaseHooks + hook
     }
 
-    suspend fun <R> withModel(priority: Priority = Priority.USER, block: suspend () -> R): R {
+    suspend fun <R> withExclusiveModelAccess(block: suspend () -> R): R =
+        activeModelLock.withLock { block() }
+
+    suspend fun <R> withModel(
+        priority: Priority = Priority.USER,
+        onStarted: (suspend () -> Unit)? = null,
+        block: suspend () -> R,
+    ): R {
         val deferred = CompletableDeferred<R>()
-        val task = Task(block, deferred)
+        val task = Task(block, onStarted, deferred)
         when (priority) {
             Priority.USER -> userQueue.send(task)
             Priority.AUTO -> {
@@ -62,7 +72,12 @@ object MlModelGate {
                 autoQueue.send(task)
             }
         }
-        return deferred.await()
+        try {
+            return deferred.await()
+        } catch (ce: CancellationException) {
+            deferred.cancel(ce)
+            throw ce
+        }
     }
 
     fun onMemoryPressure(cancelQueuedAuto: Boolean = true) {
@@ -88,10 +103,13 @@ object MlModelGate {
         }
     }
 
-    private suspend fun triggerRelease() {
+    private suspend fun triggerRelease(expectedGeneration: Long? = null) {
         activeModelLock.withLock {
-            val hook = releaseHook
-            try { hook?.invoke() } catch (_: Throwable) { /* swallow */ }
+            if (expectedGeneration != null && expectedGeneration != activityGeneration) return@withLock
+            val hooks = releaseHooks
+            for (hook in hooks) {
+                try { hook.invoke() } catch (_: Throwable) { /* swallow */ }
+            }
         }
     }
 
@@ -101,9 +119,10 @@ object MlModelGate {
                 val task: Task<*> = pickNextTask()
                 idleJob?.cancel()
                 runTask(task)
+                val idleGeneration = activityGeneration
                 idleJob = scope.launch {
                     delay(IDLE_TIMEOUT_MS)
-                    triggerRelease()
+                    triggerRelease(idleGeneration)
                 }
             }
         }
@@ -127,7 +146,16 @@ object MlModelGate {
     private suspend fun <R> runTask(task: Task<R>) {
         if (task.deferred.isCancelled) return
         try {
-            val result = activeModelLock.withLock { task.block() }
+            val result = activeModelLock.withLock {
+                if (task.deferred.isCancelled) throw CancellationException("Cancelled before model start")
+                activityGeneration += 1L
+                try {
+                    task.onStarted?.invoke()
+                    task.block()
+                } finally {
+                    activityGeneration += 1L
+                }
+            }
             task.deferred.complete(result)
         } catch (ce: CancellationException) {
             task.deferred.cancel(ce)

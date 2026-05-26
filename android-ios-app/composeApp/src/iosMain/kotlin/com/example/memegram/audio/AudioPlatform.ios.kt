@@ -13,6 +13,18 @@ import platform.posix.memcpy
 actual fun createAudioRecorder(): AudioRecorder = AudioRecorderIOS()
 actual fun createAudioPlayer(): AudioPlayer = AudioPlayerIOS()
 
+@OptIn(ExperimentalForeignApi::class)
+actual fun readLocalAudioFile(path: String): ByteArray? {
+    val data = NSData.dataWithContentsOfFile(path) ?: return null
+    val length = data.length.toInt()
+    if (length == 0) return ByteArray(0)
+    val bytes = ByteArray(length)
+    bytes.usePinned { pinned ->
+        memcpy(pinned.addressOf(0), data.bytes, length.toULong())
+    }
+    return bytes
+}
+
 class AudioPlayerDelegate(private val onCompletion: () -> Unit) : NSObject(), AVAudioPlayerDelegateProtocol {
     override fun audioPlayerDidFinishPlaying(player: AVAudioPlayer, successfully: Boolean) {
         onCompletion()

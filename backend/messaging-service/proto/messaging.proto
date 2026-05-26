@@ -112,9 +112,14 @@ message EpochChanged {
 }
 
 message DeviceRevoked {
-    string          user_id            = 1;
-    string          revoked_device_id  = 2;
-    repeated string conversation_ids   = 3;
+    string          user_id               = 1;
+    string          revoked_device_id     = 2;
+    repeated string conversation_ids      = 3;
+    // Public Ed25519 signature key (32 bytes) of the revoked device.
+    // Allows every group member to call removeMemberBySignatureKey
+    // to evict the corresponding leaf from the MLS group.
+    // Empty when unknown (e.g. device never uploaded a KeyPackage).
+    bytes           revoked_signature_key = 4;
 }
 
 // ──────────────────────────────────────────────
@@ -122,9 +127,14 @@ message DeviceRevoked {
 // ──────────────────────────────────────────────
 
 message UploadKeyPackagesRequest {
-    string         user_id      = 1;
-    string         device_id    = 2;
-    repeated bytes key_packages = 3;
+    string         user_id       = 1;
+    string         device_id     = 2;
+    repeated bytes key_packages  = 3;
+    // Public Ed25519 signature key (32 bytes) of this device, extracted
+    // by the client from any of the uploaded KeyPackages. All KeyPackages
+    // a device uploads share the same long-lived signing identity.
+    // Optional for backwards compatibility; required for revoke flow.
+    bytes          signature_key = 4;
 }
 message UploadKeyPackagesResponse {
     int32 uploaded_count = 1;

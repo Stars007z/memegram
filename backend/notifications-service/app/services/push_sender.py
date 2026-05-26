@@ -174,30 +174,59 @@ class ApnsSender(IPushSender):
         try:
             from aioapns import NotificationRequest
 
-            apns_payload: dict[str, Any] = {
-                "aps": {
-                    "alert": {
-                        "title": payload.title,
-                        "body": payload.body,
+            event_type = (payload.data or {}).get("event_type", "")
+            # Silent / background pushes (no UI banner, only data delivered).
+            # Used to wake the iOS app so it can clean up local state for
+            # events like `conversation_deleted` even when the app is
+            # backgrounded or killed.
+            silent_event_types = {"conversation_deleted"}
+            is_silent = event_type in silent_event_types
+
+            if is_silent:
+                # APNs requires `content-available: 1` and an empty/absent
+                # `alert` field for the system to treat the notification as
+                # a background push. We must NOT include `alert` or `sound`.
+                aps: dict[str, Any] = {
+                    "content-available": 1,
+                }
+                if payload.thread_id:
+                    aps["thread-id"] = payload.thread_id
+
+                apns_payload: dict[str, Any] = {"aps": aps}
+                for k, v in payload.data.items():
+                    apns_payload[k] = v
+
+                request = NotificationRequest(
+                    device_token=payload.token,
+                    message=apns_payload,
+                    push_type="background",
+                    priority=5,  # APNs requires priority<=5 for background pushes
+                )
+            else:
+                apns_payload = {
+                    "aps": {
+                        "alert": {
+                            "title": payload.title,
+                            "body": payload.body,
+                        },
+                        "mutable-content": 1,
+                        "sound": "default",
                     },
-                    "mutable-content": 1,
-                    "sound": "default",
-                },
-            }
-            if payload.thread_id:
-                apns_payload["aps"]["thread-id"] = payload.thread_id
+                }
+                if payload.thread_id:
+                    apns_payload["aps"]["thread-id"] = payload.thread_id
 
-            for k, v in payload.data.items():
-                apns_payload[k] = v
-            if payload.avatar_url:
-                apns_payload["avatar_url"] = payload.avatar_url
+                for k, v in payload.data.items():
+                    apns_payload[k] = v
+                if payload.avatar_url:
+                    apns_payload["avatar_url"] = payload.avatar_url
 
-            request = NotificationRequest(
-                device_token=payload.token,
-                message=apns_payload,
-                push_type="alert",
-                priority=10,
-            )
+                request = NotificationRequest(
+                    device_token=payload.token,
+                    message=apns_payload,
+                    push_type="alert",
+                    priority=10,
+                )
 
             response = await client.send_notification(request)
             if response.is_successful:

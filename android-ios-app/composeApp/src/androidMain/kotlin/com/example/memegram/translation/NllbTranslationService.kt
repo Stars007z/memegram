@@ -2,6 +2,7 @@ package com.example.memegram.translation
 
 import android.content.Context
 import android.util.Log
+import com.example.memegram.ml.MlModelGate
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import io.ktor.client.HttpClient
@@ -30,13 +31,15 @@ class NllbTranslationService(
     override suspend fun translate(
         text: String,
         sourceLang: String?,
-        targetLang: String
+        targetLang: String,
+        onProgress: (TranslationProgress) -> Unit,
     ): TranslationResult {
         val t0 = System.currentTimeMillis()
         Log.d(TAG, "┌── translate() START ──────────────────────")
         Log.d(TAG, "│ text.length=${text.length}, text='${text.take(80)}'")
         Log.d(TAG, "│ sourceLang=$sourceLang, targetLang=$targetLang")
 
+        onProgress(TranslationProgress(0.04f, TranslationProgressPhase.IDENTIFYING_LANGUAGE))
         val detectedLang = sourceLang ?: identifyLanguage(text) ?: "und"
         Log.d(TAG, "│ detectedLang=$detectedLang (${System.currentTimeMillis() - t0}ms)")
 
@@ -55,6 +58,7 @@ class NllbTranslationService(
         Log.d(TAG, "│ FLORES: $srcFlores → $tgtFlores")
 
         Log.d(TAG, "│ Loading model...")
+        onProgress(TranslationProgress(0.12f, TranslationProgressPhase.LOADING_MODEL))
         val tLoad = System.currentTimeMillis()
         val engine = modelManager.getEngine()
         val loadMs = System.currentTimeMillis() - tLoad
@@ -67,7 +71,7 @@ class NllbTranslationService(
         return try {
             Log.d(TAG, "│ Running inference...")
             val tInf = System.currentTimeMillis()
-            val translated = engine.translate(text, srcFlores, tgtFlores)
+            val translated = engine.translate(text, srcFlores, tgtFlores, onProgress)
             val infMs = System.currentTimeMillis() - tInf
             Log.d(TAG, "│ Inference done in ${infMs}ms")
             Log.d(TAG, "│ result='${translated.take(80)}'")
@@ -110,7 +114,6 @@ class NllbTranslationService(
     }
 
     override fun close() {
-        modelManager.release()
         languageIdentifier.close()
     }
 
@@ -120,7 +123,9 @@ class NllbTranslationService(
 
     override fun downloadModel(): Flow<ModelDownloadProgress> = modelManager.downloadModel()
 
-    override suspend fun deleteModel() = modelManager.deleteModel()
+    override suspend fun deleteModel() = MlModelGate.withExclusiveModelAccess {
+        modelManager.deleteModel()
+    }
 
     override suspend fun releaseModel() {
         modelManager.release()

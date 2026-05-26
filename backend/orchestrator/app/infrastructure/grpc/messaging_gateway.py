@@ -104,6 +104,7 @@ class GrpcMessagingGateway(IMessagingGateway):
         user_id: str,
         device_id: str,
         key_packages: list[bytes],
+        signature_key: bytes | None = None,
     ) -> int:
         try:
             resp = await self._stub().UploadKeyPackages(
@@ -111,6 +112,7 @@ class GrpcMessagingGateway(IMessagingGateway):
                     user_id=user_id,
                     device_id=device_id,
                     key_packages=key_packages,
+                    signature_key=signature_key or b"",
                 ),
                 timeout=self._timeout,
             )
@@ -781,6 +783,9 @@ class GrpcMessagingGateway(IMessagingGateway):
                 "user_id": dr.user_id,
                 "revoked_device_id": dr.revoked_device_id,
                 "conversation_ids": list(dr.conversation_ids),
+                # Hex-encoded public Ed25519 signature key (32 bytes -> 64 chars)
+                # of the revoked device. Empty string if unknown.
+                "revoked_signature_key": dr.revoked_signature_key.hex() if dr.revoked_signature_key else "",
             }
         elif which == "conversation_deleted":
             cd = event.conversation_deleted

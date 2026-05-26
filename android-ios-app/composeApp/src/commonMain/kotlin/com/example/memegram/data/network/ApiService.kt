@@ -21,6 +21,11 @@ class ApiService(
     private val sessionManager: SessionManager,
     private val baseUrl: String
 ) {
+    private val eventJson = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
     private fun token() = sessionManager.getAccessToken() ?: ""
 
     private fun HttpRequestBuilder.noCache() {
@@ -196,11 +201,16 @@ class ApiService(
             noCache()
         }.body()
 
-    suspend fun getMessages(conversationId: String, limit: Int = 50): List<MessageResponse> {
+    suspend fun getMessages(
+        conversationId: String,
+        limit: Int = 50,
+        beforeMessageId: String = ""
+    ): List<MessageResponse> {
         val response = client.get("$baseUrl/api/v1/messaging/conversations/$conversationId/messages") {
             header("Authorization", "Bearer ${sessionManager.getAccessToken()}")
             noCache()
             parameter("limit", limit)
+            if (beforeMessageId.isNotBlank()) parameter("before_message_id", beforeMessageId)
         }.body<GetMessagesResponse>()
         return response.messages
     }
@@ -251,13 +261,13 @@ class ApiService(
         client.get("$baseUrl/api/v1/messaging/key-packages/count") {
             bearerAuth(token())
             noCache()
-        }.body<Map<String, Int>>()["count"] ?: 0
+        }.body<Map<String, Int>>().let { it["available_count"] ?: it["count"] ?: 0 }
 
-    suspend fun uploadKeyPackages(packagesB64: List<String>) {
+    suspend fun uploadKeyPackages(packagesB64: List<String>, signatureKeyB64: String? = null) {
         client.post("$baseUrl/api/v1/messaging/key-packages") {
             bearerAuth(token())
             contentType(ContentType.Application.Json)
-            setBody(mapOf("key_packages" to packagesB64))
+            setBody(UploadKeyPackagesRequest(packagesB64, signatureKeyB64?.takeIf { it.isNotBlank() }))
         }
     }
 
@@ -304,7 +314,7 @@ class ApiService(
                                 ?: continue
                             val data = dataLine.removePrefix("data:").trim()
                             if (data.isNotEmpty()) {
-                                try { emit(Json.decodeFromString<SseEvent>(data)) }
+                                try { emit(eventJson.decodeFromString<SseEvent>(data)) }
                                 catch (_: Exception) {}
                             }
                         }
@@ -313,7 +323,7 @@ class ApiService(
                     line.startsWith("data:") && eventBuffer.isEmpty() -> {
                         val data = line.removePrefix("data:").trim()
                         if (data.isNotEmpty()) {
-                            try { emit(Json.decodeFromString<SseEvent>(data)) }
+                            try { emit(eventJson.decodeFromString<SseEvent>(data)) }
                             catch (_: Exception) { eventBuffer.appendLine(line) }
                         }
                     }
@@ -574,9 +584,15 @@ class ApiService(
             bearerAuth(token()); contentType(ContentType.Application.Json); setBody(request)
         }.body()
 
+    suspend fun transferPrimary(deviceId: String): TransferPrimaryResponse =
+        client.post("$baseUrl/api/v1/devices/primary/transfer") {
+            bearerAuth(token())
+            contentType(ContentType.Application.Json)
+            setBody(TransferPrimaryRequest(targetDeviceId = deviceId))
+        }.body()
+
     suspend fun getDeviceAdditionStatus(registrationId: String): DeviceAdditionStatusResponse =
         client.get("$baseUrl/api/v1/devices/addition/$registrationId/status") {
-            bearerAuth(token())
             noCache()
         }.body()
 

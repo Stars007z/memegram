@@ -46,6 +46,7 @@ class IMlsService(ABC):
         user_id: uuid.UUID,
         device_id: uuid.UUID,
         key_packages: list[bytes],
+        signature_key: Optional[bytes] = None,
     ) -> int:
         """Returns count of uploaded packages."""
         ...

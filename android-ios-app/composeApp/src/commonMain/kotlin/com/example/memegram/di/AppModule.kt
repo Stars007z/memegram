@@ -26,11 +26,16 @@ import com.example.memegram.lifecycle.AppLifecycleObserver
 import com.example.memegram.lifecycle.createAppLifecycleObserver
 import com.example.memegram.mls.MlsManager
 import com.example.memegram.notifications.NotificationPrefs
+import com.example.memegram.nsfw.NsfwService
+import com.example.memegram.nsfw.NsfwSettings
+import com.example.memegram.nsfw.createNsfwService
 import com.example.memegram.push.PushTokenProvider
 import com.example.memegram.push.createPushTokenProvider
 import com.example.memegram.translation.TranslationService
 import com.example.memegram.translation.TranslationSettings
 import com.example.memegram.translation.createTranslationService
+import com.example.memegram.transcription.TranscriptionService
+import com.example.memegram.transcription.createTranscriptionService
 import com.russhwolf.settings.Settings
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
@@ -58,7 +63,7 @@ val appModule = module {
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single { GlobalAudioPlayer() }
     single { AvatarCache(get()) }
-    single { ProfileRepository(get(), get()) }
+    single { ProfileRepository(get(), get(), get()) }
     single { BlockedUsersCache(get(), get()) }
     single<TranslationService> {
         val service = createTranslationService(
@@ -68,18 +73,36 @@ val appModule = module {
         com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
         service
     }
+    single<TranscriptionService> {
+        val service = createTranscriptionService(
+            httpClient = get(),
+            modelBaseUrl = "https://models.memegram.win/memegram-models",
+        )
+        com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
+        service
+    }
+    single<NsfwService> {
+        val service = createNsfwService(
+            httpClient = get(),
+            modelBaseUrl = "https://models.memegram.win/memegram-models",
+        )
+        com.example.memegram.ml.MlModelGate.setReleaseHook { service.releaseModel() }
+        service
+    }
     single { TranslationSettings(get()) }
+    single { NsfwSettings(get()) }
     single { NotificationPrefs(get()) }
 
     single<PushTokenProvider> { createPushTokenProvider() }
     single<NotificationsRepository> { NotificationsRepositoryImpl(get(), get()) }
     single<AppLifecycleObserver> { createAppLifecycleObserver() }
-    single { SessionRefresher(get(), get(), get(), get(), get()) }
+    single { SessionRefresher(get(), get(), get(), get(), get(), get()) }
     single<ClientDataWiper> {
         createClientDataWiper(
             plainSettings = get(),
             secureSettings = get(named("secure")),
             mlsManager = get(),
+            database = get(),
         )
     }
 
@@ -95,8 +118,6 @@ val appModule = module {
     viewModelOf(::BlackListViewModel)
     viewModelOf(::ContactsViewModel)
     viewModelOf(::StorageViewModel)
-    viewModelOf(::LinkedDevicesViewModel)
-    viewModelOf(::AddDeviceViewModel)
     viewModelOf(::GroupProfileViewModel)
     viewModelOf(::UserProfileViewModel)
 }

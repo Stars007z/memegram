@@ -7,6 +7,8 @@ use openmls_rust_crypto::OpenMlsRustCrypto;
 
 uniffi::setup_scaffolding!();
 
+mod whisper;
+
 const CS: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -64,6 +66,14 @@ fn ensure_group_loaded(
 #[derive(uniffi::Object)]
 pub struct MlsClientHandle {
     inner: Mutex<ClientInner>,
+}
+
+impl MlsClientHandle {
+    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, ClientInner>, MlsError> {
+        self.inner
+            .lock()
+            .map_err(|e| MlsError::General(format!("MLS client lock poisoned: {e}")))
+    }
 }
 
 #[uniffi::export]
@@ -129,7 +139,7 @@ impl MlsClientHandle {
     }
 
     pub fn export_provider_state(&self) -> Result<Vec<u8>, MlsError> {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock_inner()?;
         let map: HashMap<Vec<u8>, Vec<u8>> = g
             .keys
             .provider
@@ -143,12 +153,17 @@ impl MlsClientHandle {
     }
 
     pub fn export_signing_key(&self) -> Result<Vec<u8>, MlsError> {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock_inner()?;
         g.keys.signer.tls_serialize_detached().map_err(to_err)
     }
 
+    pub fn export_signing_public_key(&self) -> Result<Vec<u8>, MlsError> {
+        let g = self.lock_inner()?;
+        Ok(g.keys.signer.to_public_vec())
+    }
+
     pub fn generate_key_package(&self) -> Result<Vec<u8>, MlsError> {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock_inner()?;
         let bundle = KeyPackage::builder()
             .build(
                 CS,
@@ -163,8 +178,14 @@ impl MlsClientHandle {
             .map_err(to_err)
     }
 
+    pub fn extract_signature_key(&self, key_package_bytes: Vec<u8>) -> Result<Vec<u8>, MlsError> {
+        let kp_in: KeyPackageIn =
+            KeyPackageIn::tls_deserialize_exact_bytes(&key_package_bytes).map_err(to_err)?;
+        Ok(kp_in.unverified_credential().signature_key.as_slice().to_vec())
+    }
+
     pub fn create_group_with_id(self: &Self, group_id: Vec<u8>) -> Result<(), MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let cfg = MlsGroupCreateConfig::builder()
             .ciphersuite(CS)
             .use_ratchet_tree_extension(true)
@@ -187,20 +208,38 @@ impl MlsClientHandle {
         group_id: Vec<u8>,
         key_package_bytes: Vec<u8>,
     ) -> Result<WelcomeBundle, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        self.add_members(group_id, vec![key_package_bytes])
+    }
+
+    pub fn add_members(
+        &self,
+        group_id: Vec<u8>,
+        key_package_bytes: Vec<Vec<u8>>,
+    ) -> Result<WelcomeBundle, MlsError> {
+        let mut g = self.lock_inner()?;
 
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
 
-        let kp_in: KeyPackageIn =
-            KeyPackageIn::tls_deserialize_exact_bytes(&key_package_bytes).map_err(to_err)?;
+        let key_packages: Vec<KeyPackage> = key_package_bytes
+            .into_iter()
+            .map(|bytes| {
+                KeyPackageIn::tls_deserialize_exact_bytes(&bytes)
+                    .map(|kp| kp.into())
+                    .map_err(to_err)
+            })
+            .collect::<Result<_, _>>()?;
+
+        if key_packages.is_empty() {
+            return Err(MlsError::General("no key packages to add".into()));
+        }
 
         let group = groups
             .get_mut(&group_id)
             .ok_or_else(|| MlsError::General("group not found".into()))?;
 
         let (commit, welcome, _) = group
-            .add_members(&keys.provider, &keys.signer, &[kp_in.into()])
+            .add_members(&keys.provider, &keys.signer, &key_packages)
             .map_err(to_err)?;
 
         Ok(WelcomeBundle {
@@ -210,7 +249,7 @@ impl MlsClientHandle {
     }
 
     pub fn merge_pending_commit(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -221,7 +260,7 @@ impl MlsClientHandle {
     }
 
     pub fn clear_pending_commit(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -235,7 +274,7 @@ impl MlsClientHandle {
     }
 
     pub fn clear_pending_proposals(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -248,7 +287,7 @@ impl MlsClientHandle {
     }
 
     pub fn join_from_welcome(&self, welcome_bytes: Vec<u8>) -> Result<Vec<u8>, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
 
         let welcome = MlsMessageIn::tls_deserialize_exact_bytes(&welcome_bytes).map_err(to_err)?;
         let welcome = match welcome.extract() {
@@ -273,7 +312,7 @@ impl MlsClientHandle {
         group_id: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
 
@@ -293,7 +332,7 @@ impl MlsClientHandle {
         group_id: Vec<u8>,
         msg_bytes: Vec<u8>,
     ) -> Result<IncomingMessage, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
 
@@ -329,7 +368,7 @@ impl MlsClientHandle {
     }
 
     pub fn member_count(&self, group_id: Vec<u8>) -> Result<u64, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -342,7 +381,7 @@ impl MlsClientHandle {
         &self,
         group_id: Vec<u8>,
     ) -> Result<Vec<Vec<u8>>, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -354,7 +393,7 @@ impl MlsClientHandle {
     }
 
     pub fn get_group_epoch(&self, group_id: Vec<u8>) -> Result<u64, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
         let group = groups
@@ -364,7 +403,7 @@ impl MlsClientHandle {
     }
 
     pub fn export_identity_key_pub(&self) -> Result<Vec<u8>, MlsError> {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock_inner()?;
         Ok(g.keys.signer.to_public_vec())
     }
 
@@ -373,7 +412,7 @@ impl MlsClientHandle {
     }
 
     pub fn export_credential_data(&self) -> Result<Vec<u8>, MlsError> {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock_inner()?;
         g.keys
             .credential_with_key
             .credential
@@ -382,7 +421,7 @@ impl MlsClientHandle {
     }
 
     pub fn leave_group(&self, group_id: Vec<u8>) -> Result<Vec<u8>, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
 
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
@@ -405,7 +444,7 @@ impl MlsClientHandle {
     }
 
     pub fn delete_group(&self, group_id: Vec<u8>) -> Result<(), MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
 
         let _ = ensure_group_loaded(&keys.provider, groups, &group_id);
@@ -422,7 +461,7 @@ impl MlsClientHandle {
         group_id: Vec<u8>,
         identity: String,
     ) -> Result<Vec<u8>, MlsError> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock_inner()?;
         let ClientInner { keys, groups } = &mut *g;
 
         ensure_group_loaded(&keys.provider, groups, &group_id)?;
@@ -446,6 +485,37 @@ impl MlsClientHandle {
                     identity
                 ))
             })?;
+
+        let (commit, _, _) = group
+            .remove_members(&keys.provider, &keys.signer, &[leaf_index])
+            .map_err(to_err)?;
+
+        let serialized = commit.tls_serialize_detached().map_err(to_err)?;
+        Ok(serialized)
+    }
+
+    pub fn remove_member_by_signature_key(
+        &self,
+        group_id: Vec<u8>,
+        signature_key: Vec<u8>,
+    ) -> Result<Vec<u8>, MlsError> {
+        let mut g = self.lock_inner()?;
+        let ClientInner { keys, groups } = &mut *g;
+
+        ensure_group_loaded(&keys.provider, groups, &group_id)?;
+
+        let group = groups
+            .get_mut(&group_id)
+            .ok_or_else(|| MlsError::General("group not found".into()))?;
+
+        let _ = group.clear_pending_proposals(keys.provider.storage());
+        let _ = group.clear_pending_commit(keys.provider.storage());
+
+        let leaf_index = group
+            .members()
+            .find(|m| m.signature_key == signature_key)
+            .map(|m| m.index)
+            .ok_or_else(|| MlsError::General("member with signature key not found in group".into()))?;
 
         let (commit, _, _) = group
             .remove_members(&keys.provider, &keys.signer, &[leaf_index])
